@@ -143,11 +143,19 @@ Un serveur `mcp-elk` générique, piloté par le catalogue, est préféré à un
 
 Les métriques sont réparties entre plusieurs outils (décision du 7 octobre 2026). `mcp-metrics` présente donc une interface unique à l'agent et route chaque demande vers le bon outil :
 
-- **Un connecteur par outil** (Elasticsearch, Prometheus, APM…) dans `mcp-metrics`, chacun traduisant la demande dans le langage de l'outil (requête ES, PromQL, API de l'APM).
+- **Trois connecteurs** (Apache Druid, Prometheus, Elasticsearch) dans `mcp-metrics`, chacun traduisant la demande dans le langage de l'outil (Druid SQL, PromQL, requête Elasticsearch).
 - **Fiche catalogue par source de métriques** (`catalog/sources/metrics-<outil>.yaml`) : outil, périmètre couvert (hosts, applications, environnements), métriques disponibles, granularité, rétention.
 - **Noms de métriques normalisés** dans `glossary.yaml` : l'agent demande `cpu.usage`, `mem.used_pct` ou `http.latency_p95`, et chaque connecteur connaît le nom natif correspondant.
 - **Résolution du host** : `mcp-metrics` cherche dans quel outil un host est suivi (via la CMDB ou les fiches catalogue) ; si plusieurs outils le suivent, il interroge le plus précis et indique la source dans la réponse.
 - **Réponse homogène** : série temporelle au même format quel que soit l'outil, plus un résumé (min, max, moyenne, ruptures détectées) pour ne pas envoyer de séries brutes au modèle.
+
+| Connecteur | Accès | Langage de requête | Usage typique |
+| --- | --- | --- | --- |
+| `druid` | API SQL de Druid (`/druid/v2/sql`), compte en lecture | Druid SQL, filtre obligatoire sur `__time` | Métriques agrégées à fort volume, historique long |
+| `prometheus` | API HTTP (`/api/v1/query_range`), compte en lecture | PromQL | Métriques système et applicatives récentes |
+| `elasticsearch` | Mêmes clusters et comptes que `mcp-elk` | Requête ES ou ES\|QL | Métriques indexées dans ELK (Metricbeat ou équivalent) |
+
+Chaque connecteur impose une période et un pas maximal, pour ne pas surcharger l'outil interrogé.
 
 **Règles communes à tous les outils**
 
@@ -585,7 +593,7 @@ La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 - [x] Fiches du catalogue : rédigées par l'équipe de l'agent, validées par l'équipe propriétaire de chaque source (décidé le 7 octobre 2026).
 - [x] Plateforme LLM : Azure OpenAI déjà accessible, authentification en place (confirmé le 7 octobre 2026).
 - [ ] Modèle Azure OpenAI : GPT-5.6 Luna (confirmé le 7 octobre 2026). Reste à connaître le quota de tokens par minute du déploiement.
-- [ ] Quels outils de métriques exactement, et quel périmètre couvre chacun ?
+- [ ] Outils de métriques : Druid, Prometheus et ELK (confirmé le 7 octobre 2026). Reste à savoir quels hosts, applications et métriques couvre chacun.
 
 * [x] Authentification : table d'utilisateurs interne pour commencer, annuaire d'entreprise plus tard (décidé le 7 octobre 2026).
 * [x] Périmètres de données par utilisateur : aucun en V1, tout utilisateur connecté voit toutes les sources (décidé le 7 octobre 2026).
