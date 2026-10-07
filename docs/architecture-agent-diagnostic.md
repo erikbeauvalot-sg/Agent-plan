@@ -512,15 +512,15 @@ class LLMProvider(Protocol):
 
 ```yaml
 roles:
-  lead:    {provider: azure, deployment: modele-principal, reasoning: high}
-  host:    {provider: azure, deployment: modele-rapide, reasoning: medium}
-  logs:    {provider: azure, deployment: modele-rapide, reasoning: medium}
+  lead:    {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
+  host:    {provider: azure, deployment: gpt-5.6-luna, reasoning: medium}
+  logs:    {provider: azure, deployment: gpt-5.6-luna, reasoning: medium}
 providers:
   azure:  {adapter: azure_openai, endpoint: https://<ressource>.openai.azure.com,
            auth: entra_id, api_version: <version>}
   replay: {adapter: replay, runs_dir: runs/}
-fallbacks:
-  lead: [{provider: azure, deployment: modele-rapide}]
+# Un second déploiement (plus rapide) pourra être ajouté pour les sous-agents
+# et servir de repli : fallbacks: {lead: [{provider: azure, deployment: <autre>}]}
 ```
 
 **Règles pour rester agnostique**
@@ -542,7 +542,7 @@ Le modèle est consommé via Azure OpenAI, dans le tenant Microsoft de l'entrepr
 | Accès | Ressource Azure OpenAI existante, appelée par le SDK officiel `openai` (client Azure) | Nom de la ressource et région |
 | Authentification | Identité managée ou principal de service Entra ID pour l'orchestrateur, pas de clé d'API en clair | Identité à créer pour l'agent |
 | Réseau | Point de terminaison privé depuis le SI, accès public désactivé sur la ressource | Faisabilité avec l'équipe réseau |
-| Modèles | Deux déploiements : le modèle le plus capable disponible pour l'agent principal, un modèle plus rapide et moins cher pour les sous-agents | Modèles déployés et quotas |
+| Modèles | GPT-5.6 Luna, le modèle déployé aujourd'hui, pour l'agent principal et les sous-agents en V1 ; un second déploiement plus rapide pour les sous-agents pourra être ajouté si les quotas ou la latence l'exigent | Modèles déployés et quotas |
 | Sortie structurée | Schéma JSON strict sur les appels d'outils et les rapports, quand le modèle le supporte | Support par les déploiements retenus |
 | Quotas | Plafond de tokens par minute par déploiement ; l'orchestrateur limite le nombre de sous-agents simultanés en conséquence | Quotas alloués |
 | Données | Conditions de traitement et de rétention du contrat Microsoft, filtrage de contenu Azure activé par défaut | Validation par la sécurité |
@@ -571,7 +571,7 @@ Grâce à la couche LLM agnostique, d'autres modèles disponibles dans le même 
 
 La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 
-1. **Socle** : branchement Azure OpenAI (identité de service, point de terminaison privé, deux déploiements), catalogue (3 sources : incidents, changes, CMDB), `mcp-catalog` et `mcp-elk`, couche LLM avec adaptateurs `azure_openai` et `replay`, agent principal seul, journalisation fichier complète. Critère de sortie : réponses justes à 20 questions simples de référence.
+1. **Socle** : branchement Azure OpenAI (identité de service, point de terminaison privé, déploiement GPT-5.6 Luna), catalogue (3 sources : incidents, changes, CMDB), `mcp-catalog` et `mcp-elk`, couche LLM avec adaptateurs `azure_openai` et `replay`, agent principal seul, journalisation fichier complète. Critère de sortie : réponses justes à 20 questions simples de référence.
 2. **Multi-agents et interface** : `spawn_subagent`, rôles `host`, `logs`, `metrics`, `events`, rapports structurés, consolidation ; interface web avec conversation, graphe d'investigation, chronologie et arrêt d'agent ; authentification par table d'utilisateurs interne avec les rôles Opérateur et Administrateur. Critère de sortie : cause correcte sur une majorité d'un jeu de 20 incidents passés.
 3. **Actions proposées et rôles complets** : `propose_action`, lien vers les runbooks, écran de revue des actions ; rôles Lecteur, Superviseur et Auditeur, journal d'accès ; signaux de détection (blocage, boucle, budget).
 4. **Industrialisation** : ensemble des sources au catalogue, comparaison de plusieurs déploiements sur le jeu d'évaluation, branchement sur l'annuaire d'entreprise (OIDC), périmètres de données par utilisateur, suivi des quotas et des coûts Azure, archivage. L'exécution d'actions avec validation humaine fera l'objet d'un document séparé.
@@ -584,7 +584,7 @@ La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 - [x] Canal de la V1 : interface web dédiée (décidé le 7 octobre 2026).
 - [x] Fiches du catalogue : rédigées par l'équipe de l'agent, validées par l'équipe propriétaire de chaque source (décidé le 7 octobre 2026).
 - [x] Plateforme LLM : Azure OpenAI déjà accessible, authentification en place (confirmé le 7 octobre 2026).
-- [ ] Quels modèles sont déployés dans la ressource Azure OpenAI, et avec quels quotas de tokens par minute ?
+- [ ] Modèle Azure OpenAI : GPT-5.6 Luna (confirmé le 7 octobre 2026). Reste à connaître le quota de tokens par minute du déploiement.
 - [ ] Quels outils de métriques exactement, et quel périmètre couvre chacun ?
 
 * [x] Authentification : table d'utilisateurs interne pour commencer, annuaire d'entreprise plus tard (décidé le 7 octobre 2026).
