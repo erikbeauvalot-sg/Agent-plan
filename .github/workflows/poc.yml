@@ -1,0 +1,22 @@
+name: POC
+
+on:
+  push:
+    branches: [main]
+    paths: ["poc/**", ".github/workflows/poc.yml"]
+  pull_request:
+    paths: ["poc/**", ".github/workflows/poc.yml"]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: poc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: python -m pytest -q

@@ -1,0 +1,30 @@
+[
+  {
+    "number": "CHG0034567",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-10-06T21:45:00Z",
+    "end": "2026-10-06T21:55:00Z",
+    "ci": {
+      "hostname": "db-pay-02",
+      "id": "CI0012400"
+    },
+    "service": "PAY",
+    "short_description": "Tuning mémoire PostgreSQL : max_connections 500 -> 200",
+    "implementer": "équipe Bases de données"
+  },
+  {
+    "number": "CHG0034550",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-10-06T10:00:00Z",
+    "end": "2026-10-06T10:20:00Z",
+    "ci": {
+      "hostname": "srv-web-03",
+      "id": "CI0013001"
+    },
+    "service": "WEB",
+    "short_description": "Mise à jour du certificat TLS du portail",
+    "implementer": "équipe Portail"
+  }
+]

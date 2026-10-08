@@ -1,0 +1,26 @@
+[
+  {
+    "@timestamp": "2026-10-06T22:12:00Z",
+    "host": "srv-pay-01",
+    "severity": "major",
+    "check": "http.latency_p95",
+    "message": "Latence p95 > 2000 ms (valeur 3450 ms)",
+    "status": "open"
+  },
+  {
+    "@timestamp": "2026-10-06T22:15:00Z",
+    "host": "db-pay-02",
+    "severity": "major",
+    "check": "db.connections_pct",
+    "message": "Connexions actives à 100 % de max_connections (200/200)",
+    "status": "open"
+  },
+  {
+    "@timestamp": "2026-10-06T03:00:00Z",
+    "host": "srv-web-03",
+    "severity": "minor",
+    "check": "disk.used_pct",
+    "message": "Disque /data à 82 %",
+    "status": "closed"
+  }
+]

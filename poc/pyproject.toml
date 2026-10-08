@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diagagent"
+version = "0.1.0"
+description = "POC de l'agent IA de diagnostic de production"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=2.2,<3",
+  "openai>=1.60",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+azure = ["azure-identity>=1.17"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+diagagent = "diagagent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

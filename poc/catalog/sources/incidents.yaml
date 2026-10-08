@@ -1,0 +1,22 @@
+id: incidents
+kind: documents
+description: >
+  Tickets d'incident ITSM. Un document par ticket avec son statut courant.
+  À utiliser pour savoir si un problème est déjà connu, son historique et sa résolution.
+backend: {type: file, path: demo_data/incidents.json}   # POC : fichier ; cible : cluster ELK
+time_field: opened_at
+entity_keys: {host: affected_ci.hostname, ci: affected_ci.id, service: business_service}
+fields:
+  number: {type: keyword, desc: "Numéro INCxxxxxxx"}
+  priority: {type: keyword, values: [P1, P2, P3, P4]}
+  state: {type: keyword, values: [New, In Progress, Resolved, Closed]}
+  short_description: {type: text}
+  assignment_group: {type: keyword}
+  resolution: {type: text}
+example_queries:
+  - question: "Incidents ouverts sur un host"
+    search: {filters: {affected_ci.hostname: "{host}"}, time_range: "30 derniers jours"}
+retention: 2 ans
+freshness: 5 min
+limits: {max_hits: 200, exclude_fields: [caller_email]}
+owner: équipe ITSM

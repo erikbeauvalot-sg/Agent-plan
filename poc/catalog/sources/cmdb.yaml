@@ -1,0 +1,14 @@
+id: cmdb
+kind: cmdb
+description: >
+  CMDB : un document par CI (serveur, base, répartiteur) avec son service, son équipe
+  propriétaire et ses dépendances. Interroger via les outils get_ci et get_dependencies.
+backend: {type: file, path: demo_data/cmdb.json}
+entity_keys: {host: hostname, ci: ci_id, service: service}
+fields:
+  ci_id: {type: keyword}
+  hostname: {type: keyword}
+  type: {type: keyword}
+  owner_team: {type: keyword}
+  depends_on: {type: keyword, desc: "Liste des ci_id dont dépend ce CI"}
+owner: équipe ITSM
