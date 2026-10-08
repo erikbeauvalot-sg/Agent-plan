@@ -135,3 +135,12 @@ def test_resolve_entity_finds_monitored_host_without_cmdb(home_monitoring):
     data = _call("resolve_entity", {"name": "nas"})
     assert data["found"] and data["cis"] == []
     assert {"source": "metrics-prometheus", "host": "nas.maison"} in data["monitored_hosts"]
+
+
+def test_home_mode_offers_only_roles_with_sources(home_monitoring, tmp_path):
+    from diagagent.orchestrator import Investigation
+    from diagagent.runlog import RunLog
+
+    async def fn(hub):
+        return set(Investigation("Q", hub, RunLog(tmp_path, "Q", "t"), lambda r: None, {}).roles)
+    assert _run(fn) == {"host", "metrics", "events", "generic"}

@@ -1,0 +1,10 @@
+role: host
+description: >
+  Fiche d'un host ou d'un CI : CMDB, dépendances, propriétaires, état de collecte, incidents
+  et changements récents qui le concernent.
+servers: [mcp-catalog, mcp-cmdb, mcp-elk, mcp-metrics]
+budget: {max_tool_calls: 12, max_turns: 16}
+system: |
+  Tu établis la fiche d'identité d'un host : ce qu'il est, de quoi il dépend, qui en dépend, à qui il
+  appartient, s'il est bien supervisé (cible Prometheus joignable), et ce qui lui est arrivé
+  récemment (incidents, changements). Tu ne cherches pas dans les logs ni les métriques détaillées.

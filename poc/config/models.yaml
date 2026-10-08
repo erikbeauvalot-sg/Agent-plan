@@ -1,9 +1,11 @@
 # Choix du modèle par rôle d'agent : changer de fournisseur = changer ces lignes.
-# Le rôle "lead" est utilisé dès l'étape 1 ; les sous-agents arrivent à l'étape 2.
+# Un rôle de sous-agent absent (host, logs, metrics, events, changes, generic) prend "subagent".
 roles:
-  lead:    {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
+  lead:     {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
+  subagent: {provider: azure, deployment: gpt-5.6-luna, reasoning: medium}
   # Alternative locale, par exemple Ollama :
-  # lead:  {provider: local, model: qwen3:14b}
+  # lead:     {provider: local, model: qwen3:14b}
+  # subagent: {provider: local, model: qwen3:14b}
 
 providers:
   azure:

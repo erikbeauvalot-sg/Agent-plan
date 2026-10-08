@@ -19,7 +19,8 @@ from .base import (  # noqa: F401
 
 def make_provider(models_cfg: dict[str, Any], role: str) -> tuple[LLMProvider, dict[str, Any]]:
     """Construit le fournisseur configuré pour un rôle d'agent (config/models.yaml)."""
-    role_cfg = models_cfg["roles"][role]
+    roles = models_cfg["roles"]
+    role_cfg = roles.get(role) or roles.get("subagent") or roles["lead"]
     provider_cfg = models_cfg["providers"][role_cfg["provider"]]
     adapter = provider_cfg["adapter"]
     if adapter == "azure_openai":

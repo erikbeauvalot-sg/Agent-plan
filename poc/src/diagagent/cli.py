@@ -9,11 +9,12 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from . import catalog
-from .agent import Budget, run_agent
+from .orchestrator import Investigation, ProviderFactory, usage_total
 from .llm import LLMRequest, Message, make_provider
 from .runlog import RunLog
 from .tools import ToolHub
@@ -23,26 +24,28 @@ def _load(name: str) -> dict:
     return yaml.safe_load((catalog.home() / "config" / name).read_text(encoding="utf-8"))
 
 
-def lead_system_prompt() -> str:
-    template = (catalog.home() / "prompts" / "lead.md").read_text(encoding="utf-8")
-    return template.format(now=catalog.now().strftime("%Y-%m-%dT%H:%M:%SZ"), catalog=catalog.catalog_summary())
-
-
-async def ask(question: str, provider=None, role_cfg: dict | None = None) -> tuple[RunLog, str, str]:
+async def ask(question: str, providers: ProviderFactory | None = None) -> tuple[RunLog, str, str]:
     poc = _load("poc.yaml")
-    if provider is None:
-        provider, role_cfg = make_provider(_load("models.yaml"), "lead")
-    role_cfg = role_cfg or {}
+    if providers is None:
+        models = _load("models.yaml")
+        cache: dict[str, Any] = {}
+
+        def providers(role: str):
+            if role not in cache:
+                cache[role] = make_provider(models, role)
+            return cache[role]
+    lead, lead_cfg = providers("lead")
     log = RunLog(catalog.home() / poc.get("runs_dir", "runs"), question, getpass.getuser(),
-                 {"models": {"lead": {"provider": provider.name,
-                                      "model": role_cfg.get("deployment") or role_cfg.get("model")}},
+                 {"models": {"lead": {"provider": lead.name,
+                                      "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
                   "reference_time": catalog.now().isoformat()})
     async with ToolHub(poc["mcp_servers"]) as hub:
-        result = await run_agent(agent_id="lead", provider=provider, system=lead_system_prompt(),
-                                 user_message=question, tools=hub.tools_for(None), hub=hub, log=log,
-                                 budget=Budget(**poc.get("budgets", {}).get("lead", {})),
-                                 reasoning=role_cfg.get("reasoning"))
-    log.finish(result.status, result.answer, result.usage)
+        investigation = Investigation(question, hub, log, providers, poc)
+        result = await investigation.run()
+    log.manifest["subagents"] = {t: {"role": s.role, "status": s.status,
+                                     "report_status": (s.report or {}).get("status")}
+                                 for t, s in investigation.subagents.items()}
+    log.finish(result.status, result.answer, usage_total(result, investigation.subagents, log.dir))
     return log, result.status, result.answer
 
 
