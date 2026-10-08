@@ -14,6 +14,7 @@ from typing import Any, Callable
 import yaml
 
 from . import catalog
+from .evaluation import replay_run, run_eval
 from .orchestrator import Investigation, ProviderFactory, usage_total
 from .llm import LLMRequest, Message, make_provider
 from .runlog import RunLog
@@ -71,6 +72,30 @@ def check_model() -> None:
     print(f"OK : {provider.name} / {resp.model}, arrêt={resp.stop_reason}, réponse={resp.text!r}")
 
 
+def print_eval(report: dict[str, Any]) -> bool:
+    for r in report["results"]:
+        mark = "OK  " if r["passed"] else "ÉCHEC"
+        print(f"{mark} {r['id']:<22} {r['duration_s']:>6} s  {sum(r['usage'].values()):>7} tokens  {r['run_id']}")
+        for c in r["checks"]:
+            if not c["ok"]:
+                print(f"       ✗ {c['check']}" + (f" ({c['detail']})" if "detail" in c else ""))
+    s = report["summary"]
+    print(f"\n{s['passed']}/{s['cases']} cas réussis · {s['tokens']} tokens · rapport : {report['path']}")
+    return s["passed"] == s["cases"]
+
+
+def print_replay(result: dict[str, Any]) -> bool:
+    print(f"Rejeu de {result['original']} -> {result['replay']} : statut {result['status']} "
+          f"(origine : {result['original_status']})")
+    for d in result["differences"]:
+        print(f"  ≠ {d['ref']} : {d['difference']}")
+    if result["unused_responses"]:
+        print(f"  Réponses enregistrées non utilisées : {result['unused_responses']}")
+    same = not result["differences"] and not result["unused_responses"]
+    print("Identique à l'investigation d'origine." if same else "Le rejeu diverge de l'origine.")
+    return same
+
+
 def serve(host: str, port: int) -> None:
     import uvicorn
 
@@ -106,6 +131,11 @@ def main(argv: list[str] | None = None) -> None:
     p_ask.add_argument("question")
     sub.add_parser("tools", help="Lister les outils exposés par les serveurs MCP")
     sub.add_parser("check", help="Vérifier la connexion au modèle")
+    p_eval = sub.add_parser("eval", help="Jouer un jeu d'évaluation avec le modèle configuré")
+    p_eval.add_argument("--cases", default="eval/cases.yaml")
+    p_eval.add_argument("--only", action="append", help="Identifiant de cas (répétable)")
+    p_replay = sub.add_parser("replay", help="Rejouer une investigation sans appeler le modèle")
+    p_replay.add_argument("run_id")
     p_serve = sub.add_parser("serve", help="Lancer l'interface web")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8080)
@@ -124,6 +154,10 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(list_tools())
     elif args.cmd == "check":
         check_model()
+    elif args.cmd == "eval":
+        sys.exit(0 if print_eval(asyncio.run(run_eval(catalog.home() / args.cases, only=args.only))) else 1)
+    elif args.cmd == "replay":
+        sys.exit(0 if print_replay(asyncio.run(replay_run(args.run_id))) else 1)
     elif args.cmd == "serve":
         serve(args.host, args.port)
     elif args.cmd == "user":

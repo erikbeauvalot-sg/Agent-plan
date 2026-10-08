@@ -148,8 +148,23 @@ function renderSummary(data) {
   $("stop-run").hidden = !data.can_stop;
   $("answer").innerHTML = data.analysis ? md(data.analysis) : "L'analyse s'affichera ici à la fin de l'investigation.";
   $("answer").classList.toggle("muted", !data.analysis);
+  renderActions(data.actions || []);
   $("plan-box").hidden = !data.plan;
   $("plan").innerHTML = md(data.plan || "");
+}
+
+function renderActions(actions) {
+  $("actions-box").hidden = !actions.length;
+  $("actions").innerHTML = actions.map((a) => `
+    <article class="action">
+      <header><strong>${esc(a.id)} · ${esc(a.title)}</strong><span class="risk ${esc(a.risk)}">risque ${esc(a.risk)}</span></header>
+      <p class="muted">${esc(a.type)} · ${esc(a.target)}${a.requires_change ? " · passe par un changement" : ""}</p>
+      <div class="md">${md(a.rationale)}</div>
+      <p class="refs">${(a.evidence || []).map((r) => md(`[${r}]`).replace(/<\/?p>/g, "")).join(" ")}</p>
+      <details><summary>Procédure et retour arrière</summary>
+        <div class="md">${md(a.procedure)}</div><h3>Retour arrière</h3><div class="md">${md(a.rollback)}</div>
+        ${a.risk_explanation ? `<p class="muted">${esc(a.risk_explanation)}</p>` : ""}</details>
+    </article>`).join("");
 }
 
 function statusLabel(s) {
@@ -198,6 +213,7 @@ function apply(e) {
       else Object.values(current.agents).forEach((x) => { if (x.status === "running") x.status = "stopping"; });
       break;
     case "report_submitted": a.report = d.status; break;
+    case "action_proposed": scheduleSummary(); break;
     case "agent_ended": a.status = d.status; a.end = ts; break;
     case "run_failed": a.status = "failed"; a.end = ts; break;
   }
@@ -216,6 +232,15 @@ function signals(a, now) {
 }
 
 // ---- Rendu
+
+let summaryTimer = null;
+function scheduleSummary() {
+  clearTimeout(summaryTimer);
+  const runId = current.runId;
+  summaryTimer = setTimeout(async () => {
+    if (current?.runId === runId) renderSummary(await api(`/api/runs/${runId}`));
+  }, 300);
+}
 
 let pending = false;
 function scheduleRender() {

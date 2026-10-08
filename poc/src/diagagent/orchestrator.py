@@ -54,6 +54,42 @@ REPORT_SCHEMA: dict[str, Any] = {
 }
 
 
+ACTION_TYPES = ("diagnostic complémentaire", "remédiation", "contournement", "ouverture de ticket")
+RISKS = ("faible", "moyen", "élevé")
+
+ACTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "description": "Action en une phrase, à l'infinitif"},
+        "target": {"type": "string", "description": "Host, CI ou service visé"},
+        "type": {"type": "string", "enum": list(ACTION_TYPES)},
+        "rationale": {"type": "string", "description": "Pourquoi cette action, d'après les faits"},
+        "evidence": {"type": "array", "items": {"type": "string"},
+                     "description": "query_ref des appels qui justifient l'action"},
+        "risk": {"type": "string", "enum": list(RISKS)},
+        "risk_explanation": {"type": "string"},
+        "procedure": {"type": "string", "description": "Étapes manuelles ou référence de runbook"},
+        "rollback": {"type": "string", "description": "Comment revenir en arrière"},
+        "requires_change": {"type": "boolean", "description": "Passe par la gestion des changements"},
+    },
+    "required": ["title", "target", "type", "rationale", "evidence", "risk", "procedure", "rollback",
+                 "requires_change"],
+}
+
+
+def validate_action(action: dict[str, Any]) -> dict[str, Any]:
+    missing = [k for k in ACTION_SCHEMA["required"] if action.get(k) in (None, "", [])]
+    if missing:
+        raise LocalToolError(f"Champs manquants : {', '.join(missing)}")
+    if action["type"] not in ACTION_TYPES:
+        raise LocalToolError(f"type doit valoir : {', '.join(ACTION_TYPES)}")
+    if action["risk"] not in RISKS:
+        raise LocalToolError(f"risk doit valoir : {', '.join(RISKS)}")
+    if not isinstance(action["evidence"], list):
+        raise LocalToolError("evidence doit être une liste de query_ref")
+    return {k: action[k] for k in ACTION_SCHEMA["properties"] if k in action}
+
+
 @dataclass
 class Role:
     name: str
@@ -201,7 +237,23 @@ class Investigation:
                 "et rend leurs rapports.",
                 {"type": "object", "properties": {"task_ids": {"type": "array", "items": {"type": "string"}}}}),
                 self._wait),
+            "propose_action": LocalTool(ToolSpec(
+                "propose_action",
+                "Enregistre une action proposée dans actions.json. L'action n'est jamais exécutée : elle est "
+                "présentée à un humain avec sa justification et ses preuves. Une action par appel.",
+                ACTION_SCHEMA), self._propose_action),
         }
+
+    async def _propose_action(self, args: dict[str, Any]) -> str:
+        action = validate_action(dict(args))
+        path = self.log.dir / "actions.json"
+        actions = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        action = {"id": f"A{len(actions) + 1:02d}", "status": "proposed", **action}
+        actions.append(action)
+        path.write_text(json.dumps(actions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.log.event("lead", "action_proposed", {"id": action["id"], "title": action["title"],
+                                                   "risk": action["risk"]})
+        return json.dumps({"id": action["id"], "status": "proposed, non exécutée"}, ensure_ascii=False)
 
     async def _write_plan(self, args: dict[str, Any]) -> str:
         (self.log.dir / "plan.md").write_text(args["markdown"].rstrip() + "\n", encoding="utf-8")
