@@ -137,6 +137,26 @@ def field_value(doc: dict[str, Any], dotted: str) -> Any:
     return value
 
 
+def _field_paths(doc: dict[str, Any], prefix: str = "") -> set[str]:
+    paths = set()
+    for k, v in doc.items():
+        paths.add(prefix + k)
+        if isinstance(v, dict):
+            paths |= _field_paths(v, f"{prefix}{k}.")
+    return paths
+
+
+def _check_fields(source_id: str, fields: list[str]) -> None:
+    """Refuse un champ absent de la source : un filtre sur un champ inconnu renverrait 0 résultat
+    sans erreur, et le modèle conclurait à tort qu'il n'y a rien (ex. affected_ci.hostname sur changes)."""
+    known = set().union(*(_field_paths(d) for d in rows(source_id)))
+    known -= set(get_source(source_id).get("limits", {}).get("exclude_fields", []))
+    unknown = [f for f in fields if f not in known]
+    if unknown:
+        raise ValueError(f"Champ(s) inconnu(s) dans la source {source_id} : {', '.join(unknown)}. "
+                         f"Champs disponibles : {', '.join(sorted(known))}")
+
+
 def _clean(doc: dict[str, Any], exclude: list[str]) -> dict[str, Any]:
     """Masquage côté serveur et troncature des champs longs."""
     out = {}
@@ -171,6 +191,7 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     limits = card.get("limits", {})
     size = max(1, min(size, limits.get("max_hits", DEFAULT_MAX_HITS)))
     time_field = card.get("time_field")
+    _check_fields(source_id, list(filters or {}))
     hits = [d for d in rows(source_id) if _matches(d, filters, text)]
     window = None
     if time_field:
@@ -194,6 +215,7 @@ def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
               time_from: str | None = None, time_to: str | None = None, top: int = 10) -> dict[str, Any]:
     card = get_source(source_id)
     time_field = card.get("time_field")
+    _check_fields(source_id, [field, *(filters or {})])
     docs = [d for d in rows(source_id) if _matches(d, filters, None)]
     window = None
     if time_field:
