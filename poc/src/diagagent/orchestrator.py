@@ -125,21 +125,32 @@ class Investigation:
 
     # Pilotage (utilisé par l'interface web à l'étape 3)
 
-    def stop_agent(self, agent_id: str) -> bool:
+    def stop_agent(self, agent_id: str, by: str | None = None) -> bool:
+        """Arrêt propre : un sous-agent rend un rapport partiel ; "lead" arrête toute l'investigation,
+        l'agent principal produisant une synthèse partielle."""
         if agent_id == "lead":
-            self.stop_all()
+            self.log.event("lead", "stop_requested", {"by": by, "scope": "investigation"})
+            for sub in self.subagents.values():
+                if sub.status == "running":
+                    sub.cancel.wrap_up()
+            self.lead_cancel.wrap_up()
             return True
         sub = self.subagents.get(agent_id)
         if sub is None or sub.status != "running":
             return False
-        sub.cancel.cancel()
-        self.log.event(agent_id, "stop_requested", {})
+        self.log.event(agent_id, "stop_requested", {"by": by, "scope": "agent"}, parent_id="lead")
+        sub.cancel.wrap_up()
         return True
 
-    def stop_all(self) -> None:
+    def kill(self, by: str | None = None) -> None:
+        """Arrêt immédiat, sans synthèse (un agent surcharge une source)."""
+        self.log.event("lead", "stop_requested", {"by": by, "scope": "kill"})
         self.lead_cancel.cancel()
         for sub in self.subagents.values():
             sub.cancel.cancel()
+
+    def stop_all(self) -> None:
+        self.kill()
 
     # Agent principal
 

@@ -3,3 +3,5 @@ runs/
 *.egg-info/
 __pycache__/
 .env
+auth/users.yaml
+audit/

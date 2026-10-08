@@ -21,6 +21,11 @@ def home() -> Path:
     return Path(os.environ.get("DIAGAGENT_HOME", Path.cwd())).resolve()
 
 
+def runs_dir(poc_cfg: dict[str, Any]) -> Path:
+    """Dossier des traces : DIAGAGENT_RUNS_DIR, sinon runs_dir de config/poc.yaml relatif à la racine."""
+    return Path(os.environ.get("DIAGAGENT_RUNS_DIR") or home() / poc_cfg.get("runs_dir", "runs"))
+
+
 def now() -> datetime:
     """Heure de référence ; DIAGAGENT_NOW la fige pour rejouer le scénario de démonstration."""
     fixed = os.environ.get("DIAGAGENT_NOW")

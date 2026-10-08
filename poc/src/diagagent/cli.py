@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -24,23 +24,32 @@ def _load(name: str) -> dict:
     return yaml.safe_load((catalog.home() / "config" / name).read_text(encoding="utf-8"))
 
 
-async def ask(question: str, providers: ProviderFactory | None = None) -> tuple[RunLog, str, str]:
-    poc = _load("poc.yaml")
-    if providers is None:
-        models = _load("models.yaml")
-        cache: dict[str, Any] = {}
+def default_providers() -> ProviderFactory:
+    models = _load("models.yaml")
+    cache: dict[str, Any] = {}
 
-        def providers(role: str):
-            if role not in cache:
-                cache[role] = make_provider(models, role)
-            return cache[role]
+    def providers(role: str):
+        if role not in cache:
+            cache[role] = make_provider(models, role)
+        return cache[role]
+    return providers
+
+
+async def ask(question: str, providers: ProviderFactory | None = None, user: str | None = None,
+              on_started: Callable[[RunLog, Investigation], None] | None = None) -> tuple[RunLog, str, str]:
+    """Une investigation complète. on_started est appelé dès que l'investigation est pilotable
+    (utilisé par la passerelle web pour l'arrêt)."""
+    poc = _load("poc.yaml")
+    providers = providers or default_providers()
     lead, lead_cfg = providers("lead")
-    log = RunLog(catalog.home() / poc.get("runs_dir", "runs"), question, getpass.getuser(),
+    log = RunLog(catalog.runs_dir(poc), question, user or getpass.getuser(),
                  {"models": {"lead": {"provider": lead.name,
                                       "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
                   "reference_time": catalog.now().isoformat()})
     async with ToolHub(poc["mcp_servers"]) as hub:
         investigation = Investigation(question, hub, log, providers, poc)
+        if on_started:
+            on_started(log, investigation)
         result = await investigation.run()
     log.manifest["subagents"] = {t: {"role": s.role, "status": s.status,
                                      "report_status": (s.report or {}).get("status")}
@@ -62,6 +71,32 @@ def check_model() -> None:
     print(f"OK : {provider.name} / {resp.model}, arrêt={resp.stop_reason}, réponse={resp.text!r}")
 
 
+def serve(host: str, port: int) -> None:
+    import uvicorn
+
+    from .web.app import create_app
+    from .web.auth import FileUserStore
+
+    if not FileUserStore().path.exists():
+        sys.exit("Aucun utilisateur : crée d'abord un compte avec "
+                 "diagagent user add <login> --role administrateur")
+    print(f"Interface : http://{host}:{port}", file=sys.stderr)
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+
+
+def add_user(login: str, roles: list[str], name: str | None) -> None:
+    from .web.auth import AuthError, FileUserStore
+
+    password = getpass.getpass("Mot de passe (12 caractères minimum) : ")
+    if password != getpass.getpass("Confirmation : "):
+        sys.exit("Les mots de passe diffèrent")
+    try:
+        user = FileUserStore().add(login, password, roles, name)
+    except AuthError as e:
+        sys.exit(str(e))
+    print(f"Utilisateur {user.login} ({', '.join(user.roles)}) créé dans auth/users.yaml")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="diagagent", description="POC de l'agent de diagnostic")
     parser.add_argument("--home", help="Racine du POC (catalog/, config/, runs/) ; défaut : dossier courant")
@@ -71,6 +106,14 @@ def main(argv: list[str] | None = None) -> None:
     p_ask.add_argument("question")
     sub.add_parser("tools", help="Lister les outils exposés par les serveurs MCP")
     sub.add_parser("check", help="Vérifier la connexion au modèle")
+    p_serve = sub.add_parser("serve", help="Lancer l'interface web")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8080)
+    p_user = sub.add_parser("user", help="Gérer la table d'utilisateurs (auth/users.yaml)")
+    p_user.add_argument("action", choices=["add"])
+    p_user.add_argument("login")
+    p_user.add_argument("--role", action="append", required=True, choices=["operateur", "administrateur"])
+    p_user.add_argument("--name", help="Nom affiché")
     args = parser.parse_args(argv)
     if args.home:
         os.environ["DIAGAGENT_HOME"] = str(Path(args.home).resolve())
@@ -81,6 +124,10 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(list_tools())
     elif args.cmd == "check":
         check_model()
+    elif args.cmd == "serve":
+        serve(args.host, args.port)
+    elif args.cmd == "user":
+        add_user(args.login, args.role, args.name)
     else:
         log, status, answer = asyncio.run(ask(args.question))
         print(answer)

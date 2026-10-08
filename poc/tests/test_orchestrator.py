@@ -129,7 +129,10 @@ def test_stop_agent_ends_subagent_with_partial_report(tmp_path):
                 tools(call("wait_subagents", {})),
                 answer("fin"),
             ])
-            metrics = ScriptedProvider([stop_then_continue])
+            metrics = ScriptedProvider([stop_then_continue, tools(call("submit_report", {
+                "status": "partial", "summary": "Arrêté après list_metrics",
+                "findings": [{"fact": "f", "evidence": ["subagents/T01-metrics-srv-pay-01/calls/0001.json"],
+                              "confidence": "low"}]}))])
             inv = Investigation("Q", hub, log, by_role(lead=lead, metrics=metrics),
                                 {"budgets": {}, "orchestration": {}})
             holder["inv"] = inv
