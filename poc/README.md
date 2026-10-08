@@ -57,6 +57,10 @@ pip install -e '.[claude]'
 export ANTHROPIC_API_KEY=sk-ant-...   # clé créée sur platform.claude.com (ou `ant auth login`)
 ```
 
+La clé peut aussi aller dans `poc/.env` (`ANTHROPIC_API_KEY=sk-ant-...`), ignoré par git : la commande
+`diagagent` charge ce fichier au démarrage sans écraser une variable déjà exportée. PROMETHEUS_URL
+et ALERTMANAGER_URL peuvent y figurer aussi.
+
 Dans `config/models.yaml`, remplacer les deux lignes `lead` et `subagent` par les lignes Claude
 commentées (`provider: claude, model: claude-opus-5-5`), puis lancer `diagagent check`.
 `reasoning` règle l'effort de Claude (`low`, `medium`, `high`) ; la réflexion adaptative reste active.

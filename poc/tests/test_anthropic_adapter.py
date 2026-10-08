@@ -132,3 +132,16 @@ def test_investigation_runs_through_the_claude_adapter(tmp_path, monkeypatch):
     assert second[1]["content"][0] == THINKING
     assert second[2]["content"][0]["tool_use_id"] == "toolu_1"
     assert "CI0012345" in second[2]["content"][0]["content"]
+
+
+def test_dotenv_is_loaded_without_overriding(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("# clés du POC\nANTHROPIC_API_KEY='sk-ant-test'\n"
+                                   "export PROMETHEUS_URL=http://192.168.1.15:9090\nDIAGAGENT_DEMO=1\n")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("PROMETHEUS_URL", raising=False)
+    monkeypatch.setenv("DIAGAGENT_DEMO", "0")
+    cli.load_dotenv(tmp_path / ".env")
+    import os
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-test"
+    assert os.environ["PROMETHEUS_URL"] == "http://192.168.1.15:9090"
+    assert os.environ["DIAGAGENT_DEMO"] == "0"
