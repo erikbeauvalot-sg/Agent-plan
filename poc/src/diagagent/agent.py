@@ -104,7 +104,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             break
         result.usage["input_tokens"] += response.usage.input_tokens
         result.usage["output_tokens"] += response.usage.output_tokens
-        messages.append(Message("assistant", response.text, response.tool_calls))
+        messages.append(Message("assistant", response.text, response.tool_calls, native=response.native))
 
         if response.stop_reason == "refusal":
             result.status = "failed"

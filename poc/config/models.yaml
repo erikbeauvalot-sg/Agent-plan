@@ -6,6 +6,9 @@ roles:
   # Alternative locale, par exemple Ollama :
   # lead:     {provider: local, model: qwen3:14b}
   # subagent: {provider: local, model: qwen3:14b}
+  # Claude, pour le POC à la maison uniquement (jamais avec des données de production) :
+  # lead:     {provider: claude, model: claude-opus-5-5, reasoning: high}
+  # subagent: {provider: claude, model: claude-opus-5-5, reasoning: medium}
 
 providers:
   azure:
@@ -16,3 +19,7 @@ providers:
   local:
     adapter: openai_compatible
     base_url: http://localhost:11434/v1     # Ollama ; vLLM : http://localhost:8000/v1
+  claude:
+    adapter: anthropic                      # clé lue dans ANTHROPIC_API_KEY (ou profil `ant auth login`)
+    max_tokens: 16000                       # plancher par réponse, réflexion comprise
+    fallbacks: default                      # relance un refus de filtre sur le modèle de repli recommandé

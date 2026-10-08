@@ -22,6 +22,9 @@ class Message:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_call_id: str | None = None
+    # Contenu natif d'un tour assistant, renvoyé tel quel par l'adaptateur qui l'a produit
+    # (Claude exige de recevoir ses blocs de réflexion inchangés). Ignoré par les autres adaptateurs.
+    native: Any = None
 
 
 @dataclass
@@ -55,6 +58,7 @@ class LLMResponse:
     model: str = ""
     request_id: str | None = None
     provider_raw: Any = None
+    native: Any = None
 
 
 @dataclass
