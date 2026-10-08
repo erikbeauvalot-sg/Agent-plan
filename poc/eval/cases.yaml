@@ -1,0 +1,39 @@
+# Jeu d'évaluation sur le scénario de démonstration (données de demo_data/).
+# Chaque cas est rejoué avec le modèle configuré ; les contrôles sont mécaniques et volontairement
+# simples : ils détectent une régression, ils ne remplacent pas une relecture humaine.
+#
+# Contrôles disponibles :
+#   must_mention      chaînes qui doivent apparaître dans la réponse (sans tenir compte de la casse)
+#   must_not_mention  chaînes interdites
+#   status            statuts acceptés (défaut : completed)
+#   min_subagents / max_subagents, min_actions, max_tool_errors
+defaults:
+  now: "2026-10-07T06:00:00Z"
+  demo: true
+
+cases:
+  - id: diag-paiement
+    question: "Pourquoi le service paiement est-il lent depuis hier soir ?"
+    must_mention: [CHG0034567, db-pay-02, max_connections]
+    min_subagents: 2
+    min_actions: 1
+
+  - id: incidents-ouverts
+    question: "Quels incidents sont ouverts sur srv-pay-01 ?"
+    must_mention: [INC0098765]
+    max_subagents: 0
+
+  - id: changements-db
+    question: "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
+    must_mention: [CHG0034567]
+    max_subagents: 1
+
+  - id: proprietaire-db
+    question: "Quelle équipe est responsable de db-pay-02 ?"
+    must_mention: ["équipe Bases de données"]
+    max_subagents: 0
+
+  - id: alertes-ouvertes
+    question: "Quelles alertes de supervision sont ouvertes en ce moment ?"
+    must_mention: [srv-pay-01, db-pay-02]
+    must_not_mention: ["srv-web-03"]

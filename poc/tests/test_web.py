@@ -91,7 +91,7 @@ def test_ask_stream_and_visibility(env):
     run_id = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H).json()["run_id"]
     data = wait_status(alice, run_id)
     assert data["manifest"]["status"] == "completed" and "CI0012345" in data["analysis"]
-    assert data["manifest"]["user"] == "alice" and data["can_stop"] is False
+    assert data["manifest"]["user"] == "alice" and data["can_stop"] is False and data["actions"] == []
 
     body = alice.get(f"/api/runs/{run_id}/events").text
     events = [json.loads(l[6:]) for l in body.splitlines() if l.startswith("data: {\"seq")]

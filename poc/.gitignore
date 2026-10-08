@@ -5,3 +5,5 @@ __pycache__/
 .env
 auth/users.yaml
 audit/
+eval/results/
+eval/cases-maison.yaml
