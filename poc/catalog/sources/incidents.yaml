@@ -1,5 +1,6 @@
 id: incidents
 kind: documents
+demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
   Tickets d'incident ITSM. Un document par ticket avec son statut courant.
   À utiliser pour savoir si un problème est déjà connu, son historique et sa résolution.

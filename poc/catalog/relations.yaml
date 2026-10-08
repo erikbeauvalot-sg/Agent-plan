@@ -6,6 +6,8 @@ host:
   events: host
   logs-applicatifs: host
   metrics-demo: host
+  metrics-prometheus: instance (sans le port)
+  alerts-alertmanager: instance (sans le port)
 ci:
   cmdb: ci_id
   incidents: affected_ci.id

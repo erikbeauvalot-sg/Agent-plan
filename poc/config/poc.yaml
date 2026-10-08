@@ -1,9 +1,12 @@
 # Serveurs MCP lancés par l'orchestrateur (sous-processus stdio, lecture seule).
+# demo: true      -> désactivé par DIAGAGENT_DEMO=0
+# requires_env    -> lancé seulement si ces variables sont définies
 mcp_servers:
   mcp-catalog: {module: diagagent.mcp_servers.catalog_server}
-  mcp-elk:     {module: diagagent.mcp_servers.elk_demo_server}
-  mcp-cmdb:    {module: diagagent.mcp_servers.cmdb_demo_server}
-  mcp-metrics: {module: diagagent.mcp_servers.metrics_demo_server}
+  mcp-elk:     {module: diagagent.mcp_servers.elk_demo_server, demo: true}
+  mcp-cmdb:    {module: diagagent.mcp_servers.cmdb_demo_server, demo: true}
+  mcp-metrics: {module: diagagent.mcp_servers.metrics_server}
+  mcp-alerts:  {module: diagagent.mcp_servers.alerts_server, requires_env: [ALERTMANAGER_URL]}
 
 budgets:
   lead: {max_tool_calls: 25, max_turns: 30}

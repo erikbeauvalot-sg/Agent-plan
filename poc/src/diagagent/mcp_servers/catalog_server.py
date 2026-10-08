@@ -7,6 +7,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from diagagent import catalog
+from diagagent.connectors import metrics
 from diagagent.mcp_servers.common import read_only_tool
 
 server = MCPServer("mcp-catalog", instructions="Catalogue des sources de données de production.")
@@ -31,22 +32,33 @@ def describe_source(id: str) -> dict[str, Any]:
 
 @read_only_tool(server)
 def resolve_entity(name: str) -> dict[str, Any]:
-    """Résout un nom libre (host, CI, service, alias métier) en entités connues de la CMDB."""
+    """Résout un nom libre (host, CI, service, alias métier) en entités connues : CMDB et hosts suivis
+    par les outils de métriques."""
     needle = name.strip().lower()
     services = catalog.load_yaml("glossary.yaml").get("services", {})
     matched_services = [code for code, s in services.items()
                         if needle == code.lower() or needle == s["name"].lower()
                         or any(needle == a.lower() or a.lower() in needle for a in s.get("aliases", []))]
-    cis = [ci for ci in catalog.rows("cmdb")
+    cmdb = catalog.rows("cmdb") if "cmdb" in catalog.load_catalog() else ()
+    cis = [ci for ci in cmdb
            if needle in (ci["hostname"].lower(), ci["ci_id"].lower(), ci["application"].lower())
            or ci["service"] in matched_services]
+    monitored = []
+    for backend in metrics.backends():
+        try:
+            hosts = backend.hosts()
+        except ValueError as e:
+            monitored.append({"source": backend.source_id, "error": str(e)})
+            continue
+        monitored += [{"source": backend.source_id, "host": h} for h in hosts if needle in h.lower()]
     return {
         "query": name,
         "services": [{"code": c, "name": services[c]["name"]} for c in matched_services],
         "cis": [{"ci_id": c["ci_id"], "hostname": c["hostname"], "type": c["type"], "service": c["service"]}
                 for c in cis],
+        "monitored_hosts": monitored,
         "ambiguous": len(cis) > 1 and not matched_services,
-        "found": bool(cis or matched_services),
+        "found": bool(cis or matched_services or any("host" in m for m in monitored)),
     }
 
 

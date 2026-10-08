@@ -1,5 +1,6 @@
 id: metrics-demo
 kind: metrics
+demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
   Séries de métriques à pas de 5 minutes (CPU, mémoire, latence HTTP, connexions base).
   Interroger via list_metrics et query_metric, qui renvoient un résumé et les ruptures détectées.

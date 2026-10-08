@@ -4,7 +4,14 @@ services:
   WEB: {name: Portail client, aliases: [portail, site web, portail client]}
   FRONT: {name: Front réseau, aliases: [front, répartiteur, load balancer]}
 metrics:
+  up: "Cible de collecte joignable (1) ou non (0)"
   cpu.usage: "Utilisation CPU en %"
+  load.1m: "Charge système moyenne sur 1 minute"
+  disk.used_pct: "Remplissage du système de fichiers le plus plein, en %"
+  disk.io_util_pct: "Occupation du disque le plus chargé, en %"
+  net.rx_bytes_s: "Débit réseau reçu, octets par seconde"
+  net.tx_bytes_s: "Débit réseau émis, octets par seconde"
+  net.errors_s: "Erreurs réseau par seconde"
   mem.used_pct: "Mémoire utilisée en %"
   http.latency_p95: "Latence HTTP au 95e centile en ms"
   db.connections: "Connexions actives sur la base"

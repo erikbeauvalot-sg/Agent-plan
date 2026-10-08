@@ -41,13 +41,35 @@ def time_window(time_from: str | None, time_to: str | None) -> tuple[datetime, d
     return start, end
 
 
+def demo_enabled() -> bool:
+    """Sources de démonstration actives sauf si DIAGAGENT_DEMO=0."""
+    return os.environ.get("DIAGAGENT_DEMO", "1") != "0"
+
+
+def enabled(entry: dict[str, Any]) -> bool:
+    """Une fiche ou un serveur est actif si ses variables d'environnement sont définies
+    (`requires_env`) et, pour une source de démonstration (`demo: true`), si le mode démo est actif."""
+    if entry.get("demo") and not demo_enabled():
+        return False
+    return all(os.environ.get(var) for var in entry.get("requires_env", []))
+
+
 @lru_cache(maxsize=1)
 def load_catalog() -> dict[str, dict[str, Any]]:
     sources = {}
     for path in sorted((home() / "catalog" / "sources").glob("*.yaml")):
         card = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not enabled(card):
+            continue
+        backend = card.get("backend", {})
+        if isinstance(backend.get("url"), str):
+            backend["url"] = os.path.expandvars(backend["url"]).rstrip("/")
         sources[card["id"]] = card
     return sources
+
+
+def sources_of_kind(kind: str) -> list[dict[str, Any]]:
+    return [c for c in load_catalog().values() if c.get("kind") == kind]
 
 
 @lru_cache(maxsize=None)
