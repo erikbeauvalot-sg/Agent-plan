@@ -12,6 +12,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
 | Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
+| Interface web | `src/diagagent/web/` | Passerelle FastAPI (connexion, rôles, flux temps réel, arrêt) et écran de suivi |
 | Traces | `src/diagagent/runlog.py` → `runs/` | Manifest, transcript, appels d'outils, événements, analyse |
 | Données de démo | `demo_data/` | Scénario : lenteurs du service Paiement la nuit du 6 octobre 2026 |
 
@@ -78,6 +79,32 @@ Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par 
 dans `agents/<rôle>.yaml` : prompt, serveurs MCP autorisés, budget. Un rôle sans source disponible
 n'est pas proposé (en mode maison, `logs` et `changes` disparaissent faute d'ELK). Le modèle des
 sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rôle.
+
+## Interface web
+
+```bash
+diagagent user add erik --role administrateur --name Erik     # demande le mot de passe (12 caractères min.)
+diagagent serve                                               # http://127.0.0.1:8080
+```
+
+Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
+`DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.
+
+- **Conversation** : on pose la question à gauche ; la réponse s'affiche à la fin, chaque preuve
+  `[…/calls/NNNN.json]` est cliquable.
+- **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec la jauge de
+  budget et les signaux (bloqué depuis 120 s, boucle, 3 erreurs d'outil, budget à 80 %, erreur modèle).
+- **Chronologie** : une ligne par agent, appels au modèle et aux outils.
+- **Détail d'un agent** (clic sur un nœud) : prompt reçu, rapport, chaque appel d'outil, réponses du modèle,
+  bouton d'arrêt.
+- **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
+  « Arrêter l'investigation » demande à l'agent principal une synthèse partielle.
+
+Rôles du POC : `operateur` (pose des questions, voit et arrête les siennes) et `administrateur`
+(voit et arrête tout, arrêt immédiat). Comptes dans `auth/users.yaml` (mots de passe en Argon2id,
+verrouillage 15 min après 5 échecs) ; journal d'accès dans `audit/`.
+
+![Investigation en cours](../docs/images/poc-interface-en-cours.png)
 
 ## Brancher Prometheus et Alertmanager
 

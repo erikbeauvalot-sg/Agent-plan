@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent de diagnostic</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="card login-card">
+      <h1>Agent de diagnostic</h1>
+      <label>Identifiant <input name="login" autocomplete="username" required></label>
+      <label>Mot de passe <input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Se connecter</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <aside class="sidebar">
+      <header class="brand">
+        <span>Agent de diagnostic</span>
+        <span id="who" class="who"></span>
+      </header>
+      <form id="ask-form" class="ask">
+        <textarea name="question" rows="4" placeholder="Pose une question sur la production…" required></textarea>
+        <button type="submit" class="primary">Lancer l'investigation</button>
+        <p id="ask-error" class="error" hidden></p>
+      </form>
+      <h2>Investigations</h2>
+      <ul id="runs" class="runs"></ul>
+      <button id="logout" class="link">Se déconnecter</button>
+    </aside>
+
+    <main id="main" class="main">
+      <div id="empty" class="empty">Pose une question ou ouvre une investigation passée.</div>
+      <div id="run" hidden>
+        <header class="run-head">
+          <div>
+            <h1 id="run-question"></h1>
+            <p id="run-meta" class="muted"></p>
+          </div>
+          <div class="run-actions">
+            <span id="run-status" class="pill"></span>
+            <button id="stop-run" class="danger" hidden>Arrêter l'investigation</button>
+          </div>
+        </header>
+
+        <section class="card">
+          <h2>Graphe d'investigation</h2>
+          <div id="graph" class="graph"></div>
+        </section>
+
+        <section class="card">
+          <h2>Chronologie</h2>
+          <div class="legend"><span class="seg llm"></span>modèle <span class="seg tool"></span>outil
+            <span class="seg err"></span>erreur d'outil</div>
+          <div id="timeline" class="timeline"></div>
+        </section>
+
+        <section class="card">
+          <h2>Réponse</h2>
+          <div id="answer" class="md muted">L'analyse s'affichera ici à la fin de l'investigation.</div>
+          <details id="plan-box" hidden><summary>Plan d'investigation</summary><div id="plan" class="md"></div></details>
+        </section>
+      </div>
+    </main>
+
+    <aside id="drawer" class="drawer" hidden>
+      <header class="drawer-head">
+        <h2 id="d-title"></h2>
+        <div>
+          <button id="d-stop" class="danger" hidden>Arrêter cet agent</button>
+          <button id="d-close" class="link" aria-label="Fermer">✕</button>
+        </div>
+      </header>
+      <div id="d-body" class="drawer-body"></div>
+    </aside>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

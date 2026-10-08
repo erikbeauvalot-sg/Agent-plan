@@ -49,13 +49,23 @@ class CancelToken:
 
     def __init__(self) -> None:
         self._event = asyncio.Event()
+        self._wrap_up = asyncio.Event()
 
     def cancel(self) -> None:
+        """Arrêt sans synthèse."""
         self._event.set()
+
+    def wrap_up(self) -> None:
+        """Arrêt propre : l'agent rend tout de suite une réponse partielle, sans nouvel appel d'outil."""
+        self._wrap_up.set()
 
     @property
     def cancelled(self) -> bool:
         return self._event.is_set()
+
+    @property
+    def wrapping_up(self) -> bool:
+        return self._wrap_up.is_set()
 
 
 async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_message: str,
@@ -71,15 +81,18 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
     log.write_text(agent_id, "system_prompt.md", system)
-    log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools]},
-              parent_id=parent_id)
+    log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools],
+                                           "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
 
     for turn in range(1, budget.max_turns + 1):
         if cancel.cancelled:
             result.status = "stopped"
             break
-        out_of_budget = result.tool_calls >= budget.max_tool_calls or turn == budget.max_turns
-        if out_of_budget:
+        wrapping_up = cancel.wrapping_up
+        out_of_budget = wrapping_up or result.tool_calls >= budget.max_tool_calls or turn == budget.max_turns
+        if wrapping_up:
+            messages.append(Message("user", "Arrêt demandé par l'opérateur : " + budget_message))
+        elif out_of_budget:
             messages.append(Message("user", budget_message))
         offered = [t for t in all_tools if t.name in final_tools] if out_of_budget else all_tools
         request = LLMRequest(system=system, messages=list(messages), tools=offered,
@@ -100,7 +113,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         if not response.tool_calls:
             result.answer = response.text
             if out_of_budget:
-                result.status = "partial"
+                result.status = "stopped" if wrapping_up else "partial"
             break
         if cancel.cancelled:
             result.status = "stopped"
@@ -117,7 +130,11 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         if finished:
             result.answer = response.text
             if out_of_budget:
-                result.status = "partial"
+                result.status = "stopped" if wrapping_up else "partial"
+            break
+        if wrapping_up:
+            result.status = "stopped"
+            result.answer = result.answer or response.text
             break
     else:
         result.status = "partial"
