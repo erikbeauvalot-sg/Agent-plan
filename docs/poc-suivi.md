@@ -9,7 +9,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 2. Sous-agents | `write_plan`, `spawn_subagent`, `wait_subagents`, `submit_report` ; rôles host, logs, metrics, events, changes, generic ; rapports structurés validés ; parallélisme et budgets ; arrêt d'un sous-agent | Fait (PR #3) |
 | 3. Interface web | Passerelle FastAPI, flux temps réel (SSE) sur `events.jsonl`, conversation, graphe d'investigation, chronologie, détail d'agent, signaux, arrêt d'agent ; connexion par `auth/users.yaml` (Opérateur, Administrateur), journal d'accès | Fait (PR #4) |
 | 4. Sources réelles | Connecteurs Prometheus (métriques, historique d'alertes) et Alertmanager (alertes, silences), fiches catalogue, mode sans démonstration | Fait pour Prometheus et Alertmanager (PR #2) |
-| 5. Actions et évaluation | `propose_action` et `actions.json` affichés dans l'interface ; jeu de cas `eval/cases.yaml` et `diagagent eval` ; adaptateur `replay` et `diagagent replay` | En revue |
+| 5. Actions et évaluation | `propose_action` et `actions.json` affichés dans l'interface ; jeu de cas `eval/cases.yaml` et `diagagent eval` ; adaptateur `replay` et `diagagent replay` | Fait (PR #5) |
 
 ## Critères de sortie
 
@@ -25,3 +25,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-08 : PR #1 et #2 fusionnées ; étape 2 ouverte.
 - 2026-10-08 : PR #3 fusionnée ; étape 3 ouverte (écran en JavaScript sans étape de build, React reporté à l'industrialisation).
 - 2026-10-08 : PR #4 fusionnée ; étape 5 ouverte.
+- 2026-10-08 : PR #5 fusionnée, les cinq étapes sont livrées ; adaptateur Claude ajouté pour le POC à la maison (PR #6).
