@@ -46,6 +46,22 @@ d'Entra ID : `auth: api_key` et la variable `AZURE_OPENAI_API_KEY`.
 
 **Modèle local** : décommenter la ligne `provider: local` de `config/models.yaml` (Ollama ou vLLM).
 
+**Claude (POC à la maison)**
+
+Réservé au POC sur tes propres sources : en production, les données ne partent pas chez un
+fournisseur de modèle externe et l'agent reste sur Azure OpenAI.
+
+```bash
+pip install -e '.[claude]'
+export ANTHROPIC_API_KEY=sk-ant-...   # clé créée sur platform.claude.com (ou `ant auth login`)
+```
+
+Dans `config/models.yaml`, remplacer les deux lignes `lead` et `subagent` par les lignes Claude
+commentées (`provider: claude, model: claude-opus-5-5`), puis lancer `diagagent check`.
+`reasoning` règle l'effort de Claude (`low`, `medium`, `high`) ; la réflexion adaptative reste active.
+Le fournisseur `claude` active aussi le cache de prompt (l'historique déjà envoyé est relu à moindre coût)
+et `fallbacks: default`, qui relance sur un modèle de repli une requête refusée par un filtre de sûreté.
+
 ## Lancer une investigation
 
 Le scénario de démonstration se joue à l'heure de référence du 7 octobre 2026, 06:00 UTC :

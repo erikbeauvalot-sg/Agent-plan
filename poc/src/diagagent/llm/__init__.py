@@ -31,4 +31,8 @@ def make_provider(models_cfg: dict[str, Any], role: str) -> tuple[LLMProvider, d
         from .openai_chat import make_openai_compatible
 
         return make_openai_compatible(provider_cfg, role_cfg["model"]), role_cfg
+    if adapter == "anthropic":
+        from .anthropic_chat import make_anthropic
+
+        return make_anthropic(provider_cfg, role_cfg["model"]), role_cfg
     raise ValueError(f"Adaptateur LLM inconnu : {adapter}")
