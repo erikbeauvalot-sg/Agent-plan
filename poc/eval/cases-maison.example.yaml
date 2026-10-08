@@ -1,0 +1,16 @@
+# Modèle pour un jeu d'évaluation sur tes propres sources (Prometheus, Alertmanager).
+# Copie ce fichier en cases-maison.yaml, remplace les exemples par des questions dont tu connais
+# la réponse, puis : diagagent eval --cases eval/cases-maison.yaml
+defaults:
+  demo: false          # coupe les sources de démonstration (DIAGAGENT_DEMO=0)
+  # now: absent -> heure réelle
+
+cases:
+  - id: hosts-suivis
+    question: "Quelles machines sont suivies par Prometheus ?"
+    must_mention: [nas]          # à adapter
+    max_subagents: 0
+
+  - id: alertes-en-cours
+    question: "Y a-t-il des alertes en cours ?"
+    status: [completed]

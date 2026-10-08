@@ -13,6 +13,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
 | Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
 | Interface web | `src/diagagent/web/` | Passerelle FastAPI (connexion, rôles, flux temps réel, arrêt) et écran de suivi |
+| Évaluation | `src/diagagent/evaluation.py`, `eval/`, `llm/replay.py` | Jeu de cas, contrôles automatiques, rejeu sans modèle |
 | Traces | `src/diagagent/runlog.py` → `runs/` | Manifest, transcript, appels d'outils, événements, analyse |
 | Données de démo | `demo_data/` | Scénario : lenteurs du service Paiement la nuit du 6 octobre 2026 |
 
@@ -105,6 +106,30 @@ Rôles du POC : `operateur` (pose des questions, voit et arrête les siennes) et
 verrouillage 15 min après 5 échecs) ; journal d'accès dans `audit/`.
 
 ![Investigation en cours](../docs/images/poc-interface-en-cours.png)
+
+## Actions proposées
+
+L'agent principal enregistre chaque action qu'il recommande avec `propose_action` : type (diagnostic
+complémentaire, remédiation, contournement, ouverture de ticket), cible, justification et preuves,
+risque, procédure, retour arrière, passage ou non par la gestion des changements. Elles sont écrites
+dans `actions.json` et affichées dans l'interface ; aucun outil ne permet de les exécuter.
+
+## Évaluation et rejeu
+
+```bash
+diagagent eval                                   # joue eval/cases.yaml avec le modèle configuré
+diagagent eval --only diag-paiement              # un seul cas
+diagagent replay 20261008T061159Z-5f31           # rejoue une investigation sans appeler le modèle
+```
+
+`eval` pose chaque question du jeu de cas et vérifie la réponse : mentions attendues ou interdites,
+nombre de sous-agents, actions proposées, erreurs d'outil. Le rapport va dans `eval/results/`.
+`eval/cases.yaml` porte sur le scénario de démonstration ; `eval/cases-maison.example.yaml` sert de
+modèle pour des questions sur tes propres sources. Changer de modèle dans `config/models.yaml` puis
+relancer `eval` permet de comparer les modèles sur les mêmes questions.
+
+`replay` refait passer les décisions enregistrées du modèle dans les outils actuels et signale chaque
+appel d'outil dont le résultat a changé : utile après une modification d'un serveur MCP ou du catalogue.
 
 ## Brancher Prometheus et Alertmanager
 

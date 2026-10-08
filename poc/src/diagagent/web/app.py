@@ -194,7 +194,7 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
     def get_run(run_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         path, manifest = load_run(user, run_id)
         return {"manifest": manifest, "plan": read_text(path / "plan.md"),
-                "analysis": read_text(path / "analysis.md"),
+                "analysis": read_text(path / "analysis.md"), "actions": read_json(path / "actions.json") or [],
                 "can_stop": manifest.get("status") == "running" and run_id in manager.live
                 and (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login))}
 
