@@ -1,0 +1,21 @@
+id: logs-applicatifs
+kind: logs
+description: >
+  Journaux applicatifs et système des serveurs de production, une ligne par message.
+  À utiliser pour trouver des erreurs, leur fréquence et leur chronologie. Filtrer par host et par niveau.
+backend: {type: file, path: demo_data/logs.jsonl}
+time_field: "@timestamp"
+entity_keys: {host: host, service: service}
+fields:
+  level: {type: keyword, values: [DEBUG, INFO, LOG, WARN, ERROR, FATAL]}
+  logger: {type: keyword}
+  message: {type: text}
+example_queries:
+  - question: "Erreurs d'un host sur une période"
+    search: {filters: {host: "{host}", level: ERROR}}
+  - question: "Messages dominants"
+    aggregate: {field: message, filters: {host: "{host}", level: ERROR}}
+retention: 30 jours
+freshness: 2 min
+limits: {max_hits: 100}
+owner: équipe Exploitation

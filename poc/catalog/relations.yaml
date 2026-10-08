@@ -1,0 +1,12 @@
+# Clés de jointure entre sources : la même entité sous des noms de champ différents.
+host:
+  cmdb: hostname
+  incidents: affected_ci.hostname
+  changes: ci.hostname
+  events: host
+  logs-applicatifs: host
+  metrics-demo: host
+ci:
+  cmdb: ci_id
+  incidents: affected_ci.id
+  changes: ci.id

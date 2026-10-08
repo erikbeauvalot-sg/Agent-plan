@@ -1,0 +1,17 @@
+id: events
+kind: documents
+description: >
+  Alertes de supervision (une par déclenchement), avec le contrôle en cause et sa sévérité.
+  À utiliser pour dater le début d'un symptôme et voir les alertes corrélées sur les dépendances.
+backend: {type: file, path: demo_data/events.json}
+time_field: "@timestamp"
+entity_keys: {host: host}
+fields:
+  severity: {type: keyword, values: [minor, major, critical]}
+  check: {type: keyword, desc: "Nom du contrôle de supervision"}
+  message: {type: text}
+  status: {type: keyword, values: [open, closed]}
+retention: 90 jours
+freshness: 1 min
+limits: {max_hits: 200}
+owner: équipe Supervision

@@ -1,0 +1,11 @@
+# Vocabulaire métier : alias de services et noms normalisés des métriques.
+services:
+  PAY: {name: Paiement, aliases: [paiement, paiements, payment, "service paiement", carte]}
+  WEB: {name: Portail client, aliases: [portail, site web, portail client]}
+  FRONT: {name: Front réseau, aliases: [front, répartiteur, load balancer]}
+metrics:
+  cpu.usage: "Utilisation CPU en %"
+  mem.used_pct: "Mémoire utilisée en %"
+  http.latency_p95: "Latence HTTP au 95e centile en ms"
+  db.connections: "Connexions actives sur la base"
+  db.max_connections: "Paramètre max_connections de la base"

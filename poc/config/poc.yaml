@@ -1,0 +1,11 @@
+# Serveurs MCP lancés par l'orchestrateur (sous-processus stdio, lecture seule).
+mcp_servers:
+  mcp-catalog: {module: diagagent.mcp_servers.catalog_server}
+  mcp-elk:     {module: diagagent.mcp_servers.elk_demo_server}
+  mcp-cmdb:    {module: diagagent.mcp_servers.cmdb_demo_server}
+  mcp-metrics: {module: diagagent.mcp_servers.metrics_demo_server}
+
+budgets:
+  lead: {max_tool_calls: 25, max_turns: 30}
+
+runs_dir: runs

@@ -1,0 +1,52 @@
+[
+  {
+    "ci_id": "CI0012345",
+    "hostname": "srv-pay-01",
+    "type": "serveur applicatif",
+    "service": "PAY",
+    "application": "paiement-api",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Paiement",
+    "depends_on": [
+      "CI0012400",
+      "CI0011000"
+    ]
+  },
+  {
+    "ci_id": "CI0012400",
+    "hostname": "db-pay-02",
+    "type": "base de données",
+    "service": "PAY",
+    "application": "postgresql-paiement",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Bases de données",
+    "depends_on": []
+  },
+  {
+    "ci_id": "CI0011000",
+    "hostname": "lb-front-01",
+    "type": "répartiteur de charge",
+    "service": "FRONT",
+    "application": "haproxy-front",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Réseau",
+    "depends_on": []
+  },
+  {
+    "ci_id": "CI0013001",
+    "hostname": "srv-web-03",
+    "type": "serveur web",
+    "service": "WEB",
+    "application": "portail-client",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Portail",
+    "depends_on": [
+      "CI0011000",
+      "CI0012345"
+    ]
+  }
+]

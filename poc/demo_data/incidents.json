@@ -1,0 +1,45 @@
+[
+  {
+    "number": "INC0098765",
+    "priority": "P2",
+    "state": "In Progress",
+    "opened_at": "2026-10-06T22:25:00Z",
+    "affected_ci": {
+      "hostname": "srv-pay-01",
+      "id": "CI0012345"
+    },
+    "business_service": "PAY",
+    "short_description": "Lenteurs sur les paiements par carte",
+    "assignment_group": "équipe Paiement",
+    "caller_email": "support.n1@example.com"
+  },
+  {
+    "number": "INC0097012",
+    "priority": "P3",
+    "state": "Closed",
+    "opened_at": "2026-09-12T08:02:00Z",
+    "affected_ci": {
+      "hostname": "srv-pay-01",
+      "id": "CI0012345"
+    },
+    "business_service": "PAY",
+    "short_description": "Système de fichiers /var plein",
+    "assignment_group": "équipe Système",
+    "caller_email": "supervision@example.com",
+    "resolution": "Purge des journaux applicatifs et rotation corrigée"
+  },
+  {
+    "number": "INC0098701",
+    "priority": "P4",
+    "state": "New",
+    "opened_at": "2026-10-06T14:40:00Z",
+    "affected_ci": {
+      "hostname": "srv-web-03",
+      "id": "CI0013001"
+    },
+    "business_service": "WEB",
+    "short_description": "Coquille dans la page d'accueil du portail",
+    "assignment_group": "équipe Portail",
+    "caller_email": "metier@example.com"
+  }
+]

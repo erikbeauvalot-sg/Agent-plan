@@ -1,0 +1,10 @@
+id: metrics-demo
+kind: metrics
+description: >
+  Séries de métriques à pas de 5 minutes (CPU, mémoire, latence HTTP, connexions base).
+  Interroger via list_metrics et query_metric, qui renvoient un résumé et les ruptures détectées.
+backend: {type: file, path: demo_data/metrics.jsonl}   # POC : fichier ; cible : Druid, Prometheus, ELK
+coverage: {hosts: [srv-pay-01, db-pay-02, srv-web-03]}
+step: 5m
+retention: 30 jours
+owner: équipe Supervision

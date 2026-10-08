@@ -1,0 +1,22 @@
+id: changes
+kind: documents
+description: >
+  Changements ITSM (planifiés ou réalisés) avec leur fenêtre d'exécution et le CI visé.
+  À utiliser pour savoir si une modification récente peut expliquer un problème.
+backend: {type: file, path: demo_data/changes.json}
+time_field: start
+entity_keys: {host: ci.hostname, ci: ci.id, service: service}
+fields:
+  number: {type: keyword, desc: "Numéro CHGxxxxxxx"}
+  state: {type: keyword, values: [Scheduled, Implemented, Cancelled]}
+  risk: {type: keyword, values: [Low, Medium, High]}
+  short_description: {type: text}
+  start: {type: date}
+  end: {type: date}
+example_queries:
+  - question: "Changements sur un host et ses dépendances la veille d'un incident"
+    search: {filters: {ci.hostname: "{host}"}, time_range: "48 h avant l'incident"}
+retention: 2 ans
+freshness: 5 min
+limits: {max_hits: 200}
+owner: équipe ITSM

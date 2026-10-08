@@ -1,0 +1,18 @@
+import os
+from pathlib import Path
+
+import pytest
+
+POC = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def poc_env(tmp_path, monkeypatch):
+    """Données de démonstration, heure figée, traces dans un dossier temporaire."""
+    monkeypatch.setenv("DIAGAGENT_HOME", str(POC))
+    monkeypatch.setenv("DIAGAGENT_NOW", "2026-10-07T06:00:00Z")
+    from diagagent import catalog
+    catalog.load_catalog.cache_clear()
+    catalog.load_yaml.cache_clear()
+    catalog._load_rows.cache_clear()
+    return tmp_path

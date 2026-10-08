@@ -1,0 +1,16 @@
+# Choix du modèle par rôle d'agent : changer de fournisseur = changer ces lignes.
+# Le rôle "lead" est utilisé dès l'étape 1 ; les sous-agents arrivent à l'étape 2.
+roles:
+  lead:    {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
+  # Alternative locale, par exemple Ollama :
+  # lead:  {provider: local, model: qwen3:14b}
+
+providers:
+  azure:
+    adapter: azure_openai
+    endpoint: ${AZURE_OPENAI_ENDPOINT}      # https://<ressource>.openai.azure.com
+    api_version: 2025-04-01-preview
+    auth: entra_id                          # ou api_key (lit AZURE_OPENAI_API_KEY)
+  local:
+    adapter: openai_compatible
+    base_url: http://localhost:11434/v1     # Ollama ; vLLM : http://localhost:8000/v1
