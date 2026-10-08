@@ -122,6 +122,22 @@ def add_user(login: str, roles: list[str], name: str | None) -> None:
     print(f"Utilisateur {user.login} ({', '.join(user.roles)}) créé dans auth/users.yaml")
 
 
+def load_dotenv(path: Path) -> None:
+    """Charge les lignes `CLE=valeur` d'un fichier .env sans écraser les variables déjà définies.
+    Les serveurs MCP héritent de l'environnement : PROMETHEUS_URL ou ALERTMANAGER_URL peuvent y figurer."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.removeprefix("export ").split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="diagagent", description="POC de l'agent de diagnostic")
     parser.add_argument("--home", help="Racine du POC (catalog/, config/, runs/) ; défaut : dossier courant")
@@ -149,6 +165,7 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["DIAGAGENT_HOME"] = str(Path(args.home).resolve())
     if args.now:
         os.environ["DIAGAGENT_NOW"] = args.now
+    load_dotenv(catalog.home() / ".env")
 
     if args.cmd == "tools":
         asyncio.run(list_tools())
