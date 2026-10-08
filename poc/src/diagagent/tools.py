@@ -10,7 +10,7 @@ from typing import Any
 
 from mcp import Client, StdioServerParameters
 
-from .catalog import home
+from .catalog import enabled, home
 from .llm import ToolSpec
 
 
@@ -34,6 +34,8 @@ class ToolHub:
     async def __aenter__(self) -> "ToolHub":
         env = {**os.environ, "DIAGAGENT_HOME": str(home())}
         for name, cfg in self._servers_cfg.items():
+            if not enabled(cfg):
+                continue
             params = StdioServerParameters(command=cfg.get("command", sys.executable),
                                            args=cfg.get("args", ["-m", cfg["module"]]), env=env)
             client = await self._stack.enter_async_context(Client(params))

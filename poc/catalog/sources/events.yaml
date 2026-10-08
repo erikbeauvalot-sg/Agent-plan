@@ -1,5 +1,6 @@
 id: events
 kind: documents
+demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
   Alertes de supervision (une par déclenchement), avec le contrôle en cause et sa sévérité.
   À utiliser pour dater le début d'un symptôme et voir les alertes corrélées sur les dépendances.

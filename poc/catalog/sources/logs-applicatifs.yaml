@@ -1,5 +1,6 @@
 id: logs-applicatifs
 kind: logs
+demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
   Journaux applicatifs et système des serveurs de production, une ligne par message.
   À utiliser pour trouver des erreurs, leur fréquence et leur chronologie. Filtrer par host et par niveau.

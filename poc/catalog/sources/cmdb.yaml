@@ -1,5 +1,6 @@
 id: cmdb
 kind: cmdb
+demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
   CMDB : un document par CI (serveur, base, répartiteur) avec son service, son équipe
   propriétaire et ses dépendances. Interroger via les outils get_ci et get_dependencies.

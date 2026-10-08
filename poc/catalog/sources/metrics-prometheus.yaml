@@ -1,0 +1,27 @@
+id: metrics-prometheus
+kind: metrics
+requires_env: [PROMETHEUS_URL]
+description: >
+  Métriques Prometheus (node_exporter et autres exporters) des machines suivies. Interroger via
+  list_hosts, list_metrics et query_metric (noms normalisés) ; promql pour une requête libre.
+backend:
+  type: prometheus
+  url: ${PROMETHEUS_URL}                 # ex. http://192.168.1.15:9090
+  bearer_token_env: PROMETHEUS_TOKEN     # facultatif
+  host_label: instance                   # label qui porte le nom du host (port retiré)
+# Métriques normalisées -> PromQL ; {sel} devient le sélecteur du host.
+# Adapter ou compléter selon les exporters installés.
+metrics:
+  up: {promql: 'max(up{{{sel}}})'}
+  cpu.usage: {promql: '100 * (1 - avg(rate(node_cpu_seconds_total{{mode="idle",{sel}}}[5m])))'}
+  load.1m: {promql: 'max(node_load1{{{sel}}})'}
+  mem.used_pct: {promql: '100 * (1 - sum(node_memory_MemAvailable_bytes{{{sel}}}) / sum(node_memory_MemTotal_bytes{{{sel}}}))'}
+  disk.used_pct: {promql: 'max(100 * (1 - node_filesystem_avail_bytes{{fstype!~"tmpfs|overlay|squashfs",{sel}}} / node_filesystem_size_bytes{{fstype!~"tmpfs|overlay|squashfs",{sel}}}))'}
+  disk.io_util_pct: {promql: 'max(100 * rate(node_disk_io_time_seconds_total{{{sel}}}[5m]))'}
+  net.rx_bytes_s: {promql: 'sum(rate(node_network_receive_bytes_total{{device!="lo",{sel}}}[5m]))'}
+  net.tx_bytes_s: {promql: 'sum(rate(node_network_transmit_bytes_total{{device!="lo",{sel}}}[5m]))'}
+  net.errors_s: {promql: 'sum(rate(node_network_receive_errs_total{{{sel}}}[5m]) + rate(node_network_transmit_errs_total{{{sel}}}[5m]))'}
+step_min: 60s
+retention: selon la configuration de Prometheus (15 jours par défaut)
+limits: {max_range: 7 jours, max_series: 10}
+owner: Erik

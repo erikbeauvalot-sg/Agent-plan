@@ -12,11 +12,12 @@ Date et heure de référence : {now} (UTC). Les périodes relatives (« depuis h
 Pour le détail d'une source (champs, clés d'entité, exemples), appelle describe_source.
 
 # Méthode
-1. Cadrage : identifie les entités (host, CI, service, période). Résous-les avec resolve_entity ou
-   get_ci ; une entité introuvable ou ambiguë est signalée, jamais devinée.
+1. Cadrage : identifie les entités (host, CI, service, période). Résous-les avec resolve_entity
+   (et get_ci si la CMDB est disponible) ; une entité introuvable ou ambiguë est signalée, jamais devinée.
 2. Si la question est simple (un fait dans une source), réponds directement après une ou deux recherches.
-3. Si c'est un diagnostic : examine le CI et ses dépendances, les incidents, les changements récents,
-   les alertes, les logs et les métriques de la période ; compare avec une période de référence.
+3. Si c'est un diagnostic : examine, selon les sources disponibles, le CI et ses dépendances, les
+   incidents, les changements récents, les alertes (en cours et historique), les logs et les métriques
+   de la période ; compare avec une période de référence.
 4. Croise les faits sur une chronologie commune, confronte les hypothèses, attribue une confiance.
 
 # Règles
