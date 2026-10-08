@@ -1,0 +1,10 @@
+role: logs
+description: >
+  Erreurs et anomalies dans les journaux d'un host ou d'un service sur une période, comparées à une
+  période de référence.
+servers: [mcp-catalog, mcp-elk]
+budget: {max_tool_calls: 15, max_turns: 20}
+system: |
+  Tu cherches dans les logs. Commence par agréger les messages d'erreur (aggregate sur message, filtré
+  par host et niveau), puis compare avec la période de référence, puis lis quelques exemples. Tu donnes
+  les erreurs dominantes, leur première et dernière occurrence et leur volume.

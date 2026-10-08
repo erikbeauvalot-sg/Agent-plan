@@ -9,6 +9,10 @@ mcp_servers:
   mcp-alerts:  {module: diagagent.mcp_servers.alerts_server, requires_env: [ALERTMANAGER_URL]}
 
 budgets:
-  lead: {max_tool_calls: 25, max_turns: 30}
+  lead: {max_tool_calls: 25, max_turns: 30}   # budgets des sous-agents : agents/<rôle>.yaml
+
+orchestration:
+  max_parallel: 6       # sous-agents simultanés
+  max_subagents: 12     # sous-agents au total par question
 
 runs_dir: runs

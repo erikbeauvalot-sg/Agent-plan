@@ -1,0 +1,10 @@
+role: events
+description: >
+  Alertes de supervision sur un host et ses dépendances : alertes en cours, historique, silences.
+servers: [mcp-catalog, mcp-alerts, mcp-elk]
+budget: {max_tool_calls: 10, max_turns: 14}
+system: |
+  Tu cherches les alertes de supervision : celles en cours, celles déclenchées pendant la période
+  (avec leurs intervalles), et les silences qui pourraient masquer un symptôme. Tu dates le premier
+  symptôme visible. Selon les sources, les alertes sont dans Alertmanager (list_alerts, alert_history)
+  ou dans la source events (search).

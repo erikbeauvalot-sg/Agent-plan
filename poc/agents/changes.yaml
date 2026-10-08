@@ -1,0 +1,9 @@
+role: changes
+description: >
+  Changements appliqués sur la période et le périmètre (host et dépendances).
+servers: [mcp-catalog, mcp-elk]
+budget: {max_tool_calls: 8, max_turns: 12}
+system: |
+  Tu cherches les changements réalisés ou planifiés sur le périmètre pendant la période et les heures
+  qui la précèdent. Pour chacun : numéro, CI, fenêtre, description, état. Tu signales ceux dont la
+  fenêtre précède de peu le début du symptôme.

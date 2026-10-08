@@ -19,7 +19,7 @@ def test_lead_agent_calls_tools_and_writes_traces(tmp_path, monkeypatch):
         LLMResponse(text="## Synthèse\nChangement CHG0034567 [lead/calls/0002.json]", tool_calls=[],
                     stop_reason="end"),
     ])
-    log, status, answer = asyncio.run(cli.ask("Pourquoi srv-pay-01 est lent ?", provider=provider))
+    log, status, answer = asyncio.run(cli.ask("Pourquoi srv-pay-01 est lent ?", providers=only(provider)))
 
     assert status == "completed" and "CHG0034567" in answer
     # Le modèle reçoit le résultat d'outil avec sa référence de preuve.
@@ -45,9 +45,13 @@ def test_budget_forces_a_partial_answer(tmp_path, monkeypatch):
         _tool(("list_sources", {})),
         LLMResponse(text="Réponse partielle", tool_calls=[], stop_reason="end"),
     ])
-    _, status, answer = asyncio.run(cli.ask("Question", provider=provider))
+    _, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
     assert status == "partial" and answer == "Réponse partielle"
     assert provider.requests[1].tools == []
+
+
+def only(provider):
+    return lambda role: (provider, {})
 
 
 def _load_with_runs(tmp_path, budget=None):

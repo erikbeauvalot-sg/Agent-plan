@@ -1,0 +1,7 @@
+role: generic
+description: >
+  Investigation qui ne rentre dans aucun autre rôle ; accès à tous les outils de lecture.
+servers: [mcp-catalog, mcp-cmdb, mcp-elk, mcp-metrics, mcp-alerts]
+budget: {max_tool_calls: 15, max_turns: 20}
+system: |
+  Tu mènes l'investigation décrite dans ta tâche avec tous les outils de lecture disponibles.

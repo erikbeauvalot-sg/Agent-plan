@@ -7,7 +7,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from .llm import LLMError, LLMProvider, LLMRequest, LLMResponse, Message, ToolSpec
 from .llm.base import to_jsonable
@@ -31,6 +31,19 @@ class AgentResult:
     tool_calls: int = 0
 
 
+@dataclass
+class LocalTool:
+    """Outil interne à l'orchestrateur (pas MCP) : lancer un sous-agent, rendre un rapport…
+    `terminal` : un appel réussi termine l'agent (submit_report)."""
+    spec: ToolSpec
+    handler: Callable[[dict[str, Any]], Awaitable[str]]
+    terminal: bool = False
+
+
+class LocalToolError(Exception):
+    """Erreur rendue au modèle comme résultat d'outil en erreur."""
+
+
 class CancelToken:
     """Jeton d'annulation vérifié avant chaque appel au modèle et chaque appel d'outil."""
 
@@ -48,12 +61,18 @@ class CancelToken:
 async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_message: str,
                     tools: list[ToolSpec], hub: ToolHub, log: RunLog, budget: Budget,
                     reasoning: str | None = None, max_tokens: int = 4000,
-                    cancel: CancelToken | None = None) -> AgentResult:
+                    cancel: CancelToken | None = None, local_tools: dict[str, LocalTool] | None = None,
+                    final_tools: tuple[str, ...] = (), parent_id: str | None = None,
+                    budget_message: str = "Budget d'appels d'outils atteint : rends maintenant ta réponse "
+                                          "finale avec ce que tu as, en indiquant ce qui manque.") -> AgentResult:
     cancel = cancel or CancelToken()
+    local_tools = local_tools or {}
+    all_tools = tools + [t.spec for t in local_tools.values()]
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
     log.write_text(agent_id, "system_prompt.md", system)
-    log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in tools]})
+    log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools]},
+              parent_id=parent_id)
 
     for turn in range(1, budget.max_turns + 1):
         if cancel.cancelled:
@@ -61,9 +80,9 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             break
         out_of_budget = result.tool_calls >= budget.max_tool_calls or turn == budget.max_turns
         if out_of_budget:
-            messages.append(Message("user", "Budget d'appels d'outils atteint : rends maintenant ta réponse "
-                                            "finale avec ce que tu as, en indiquant ce qui manque."))
-        request = LLMRequest(system=system, messages=list(messages), tools=[] if out_of_budget else tools,
+            messages.append(Message("user", budget_message))
+        offered = [t for t in all_tools if t.name in final_tools] if out_of_budget else all_tools
+        request = LLMRequest(system=system, messages=list(messages), tools=offered,
                              max_tokens=max_tokens, reasoning=reasoning)  # type: ignore[arg-type]
         response = await _complete(agent_id, provider, request, log)
         if response is None:
@@ -87,18 +106,26 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             result.status = "stopped"
             break
         refs = [log.reserve_call(agent_id) for _ in response.tool_calls]
-        results = await asyncio.gather(*(_call_tool(agent_id, c, ref, hub, log)
+        results = await asyncio.gather(*(_call_tool(agent_id, c, ref, hub, log, local_tools)
                                          for c, ref in zip(response.tool_calls, refs)))
         result.tool_calls += len(response.tool_calls)
-        for call, content in zip(response.tool_calls, results):
+        finished = False
+        for call, (content, ok) in zip(response.tool_calls, results):
             messages.append(Message("tool", content, tool_call_id=call.id))
+            if ok and call.name in local_tools and local_tools[call.name].terminal:
+                finished = True
+        if finished:
+            result.answer = response.text
+            if out_of_budget:
+                result.status = "partial"
+            break
     else:
         result.status = "partial"
 
     if result.status == "stopped" and not result.answer:
         result.answer = "Investigation arrêtée avant la fin."
     log.event(agent_id, "agent_ended", {"status": result.status, "tool_calls": result.tool_calls,
-                                         "usage": result.usage})
+                                         "usage": result.usage}, parent_id=parent_id)
     return result
 
 
@@ -131,21 +158,29 @@ async def _complete(agent_id: str, provider: LLMProvider, request: LLMRequest,
     return None
 
 
-async def _call_tool(agent_id: str, call: Any, ref: str, hub: ToolHub, log: RunLog) -> str:
+async def _call_tool(agent_id: str, call: Any, ref: str, hub: ToolHub, log: RunLog,
+                     local_tools: dict[str, LocalTool]) -> tuple[str, bool]:
+    """Exécute un appel (outil interne ou MCP), le trace et renvoie (contenu pour le modèle, succès)."""
     log.event(agent_id, "tool_call_started", {"tool": call.name, "ref": ref, "arguments": call.arguments})
     started = time.monotonic()
-    res = await hub.call(call.name, call.arguments)
+    if call.name in local_tools:
+        server = "orchestrator"
+        try:
+            content, is_error = await local_tools[call.name].handler(call.arguments), False
+        except (LocalToolError, KeyError, TypeError, ValueError) as e:
+            content, is_error = f"{type(e).__name__}: {e}", True
+    else:
+        res = await hub.call(call.name, call.arguments)
+        server, content, is_error = res.server, res.content, res.is_error
     duration = round(time.monotonic() - started, 3)
-    log.write_call(ref, {"tool": call.name, "server": res.server, "input": call.arguments,
-                                   "output": _maybe_json(res.content), "is_error": res.is_error,
-                                   "duration_s": duration})
-    log.event(agent_id, "tool_call_ended", {"tool": call.name, "ref": ref, "is_error": res.is_error,
+    log.write_call(ref, {"tool": call.name, "server": server, "input": call.arguments,
+                         "output": _maybe_json(content), "is_error": is_error, "duration_s": duration})
+    log.event(agent_id, "tool_call_ended", {"tool": call.name, "ref": ref, "is_error": is_error,
                                              "duration_s": duration})
-    content = res.content
     if len(content) > MAX_TOOL_RESULT_CHARS:
         content = content[:MAX_TOOL_RESULT_CHARS] + f"\n[… résultat tronqué, complet dans {ref}]"
-    prefix = "ERREUR D'OUTIL : " if res.is_error else ""
-    return f"[query_ref: {ref}]\n{prefix}{content}"
+    prefix = "ERREUR D'OUTIL : " if is_error else ""
+    return f"[query_ref: {ref}]\n{prefix}{content}", not is_error
 
 
 def _maybe_json(text: str) -> Any:

@@ -3,7 +3,7 @@
 Mise en œuvre progressive de l'[architecture](../docs/architecture-agent-diagnostic.md), sur des sources
 de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 
-## Ce que contient l'étape 1
+## Ce que contient le POC
 
 | Brique | Où | Rôle |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Catalogue | `catalog/` | Une fiche YAML par source, glossaire, relations entre sources |
 | Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
+| Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
 | Traces | `src/diagagent/runlog.py` → `runs/` | Manifest, transcript, appels d'outils, événements, analyse |
 | Données de démo | `demo_data/` | Scénario : lenteurs du service Paiement la nuit du 6 octobre 2026 |
 
@@ -61,10 +62,22 @@ question.md / analysis.md
 lead/system_prompt.md prompt système exact
 lead/transcript.jsonl chaque requête et réponse du modèle
 lead/calls/0001.json  chaque appel d'outil : entrée, sortie, durée, erreur
+plan.md               plan d'investigation de l'agent principal
+subagents/T01-host-srv-pay-01/
+  prompt.md           prompt généré par l'agent principal
+  transcript.jsonl, calls/…, report.json
 events.jsonl          journal horodaté (base du futur suivi temps réel)
 ```
 
 `runs/index.jsonl` liste toutes les investigations.
+
+## Sous-agents
+
+Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par investigation
+(`spawn_subagent`), en parallèle, puis attend leurs rapports (`wait_subagents`). Chaque rôle est décrit
+dans `agents/<rôle>.yaml` : prompt, serveurs MCP autorisés, budget. Un rôle sans source disponible
+n'est pas proposé (en mode maison, `logs` et `changes` disparaissent faute d'ELK). Le modèle des
+sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rôle.
 
 ## Brancher Prometheus et Alertmanager
 
