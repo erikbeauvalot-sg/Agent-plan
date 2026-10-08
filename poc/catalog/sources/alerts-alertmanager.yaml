@@ -7,6 +7,6 @@ description: >
   (série ALERTS de Prometheus).
 backend:
   type: alertmanager
-  url: ${ALERTMANAGER_URL}               # ex. http://alertmanager.maison:9093
+  url: ${ALERTMANAGER_URL}               # ex. http://192.168.1.15:9093
   bearer_token_env: ALERTMANAGER_TOKEN   # facultatif
 owner: Erik

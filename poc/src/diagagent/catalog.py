@@ -63,9 +63,22 @@ def load_catalog() -> dict[str, dict[str, Any]]:
             continue
         backend = card.get("backend", {})
         if isinstance(backend.get("url"), str):
-            backend["url"] = os.path.expandvars(backend["url"]).rstrip("/")
+            backend["url"] = api_base_url(os.path.expandvars(backend["url"]))
         sources[card["id"]] = card
     return sources
+
+
+UI_PAGES = ("/query", "/graph", "/alerts", "/targets", "/status")
+
+
+def api_base_url(url: str) -> str:
+    """URL de base de l'API à partir d'une URL copiée depuis l'interface web
+    (http://h:9090/query ou http://h:9093/#/alerts -> http://h:9090, http://h:9093)."""
+    url = url.split("#", 1)[0].rstrip("/")
+    for page in UI_PAGES:
+        if url.endswith(page):
+            url = url[: -len(page)]
+    return url.rstrip("/")
 
 
 def sources_of_kind(kind: str) -> list[dict[str, Any]]:

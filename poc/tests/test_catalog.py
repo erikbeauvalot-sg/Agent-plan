@@ -30,3 +30,9 @@ def test_aggregate_finds_dominant_error():
     top = res["buckets"][0]
     assert "connection pool exhausted" in top["value"]
     assert top["first_seen"].startswith("2026-10-06T22:1")
+
+
+def test_api_base_url_accepts_urls_copied_from_the_web_ui():
+    assert catalog.api_base_url("http://192.168.1.15:9090/query") == "http://192.168.1.15:9090"
+    assert catalog.api_base_url("http://192.168.1.15:9093/#/alerts") == "http://192.168.1.15:9093"
+    assert catalog.api_base_url("https://h/prometheus/") == "https://h/prometheus"

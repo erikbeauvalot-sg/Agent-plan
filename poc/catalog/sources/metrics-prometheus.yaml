@@ -6,7 +6,7 @@ description: >
   list_hosts, list_metrics et query_metric (noms normalisés) ; promql pour une requête libre.
 backend:
   type: prometheus
-  url: ${PROMETHEUS_URL}                 # ex. http://prometheus.maison:9090
+  url: ${PROMETHEUS_URL}                 # ex. http://192.168.1.15:9090
   bearer_token_env: PROMETHEUS_TOKEN     # facultatif
   host_label: instance                   # label qui porte le nom du host (port retiré)
 # Métriques normalisées -> PromQL ; {sel} devient le sélecteur du host.

@@ -72,8 +72,8 @@ Deux variables suffisent ; les sources de démonstration se coupent avec `DIAGAG
 l'agent ne mélange pas données factices et réelles :
 
 ```bash
-export PROMETHEUS_URL=http://<hôte-prometheus>:9090
-export ALERTMANAGER_URL=http://<hôte-alertmanager>:9093
+export PROMETHEUS_URL=http://192.168.1.15:9090
+export ALERTMANAGER_URL=http://192.168.1.15:9093
 export DIAGAGENT_DEMO=0
 diagagent tools             # doit lister list_hosts, promql, list_alerts, alert_history…
 diagagent ask "Quelles machines sont suivies et lesquelles ont une alerte en cours ?"
