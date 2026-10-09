@@ -146,6 +146,22 @@ def _field_paths(doc: dict[str, Any], prefix: str = "") -> set[str]:
     return paths
 
 
+def _check_filters(source_id: str, filters: dict[str, Any] | None) -> None:
+    """Refuse aussi une valeur de filtre qui n'est ni une valeur simple ni une liste : un opérateur
+    ({"$nin": [...]}, {"gte": ...}) serait comparé comme du texte et ne trouverait rien, sans erreur."""
+    _check_fields(source_id, list(filters or {}))
+    for field, value in (filters or {}).items():
+        values = value if isinstance(value, list) else [value]
+        if all(isinstance(v, (str, int, float, bool)) for v in values):
+            continue
+        known = sorted({str(v) for d in rows(source_id) if (v := field_value(d, field)) is not None
+                        and not isinstance(v, (dict, list))})
+        hint = f" Valeurs présentes pour {field} : {', '.join(known)}." if 0 < len(known) <= 20 else ""
+        raise ValueError(f"Filtre {field} non pris en charge : {json.dumps(value, ensure_ascii=False)}. "
+                         f"Un filtre est une égalité exacte (valeur simple) ou une liste de valeurs acceptées ; "
+                         f"pas d'opérateur. Pour exclure des valeurs, liste celles que tu acceptes.{hint}")
+
+
 def _check_fields(source_id: str, fields: list[str]) -> None:
     """Refuse un champ absent de la source : un filtre sur un champ inconnu renverrait 0 résultat
     sans erreur, et le modèle conclurait à tort qu'il n'y a rien (ex. affected_ci.hostname sur changes)."""
@@ -191,7 +207,7 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     limits = card.get("limits", {})
     size = max(1, min(size, limits.get("max_hits", DEFAULT_MAX_HITS)))
     time_field = card.get("time_field")
-    _check_fields(source_id, list(filters or {}))
+    _check_filters(source_id, filters)
     hits = [d for d in rows(source_id) if _matches(d, filters, text)]
     window = None
     if time_field:
@@ -215,7 +231,8 @@ def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
               time_from: str | None = None, time_to: str | None = None, top: int = 10) -> dict[str, Any]:
     card = get_source(source_id)
     time_field = card.get("time_field")
-    _check_fields(source_id, [field, *(filters or {})])
+    _check_fields(source_id, [field])
+    _check_filters(source_id, filters)
     docs = [d for d in rows(source_id) if _matches(d, filters, None)]
     window = None
     if time_field:

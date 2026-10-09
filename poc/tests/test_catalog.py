@@ -58,3 +58,15 @@ def test_unknown_fields_list_excludes_masked_fields():
 def test_aggregate_rejects_unknown_field():
     with pytest.raises(ValueError, match="msg"):
         catalog.aggregate("logs-applicatifs", "msg")
+
+
+def test_search_rejects_operator_filters_and_lists_values():
+    # {"$nin": [...]} était comparé comme du texte : 0 incident ouvert, sans erreur.
+    with pytest.raises(ValueError, match=r"pas d'opérateur.*Valeurs présentes pour state : .*In Progress"):
+        catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01",
+                                             "state": {"$nin": ["Resolved", "Closed"]}})
+    with pytest.raises(ValueError, match="non pris en charge"):
+        catalog.aggregate("incidents", "state", filters={"priority": [{"gte": 2}]})
+    res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01", "state": ["New", "In Progress"]},
+                         time_from="2026-10-01T00:00:00Z")
+    assert [h["number"] for h in res["hits"]] == ["INC0098765"]
