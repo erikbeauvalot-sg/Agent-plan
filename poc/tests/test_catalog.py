@@ -1,3 +1,5 @@
+import pytest
+
 from diagagent import catalog
 
 
@@ -36,3 +38,35 @@ def test_api_base_url_accepts_urls_copied_from_the_web_ui():
     assert catalog.api_base_url("http://192.168.1.15:9090/query") == "http://192.168.1.15:9090"
     assert catalog.api_base_url("http://192.168.1.15:9093/#/alerts") == "http://192.168.1.15:9093"
     assert catalog.api_base_url("https://h/prometheus/") == "https://h/prometheus"
+
+
+def test_search_rejects_unknown_filter_field():
+    # affected_ci.hostname existe dans incidents, pas dans changes (ci.hostname) : sans contrôle,
+    # la recherche renvoyait 0 résultat et le modèle concluait qu'aucun changement n'avait eu lieu.
+    with pytest.raises(ValueError, match=r"affected_ci\.hostname.*ci\.hostname"):
+        catalog.search("changes", filters={"affected_ci.hostname": "db-pay-02"})
+    res = catalog.search("changes", filters={"ci.hostname": "db-pay-02"})
+    assert [h["number"] for h in res["hits"]] == ["CHG0034567"]
+
+
+def test_unknown_fields_list_excludes_masked_fields():
+    with pytest.raises(ValueError) as exc:
+        catalog.search("incidents", filters={"host": "srv-pay-01"})
+    assert "caller_email" not in str(exc.value)
+
+
+def test_aggregate_rejects_unknown_field():
+    with pytest.raises(ValueError, match="msg"):
+        catalog.aggregate("logs-applicatifs", "msg")
+
+
+def test_search_rejects_operator_filters_and_lists_values():
+    # {"$nin": [...]} était comparé comme du texte : 0 incident ouvert, sans erreur.
+    with pytest.raises(ValueError, match=r"pas d'opérateur.*Valeurs présentes pour state : .*In Progress"):
+        catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01",
+                                             "state": {"$nin": ["Resolved", "Closed"]}})
+    with pytest.raises(ValueError, match="non pris en charge"):
+        catalog.aggregate("incidents", "state", filters={"priority": [{"gte": 2}]})
+    res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01", "state": ["New", "In Progress"]},
+                         time_from="2026-10-01T00:00:00Z")
+    assert [h["number"] for h in res["hits"]] == ["INC0098765"]
