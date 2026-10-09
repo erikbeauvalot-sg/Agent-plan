@@ -192,7 +192,14 @@ sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rô
 diagagent user add erik --role administrateur --name Erik     # demande le mot de passe (12 caractères min.)
 diagagent user add sophie --role superviseur --name Sophie    # valide les propositions d'évolution
 diagagent serve                                               # http://127.0.0.1:8080
+diagagent --now 2026-10-07T06:00:00Z serve                    # scénario de démonstration (voir ci-dessous)
 ```
+
+Les recherches sans période portent sur les 24 h qui précèdent l'**heure de référence**. Lancé sans
+`--now`, le serveur utilise l'heure réelle : les données de démonstration (nuit du 6 octobre 2026) sont
+alors hors période, et l'agent doit élargir lui-même ses recherches. Pour jouer le scénario comme
+`diagagent eval`, lancer le serveur avec `--now 2026-10-07T06:00:00Z` ; l'heure figée s'affiche dans la
+barre latérale, et l'heure de référence de chaque investigation sous sa question.
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.

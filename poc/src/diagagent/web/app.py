@@ -195,7 +195,8 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
 
     @app.get("/api/me")
     def me(user: User = Depends(current_user)) -> dict[str, Any]:
-        return user.public()
+        # Heure de référence figée (serve --now) : les questions portent sur cette date, pas sur maintenant.
+        return {**user.public(), "reference_time": os.environ.get("DIAGAGENT_NOW")}
 
     @app.post("/api/runs")
     async def ask_question(body: AskBody, user: User = Depends(current_user)) -> dict[str, str]:

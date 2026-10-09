@@ -59,6 +59,8 @@ async function boot() {
   try { me = await api("/api/me"); } catch { showLogin(); return; }
   $("login").hidden = true; $("app").hidden = false;
   $("who").textContent = `${me.display_name} · ${me.roles.join(", ")}`;
+  $("ref-time").hidden = !me.reference_time;
+  if (me.reference_time) $("ref-time").textContent = `Heure de référence figée : ${fmtDate(me.reference_time)} (UTC ${me.reference_time})`;
   $("ask-form").hidden = !me.permissions.includes("ask");
   $("open-admin").hidden = !["review", "view_indicators", "view_costs", "view_access_log"].some(can);
   categories = await api("/api/categories");
@@ -141,7 +143,12 @@ async function openRun(runId) {
               canStop: data.can_stop, status: data.manifest.status };
   $("empty").hidden = true; $("admin").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
   $("run-question").textContent = data.manifest.question;
-  $("run-meta").textContent = `${fmtDate(data.manifest.started_at)} · ${data.manifest.user} · ${runId}`;
+  // L'heure de référence fixe la période des recherches (« depuis hier soir », 24 h par défaut) : on l'affiche
+  // quand elle diffère du lancement, par exemple sur le scénario de démonstration.
+  const ref = data.manifest.reference_time, started = data.manifest.started_at;
+  const shifted = ref && Math.abs(Date.parse(ref) - Date.parse(started)) > 60_000;
+  $("run-meta").textContent = `${fmtDate(started)} · ${data.manifest.user} · ${runId}`
+    + (shifted ? ` · heure de référence ${fmtDate(ref)}` : "");
   renderSummary(data);
   document.querySelectorAll("#runs li").forEach((li) => li.classList.toggle("active", li.dataset.id === runId));
   const source = new EventSource(`/api/runs/${runId}/events`);

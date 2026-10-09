@@ -64,6 +64,7 @@ def test_login_roles_and_csrf(env):
     assert me["roles"] == ["operateur"] and "stop_all" not in me["permissions"]
     cookie = c.cookies.get("diagagent_session")
     assert cookie and c.get("/api/me").json()["login"] == "alice"
+    assert c.get("/api/me").json()["reference_time"] == "2026-10-07T06:00:00Z"  # heure figée des tests
     # Sans l'en-tête anti-falsification, une commande est refusée.
     assert c.post("/api/runs", json={"question": "test"}).status_code == 403
 
