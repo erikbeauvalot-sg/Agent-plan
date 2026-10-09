@@ -208,16 +208,16 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     size = max(1, min(size, limits.get("max_hits", DEFAULT_MAX_HITS)))
     time_field = card.get("time_field")
     _check_filters(source_id, filters)
-    hits = [d for d in rows(source_id) if _matches(d, filters, text)]
-    window = None
+    matching = [d for d in rows(source_id) if _matches(d, filters, text)]
+    hits, window = matching, None
     if time_field:
         start, end = time_window(time_from, time_to)
         window = [start.isoformat(), end.isoformat()]
-        hits = [d for d in hits
+        hits = [d for d in matching
                 if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
         hits.sort(key=lambda d: field_value(d, time_field), reverse=True)
     exclude = limits.get("exclude_fields", [])
-    return {
+    result = {
         "source": source_id,
         "time_range": window,
         "total": len(hits),
@@ -225,6 +225,14 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         "truncated": len(hits) > size,
         "hits": [_clean(d, exclude) for d in hits[:size]],
     }
+    outside = sorted(t for d in matching if (t := field_value(d, time_field))) if time_field and not hits else []
+    if outside:
+        # Sans cette note, « 0 dans la période par défaut » se lisait « n'existe pas » (un ticket cherché
+        # par son numéro, ouvert plus de 24 h avant l'heure de référence).
+        result["outside_time_range"] = {"total": len(outside), "first": outside[0], "last": outside[-1]}
+        result["note"] = (f"Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
+                          f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")
+    return result
 
 
 def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
