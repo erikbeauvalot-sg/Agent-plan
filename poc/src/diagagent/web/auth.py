@@ -25,17 +25,29 @@ from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from diagagent import catalog
 
-ROLES = ("operateur", "administrateur")
+ROLES = ("lecteur", "operateur", "superviseur", "administrateur", "auditeur")
 MIN_PASSWORD = 12
 MAX_FAILURES = 5
 LOCK_MINUTES = 15
 SESSION_IDLE_S = 15 * 60
 SESSION_MAX_S = 8 * 3600
 
-# Fonctions autorisées par rôle (matrice du document d'architecture, rôles de la V1 du POC).
+# Matrice des rôles du document d'architecture (section « Authentification et rôles »).
+#   view_shared    lire une investigation partagée (tous les rôles)
+#   view_own/all   lire ses investigations / toutes, avec graphe et chronologie en direct
+#   details_*      prompts, transcripts et appels d'outils (le Lecteur ne les voit pas)
+#   stop_*         arrêt propre d'un sous-agent ou d'une investigation ; kill : arrêt immédiat
+#   share_own      partager ses investigations avec les Lecteurs
+#   review         valider ou rejeter une action proposée, une évolution de catégorie ou de playbook
+#   view_costs, view_access_log, view_indicators, manage_users
+_OWN = {"view_shared", "ask", "view_own", "details_own", "stop_own", "share_own"}
+_ALL = {"view_all", "details_all", "stop_all", "kill", "share_all"}
 PERMISSIONS = {
-    "operateur": {"ask", "view_own", "stop_own"},
-    "administrateur": {"ask", "view_own", "stop_own", "view_all", "stop_all", "manage_users"},
+    "lecteur": {"view_shared"},
+    "operateur": _OWN,
+    "superviseur": _OWN | _ALL | {"review", "view_indicators", "view_costs"},
+    "administrateur": _OWN | _ALL | {"manage_users", "view_indicators", "view_costs", "view_access_log"},
+    "auditeur": {"view_shared", "view_all", "details_all", "view_costs", "view_access_log", "view_indicators"},
 }
 
 _hasher = PasswordHasher()

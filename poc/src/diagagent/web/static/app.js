@@ -4,6 +4,7 @@
 const SIGNALS = { stuckSeconds: 120, loopRepeats: 3, errorStreak: 3, budgetRatio: 0.8 };
 const $ = (id) => document.getElementById(id);
 let me = null;
+const can = (permission) => me?.permissions.includes(permission);
 let categories = [];
 let runsCache = [];
 let current = null;   // { runId, agents, order, firstTs, lastTs, ended, source, canStop, status }
@@ -58,7 +59,10 @@ async function boot() {
   try { me = await api("/api/me"); } catch { showLogin(); return; }
   $("login").hidden = true; $("app").hidden = false;
   $("who").textContent = `${me.display_name} · ${me.roles.join(", ")}`;
+  $("ref-time").hidden = !me.reference_time;
+  if (me.reference_time) $("ref-time").textContent = `Heure de référence figée : ${fmtDate(me.reference_time)} (UTC ${me.reference_time})`;
   $("ask-form").hidden = !me.permissions.includes("ask");
+  $("open-admin").hidden = !["review", "view_indicators", "view_costs", "view_access_log"].some(can);
   categories = await api("/api/categories");
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
@@ -137,9 +141,14 @@ async function openRun(runId) {
   const data = await api(`/api/runs/${runId}`);
   current = { runId, agents: {}, order: [], firstTs: null, lastTs: null, ended: false,
               canStop: data.can_stop, status: data.manifest.status };
-  $("empty").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
+  $("empty").hidden = true; $("admin").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
   $("run-question").textContent = data.manifest.question;
-  $("run-meta").textContent = `${fmtDate(data.manifest.started_at)} · ${data.manifest.user} · ${runId}`;
+  // L'heure de référence fixe la période des recherches (« depuis hier soir », 24 h par défaut) : on l'affiche
+  // quand elle diffère du lancement, par exemple sur le scénario de démonstration.
+  const ref = data.manifest.reference_time, started = data.manifest.started_at;
+  const shifted = ref && Math.abs(Date.parse(ref) - Date.parse(started)) > 60_000;
+  $("run-meta").textContent = `${fmtDate(started)} · ${data.manifest.user} · ${runId}`
+    + (shifted ? ` · heure de référence ${fmtDate(ref)}` : "");
   renderSummary(data);
   document.querySelectorAll("#runs li").forEach((li) => li.classList.toggle("active", li.dataset.id === runId));
   const source = new EventSource(`/api/runs/${runId}/events`);
@@ -161,18 +170,129 @@ function closeStream() {
 }
 
 function renderSummary(data) {
-  current.canStop = data.can_stop; current.status = data.manifest.status;
+  current.canStop = data.can_stop; current.status = data.manifest.status; current.canDetails = data.can_details;
+  $("run-shared").hidden = !data.manifest.shared;
+  $("share-run").hidden = !data.can_share;
+  $("share-run").textContent = data.manifest.shared ? "Ne plus partager" : "Partager";
+  $("share-run").onclick = async () => {
+    await api(`/api/runs/${current.runId}/share`, { method: "POST", body: JSON.stringify({ shared: !data.manifest.shared }) });
+    renderSummary(await api(`/api/runs/${current.runId}`));
+  };
   $("run-status").textContent = statusLabel(data.manifest.status);
   $("run-status").className = `pill ${data.manifest.status}`;
   $("stop-run").hidden = !data.can_stop;
   $("answer").innerHTML = data.analysis ? md(data.analysis) : "L'analyse s'affichera ici à la fin de l'investigation.";
   $("answer").classList.toggle("muted", !data.analysis);
-  renderActions(data.actions || []);
+  renderActions(data.actions || [], ENDED.includes(data.manifest.status));
   $("plan-box").hidden = !data.plan;
   $("plan").innerHTML = md(data.plan || "");
   $("precision-form").hidden = !(data.manifest.status === "needs_clarification" && me.permissions.includes("ask"));
   renderCategory(data.manifest);
+  renderFeedback(data.manifest);
 }
+
+// ---- Avis sur le diagnostic et cas confirmé
+
+const ENDED = ["completed", "partial", "stopped", "failed"];
+
+function renderFeedback(manifest) {
+  const f = manifest.feedback;
+  const canGive = manifest.user === me.login || me.permissions.includes("stop_all");
+  $("feedback-form").hidden = !!f || !canGive || !ENDED.includes(manifest.status);
+  $("feedback-done").hidden = !f;
+  if (f) $("feedback-done").textContent = `Avis de ${f.by} : ${f.verdict}${f.cause ? " · cause réelle : " + f.cause : ""}`;
+}
+
+$("feedback-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = { verdict: f.get("verdict"), cause: f.get("cause") || "", create_case: f.get("create_case") === "on" };
+  try {
+    await api(`/api/runs/${current.runId}/feedback`, { method: "POST", body: JSON.stringify(body) });
+    e.target.reset();
+    renderSummary(await api(`/api/runs/${current.runId}`));
+  } catch (err) { alert(err.message); }
+});
+
+// ---- Amélioration continue : indicateurs et propositions
+
+const pct = (x) => (x === null || x === undefined ? "–" : `${Math.round(x * 100)} %`);
+
+async function openAdmin() {
+  closeStream(); current = null; location.hash = "";
+  $("empty").hidden = true; $("run").hidden = true; $("drawer").hidden = true; $("admin").hidden = false;
+  document.querySelectorAll("#runs li").forEach((li) => li.classList.remove("active"));
+  $("review-box").hidden = !can("review");
+  if (can("review")) {
+    const actions = (await api("/api/actions")).filter((a) => a.status === "proposed");
+    $("review").innerHTML = actions.map((a) => actionHtml(a, true)).join("") || '<p class="muted">Aucune action en attente.</p>';
+  }
+  $("costs-box").hidden = !can("view_costs");
+  if (can("view_costs")) {
+    const c = await api("/api/costs");
+    $("costs").innerHTML = `<p class="muted">Total : ${c.total.runs} investigation(s) · ${c.total.input_tokens} tokens en entrée ·
+      ${c.total.output_tokens} en sortie</p><table><thead><tr><th>Jour</th><th>Utilisateur</th><th>Modèle</th><th>Investigations</th>
+      <th>Tokens entrée</th><th>Tokens sortie</th></tr></thead><tbody>${c.rows.map((r) => `<tr><td>${esc(r.day)}</td><td>${esc(r.user)}</td>
+      <td>${esc(r.model)}</td><td>${r.runs}</td><td>${r.input_tokens}</td><td>${r.output_tokens}</td></tr>`).join("")}</tbody></table>`;
+  }
+  $("log-box").hidden = !can("view_access_log");
+  if (can("view_access_log")) {
+    const log = await api("/api/access-log");
+    $("access-log").innerHTML = `<table><thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Détail</th></tr></thead><tbody>
+      ${log.map((e) => { const { ts, user, action, ...rest } = e;
+        return `<tr><td>${esc(fmtDate(ts))}</td><td>${esc(user)}</td><td>${esc(action)}</td><td>${esc(JSON.stringify(rest))}</td></tr>`; }).join("")}
+      </tbody></table>`;
+  }
+  $("indicators-box").hidden = !can("view_indicators");
+  if (can("view_indicators")) {
+    const ind = await api("/api/indicators");
+    $("indicators-box").hidden = false;
+    const drafts = Object.entries(ind.draft_matches).map(([k, n]) => `${esc(k)} : ${n}`).join(", ");
+    $("indicators").innerHTML = `<p class="muted">${ind.runs} investigation(s) hors évaluation · classées autre : ${pct(ind.autre_share)}
+      ${drafts ? " · catégories en observation : " + drafts : ""}</p>
+      <table><thead><tr><th>Catégorie</th><th>Demandes</th><th>Part</th><th>Corrigées</th><th>Diagnostics justes</th>
+      <th>Durée moy.</th><th>Appels d'outils moy.</th></tr></thead><tbody>
+      ${ind.categories.map((c) => `<tr><td>${esc(c.category)}</td><td>${c.runs}</td><td>${pct(c.share)}</td>
+        <td>${pct(c.corrected_share)}</td><td>${pct(c.useful_share)} <span class="muted">(${c.feedback} avis)</span></td>
+        <td>${c.avg_duration_s} s</td><td>${c.avg_tool_calls}</td></tr>`).join("")}</tbody></table>`;
+  }
+  $("proposals-box").hidden = !(can("review") || can("view_indicators"));
+  if (!$("proposals-box").hidden) renderProposals(await api("/api/proposals"));
+}
+
+const KINDS = { add_examples: "ajout d'exemples", add_hypotheses: "ajout d'hypothèses", update_description: "nouvelle description",
+                new_category: "nouvelle catégorie (en observation)", activate: "activation d'une catégorie" };
+
+function renderProposals(list) {
+  const canReview = me.permissions.includes("review");
+  $("proposals").innerHTML = list.map((p) => {
+    const r = p.replay;
+    const replay = r ? `rejeu de la catégorisation : ${r.before} → ${r.after} / ${r.cases} ${r.ok ? "" : "(dégradation, écartée)"}` : "non rejouée";
+    const decision = p.decision ? `· ${esc(p.status)} par ${esc(p.decision.by)}${p.decision.comment ? " : " + esc(p.decision.comment) : ""}` : "";
+    return `<article class="action">
+      <header><strong>${esc(KINDS[p.kind] || p.kind)} · ${esc(p.target)}</strong><span class="pill ${esc(p.status)}">${esc(p.status)}</span></header>
+      <p>${esc(p.rationale)}</p>
+      <p class="muted">${esc(replay)} ${decision} · preuves : ${(p.evidence || []).map(esc).join(", ") || "–"}</p>
+      <details><summary>Changement proposé</summary><pre>${esc(JSON.stringify(p.change, null, 2))}</pre></details>
+      ${canReview && p.status === "pending" ? `<div class="decide" data-id="${esc(p.id)}">
+        <input placeholder="Commentaire (facultatif)"><button data-accept="1" class="primary">Accepter</button>
+        <button data-accept="0">Rejeter</button></div>` : ""}
+    </article>`;
+  }).join("") || '<p class="muted">Aucune proposition. Lancer <code>diagagent learn</code> pour en produire.</p>';
+}
+
+$("proposals").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-accept]");
+  if (!btn) return;
+  const box = btn.closest(".decide");
+  try {
+    await api(`/api/proposals/${box.dataset.id}/decision`, { method: "POST",
+      body: JSON.stringify({ accept: btn.dataset.accept === "1", comment: box.querySelector("input").value }) });
+    openAdmin();
+  } catch (err) { alert(err.message); }
+});
+
+$("open-admin").addEventListener("click", openAdmin);
 
 // ---- Catégorie de la demande : affichée, corrigeable, relançable
 
@@ -224,19 +344,44 @@ $("precision-form").addEventListener("submit", async (e) => {
   } catch (err) { alert(err.message); }
 });
 
-function renderActions(actions) {
-  $("actions-box").hidden = !actions.length;
-  $("actions").innerHTML = actions.map((a) => `
+const ACTION_STATUS = { proposed: "à valider", validated: "validée, non exécutée", rejected: "rejetée" };
+
+function actionHtml(a, reviewable) {
+  const decision = a.decision ? ` · ${esc(ACTION_STATUS[a.status])} par ${esc(a.decision.by)}${a.decision.comment ? " : " + esc(a.decision.comment) : ""}` : "";
+  return `
     <article class="action">
       <header><strong>${esc(a.id)} · ${esc(a.title)}</strong><span class="risk ${esc(a.risk)}">risque ${esc(a.risk)}</span></header>
+      ${a.question ? `<p class="muted"><a class="run-link" data-run="${esc(a.run_id)}">${esc(a.question)}</a></p>` : ""}
+      <p class="muted">${esc(ACTION_STATUS[a.status] || a.status)}${decision}</p>
       <p class="muted">${esc(a.type)} · ${esc(a.target)}${a.requires_change ? " · passe par un changement" : ""}</p>
       <div class="md">${md(a.rationale)}</div>
       <p class="refs">${(a.evidence || []).map((r) => md(`[${r}]`).replace(/<\/?p>/g, "")).join(" ")}</p>
       <details><summary>Procédure et retour arrière</summary>
         <div class="md">${md(a.procedure)}</div><h3>Retour arrière</h3><div class="md">${md(a.rollback)}</div>
         ${a.risk_explanation ? `<p class="muted">${esc(a.risk_explanation)}</p>` : ""}</details>
-    </article>`).join("");
+      ${reviewable && a.status === "proposed" ? `<div class="decide-action" data-run="${esc(a.run_id)}" data-id="${esc(a.id)}">
+        <input placeholder="Commentaire (facultatif)"><button data-accept="1" class="primary">Valider</button>
+        <button data-accept="0">Rejeter</button></div>` : ""}
+    </article>`;
 }
+
+function renderActions(actions, ended) {
+  $("actions-box").hidden = !actions.length;
+  $("actions").innerHTML = actions.map((a) => actionHtml({ ...a, run_id: current.runId }, ended && can("review"))).join("");
+}
+
+document.addEventListener("click", async (e) => {
+  const link = e.target.closest(".run-link");
+  if (link) { openRun(link.dataset.run); return; }
+  const btn = e.target.closest(".decide-action button[data-accept]");
+  if (!btn) return;
+  const box = btn.closest(".decide-action");
+  try {
+    await api(`/api/runs/${box.dataset.run}/actions/${box.dataset.id}/decision`, { method: "POST",
+      body: JSON.stringify({ accept: btn.dataset.accept === "1", comment: box.querySelector("input").value }) });
+    if (!$("admin").hidden) openAdmin(); else renderSummary(await api(`/api/runs/${current.runId}`));
+  } catch (err) { alert(err.message); }
+});
 
 function statusLabel(s) {
   return { running: "en cours", completed: "terminée", partial: "partielle", stopped: "arrêtée", failed: "en échec",
@@ -378,9 +523,15 @@ document.addEventListener("click", (e) => {
 $("d-close").addEventListener("click", () => { $("drawer").hidden = true; });
 
 async function openAgent(agentId, focusRef) {
-  const d = await api(`/api/runs/${current.runId}/agents/${agentId}`);
   const a = current.agents[agentId];
   $("d-title").textContent = agentId === "lead" ? "Agent principal" : agentId;
+  if (!current.canDetails) {
+    $("d-stop").hidden = true;
+    $("d-body").innerHTML = '<p class="muted">Prompts, échanges avec le modèle et appels d\'outils ne sont pas visibles pour votre rôle.</p>';
+    $("drawer").hidden = false;
+    return;
+  }
+  const d = await api(`/api/runs/${current.runId}/agents/${agentId}`);
   const canStop = current.canStop && a && (a.status === "running");
   $("d-stop").hidden = !canStop;
   $("d-stop").onclick = () => stopAgent(agentId);

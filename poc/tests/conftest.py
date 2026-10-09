@@ -11,6 +11,7 @@ def poc_env(tmp_path, monkeypatch):
     """Données de démonstration, heure figée, traces dans un dossier temporaire."""
     monkeypatch.setenv("DIAGAGENT_HOME", str(POC))
     monkeypatch.setenv("DIAGAGENT_NOW", "2026-10-07T06:00:00Z")
+    monkeypatch.setenv("DIAGAGENT_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
     from diagagent import catalog
     catalog.load_catalog.cache_clear()
     catalog.load_yaml.cache_clear()

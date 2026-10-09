@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog, playbooks
+from . import catalog, knowledge, playbooks
 from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, run_agent
 from .llm import LLMProvider, ToolSpec
 from .runlog import RunLog
@@ -217,9 +217,11 @@ class Investigation:
     # Catégorisation (document d'architecture, « Catégorisation des demandes »)
 
     async def categorize(self) -> tuple[playbooks.Decision, str]:
-        self.books = playbooks.load_playbooks()
+        # Les catégories en observation (draft) sont proposées au classifieur mais jamais appliquées.
+        self.books = playbooks.load_playbooks(include=("active", "draft"))
+        active = {k: b for k, b in self.books.items() if b["status"] == "active"}
         if self.forced_category:
-            if self.forced_category not in self.books:
+            if self.forced_category not in active:
                 raise ValueError(f"Catégorie inconnue : {self.forced_category}")
             c = playbooks.Classification(self.forced_category, "high", reason="catégorie choisie par l'utilisateur")
             source = "user"
@@ -232,15 +234,21 @@ class Investigation:
             if provider is None:
                 c = playbooks.Classification(playbooks.FALLBACK, "low", error=f"classifieur indisponible ({err})")
             else:
-                c, raw = await asyncio.to_thread(playbooks.classify, provider, self.question, self.books)
+                similar = knowledge.similar_requests(self.question, self.log.runs_dir)
+                c, raw = await asyncio.to_thread(playbooks.classify, provider, self.question, self.books, similar)
                 if raw is not None:
                     self.log.write_text("lead", "classification_response.txt", raw.text or "")
             source = "classifier"
         decision = playbooks.decide(c, self.books)
         self._set_category(c, decision, source)
         self.log.event("lead", "request_classified", {**self.category, "mode": decision.mode})
-        section = "" if decision.mode == "clarify" else playbooks.lead_section(
-            decision, c, self.books, set(self.roles))
+        if decision.mode == "clarify":
+            return decision, ""
+        section = playbooks.lead_section(decision, c, self.books, set(self.roles))
+        seen = knowledge.similar_cases(self.question, c.entities)
+        if seen:
+            self.log.event("lead", "similar_cases", {"cases": [x["id"] for x in seen]})
+            section += "\n\n" + knowledge.render_cases(seen)
         return decision, section
 
     def _set_category(self, c: playbooks.Classification, decision: playbooks.Decision, source: str) -> None:
@@ -260,8 +268,9 @@ class Investigation:
 
     async def _requalify(self, args: dict[str, Any]) -> str:
         target = args.get("category", "")
-        if target not in self.books:
-            raise LocalToolError(f"Catégorie inconnue : {target}. Catégories : {', '.join(self.books)}")
+        if target not in self.books or self.books[target]["status"] != "active":
+            active = [k for k, b in self.books.items() if b["status"] == "active"]
+            raise LocalToolError(f"Catégorie inconnue : {target}. Catégories : {', '.join(active)}")
         previous = self.category.get("id")
         if target == previous:
             raise LocalToolError(f"La demande est déjà dans la catégorie {target}")
@@ -307,7 +316,8 @@ class Investigation:
                 "Change la catégorie de la demande quand les faits collectés contredisent la catégorie de "
                 "départ (une « panne » qui s'avère être une lenteur extrême). Rend le nouveau playbook à suivre.",
                 {"type": "object", "properties": {
-                    "category": {"type": "string", "enum": list(self.books)},
+                    "category": {"type": "string",
+                                 "enum": [k for k, b in self.books.items() if b["status"] == "active"]},
                     "reason": {"type": "string", "description": "Faits qui justifient le changement"},
                 }, "required": ["category", "reason"]}),
                 self._requalify),
