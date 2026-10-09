@@ -73,3 +73,18 @@ def _load_with_runs(tmp_path, budget=None):
                 cfg["budgets"] = {"lead": budget}
         return cfg
     return load
+
+
+def test_empty_response_is_retried_not_taken_as_final(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    empty = LLMResponse(text="", tool_calls=[], stop_reason="end")
+    provider = ScriptedProvider([empty, LLMResponse(text="## Synthèse\nok", tool_calls=[], stop_reason="end")])
+    log, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
+    assert status == "completed" and answer == "## Synthèse\nok"
+    assert "Ta réponse est vide" in provider.requests[1].messages[-1].content
+
+    provider = ScriptedProvider([empty] * 3)
+    log, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
+    assert status == "failed" and "réponses vides" in answer
+    events = [json.loads(line)["type"] for line in (log.dir / "events.jsonl").read_text().splitlines()]
+    assert events.count("empty_response") == 3

@@ -124,3 +124,11 @@ def test_unreadable_classifier_answer_falls_back_to_generic(tmp_path, monkeypatc
     category = json.loads((log.dir / "manifest.json").read_text())["category"]
     assert status == "completed" and category["id"] == "autre" and "illisible" in category["error"]
     assert (log.dir / "lead" / "classification_response.txt").read_text() == "je ne sais pas"
+
+
+def test_near_miss_category_id_is_matched():
+    books = playbooks.load_playbooks()
+    c = playbooks.parse_classification('{"category": "analysis-evenement", "confidence": "high", '
+                                       '"alternative": "Performance"}', books)
+    assert (c.category, c.alternative) == ("analyse-evenement", "performance")
+    assert playbooks.parse_classification('{"category": "meteo", "confidence": "high"}', books).category == "autre"

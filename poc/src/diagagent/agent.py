@@ -15,6 +15,9 @@ from .runlog import RunLog
 from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
+MAX_EMPTY_RETRIES = 2  # réponses vides relancées avant d'abandonner
+EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
+               "prévu, ou rends ta réponse finale.")
 
 
 @dataclass
@@ -80,6 +83,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     all_tools = tools + [t.spec for t in local_tools.values()]
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
+    empty_retries = 0
     log.write_text(agent_id, "system_prompt.md", system)
     log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools],
                                            "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
@@ -109,6 +113,17 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         if response.stop_reason == "refusal":
             result.status = "failed"
             result.answer = "Le modèle a refusé de répondre (filtre de contenu)."
+            break
+        if not response.tool_calls and not response.text.strip():
+            # gpt-oss s'arrête parfois après avoir raisonné, sans texte ni appel d'outil : ce vide ne doit pas
+            # passer pour une réponse finale (« completed » avec une analyse vide).
+            log.event(agent_id, "empty_response", {"retry": empty_retries + 1})
+            if empty_retries < MAX_EMPTY_RETRIES and not cancel.cancelled:
+                empty_retries += 1
+                messages.append(Message("user", EMPTY_NUDGE))
+                continue
+            result.status = "failed"
+            result.answer = "Le modèle a rendu des réponses vides ; voir events.jsonl."
             break
         if not response.tool_calls:
             result.answer = response.text
