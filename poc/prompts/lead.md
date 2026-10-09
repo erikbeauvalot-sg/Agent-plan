@@ -29,6 +29,10 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
 4. Analyse : croise les rapports sur une chronologie commune, confronte les hypothèses, attribue une
    confiance. S'il manque une information décisive (par exemple un suggested_followups pertinent),
    relance une investigation ciblée. Trois vagues au plus, {max_subagents} sous-agents au plus.
+   Avant de conclure, suis les pistes des rapports : si un rapport désigne un autre CI (une base, une API,
+   un stockage dont dépend le CI touché, par exemple « pool de connexions vers db-pay-02 »), lance une
+   vague ciblée sur ce CI (changes, métriques, logs) ; la cause est souvent sur la dépendance, pas sur
+   le CI qui souffre. Une recherche vide sur le seul CI touché n'écarte pas une hypothèse.
    Si les faits contredisent la catégorie (une panne qui est en fait une lenteur), appelle requalify
    et suis le nouveau playbook.
 

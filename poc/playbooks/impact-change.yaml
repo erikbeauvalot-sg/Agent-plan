@@ -1,5 +1,5 @@
 id: impact-change
-version: 1
+version: 2
 status: active
 description: >
   Un change a-t-il eu un impact ? On compare l'état des CI concernés avant et après la fenêtre
@@ -18,9 +18,9 @@ steps:
   - name: perimetre
     parallel:
       - {role: changes, objective: "contenu du change : CI, fenêtre d'intervention, description, état"}
+      - {role: host,    objective: "CI qui dépendent des CI du change (les applications qui utilisent une base modifiée)"}
   - name: avant-apres
     parallel:
-      - {role: host,    objective: "CI qui dépendent des CI du change"}
       - {role: metrics, objective: "métriques des CI du change et de leurs dépendants avant et après la fenêtre"}
       - {role: logs,    objective: "erreurs avant et après la fenêtre sur ces CI"}
       - {role: generic, objective: "incidents ouverts après la fenêtre sur ces CI", sources: [incidents]}

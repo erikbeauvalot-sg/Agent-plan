@@ -1,5 +1,5 @@
 id: analyse-evenement
-version: 1
+version: 2
 status: active
 description: >
   Analyse d'un ticket d'incident ou d'une alerte existant : ce qui s'est passé, dans quel ordre, et
@@ -12,18 +12,21 @@ required_entities:
   ticket: "Quel incident ou quelle alerte veux-tu analyser (numéro ou nom) ?"
 hypotheses:
   - id: change-recent
-    signal: "change terminé sur un CI touché peu avant l'heure de début"
+    signal: "change terminé sur un CI touché ou une de ses dépendances peu avant l'heure de début"
   - id: deja-vu
     signal: "incident passé similaire sur les mêmes CI, avec une cause connue"
 steps:
   - name: objet
     parallel:
       - {role: generic, objective: "contenu du ticket ou de l'alerte : CI touchés, heure de début, état", sources: [incidents, events]}
+  - name: chaine
+    parallel:
+      - {role: host, objective: "dépendances des CI touchés (base, API, stockage), profondeur 2"}
   - name: contexte
     parallel:
-      - {role: changes, objective: "changes sur les CI touchés autour de l'heure de début"}
-      - {role: logs,    objective: "erreurs sur les CI touchés autour de l'heure de début"}
-      - {role: metrics, objective: "ruptures de métriques sur les CI touchés autour de l'heure de début"}
+      - {role: changes, objective: "changes sur les CI touchés et leurs dépendances, 48 h avant l'heure de début"}
+      - {role: logs,    objective: "erreurs sur les CI touchés autour de l'heure de début, et les dépendances qu'elles désignent"}
+      - {role: metrics, objective: "ruptures de métriques sur les CI touchés et leurs dépendances autour de l'heure de début"}
       - {role: generic, objective: "incidents similaires passés sur les mêmes CI", sources: [incidents]}
 stop_when:
   - "la chronologie est établie et une cause probable est étayée"

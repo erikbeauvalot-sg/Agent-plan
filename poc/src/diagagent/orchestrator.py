@@ -131,6 +131,7 @@ def validate_report(report: dict[str, Any]) -> dict[str, Any]:
     for i, f in enumerate(findings):
         if not isinstance(f, dict) or not f.get("fact"):
             raise LocalToolError(f"findings[{i}].fact manquant")
+        f["evidence"] = _normalize_evidence(f.get("evidence"))
         if not isinstance(f.get("evidence"), list) or not f["evidence"]:
             raise LocalToolError(f"findings[{i}].evidence doit citer au moins un query_ref")
         if f.get("confidence") not in CONFIDENCES:
@@ -138,6 +139,22 @@ def validate_report(report: dict[str, Any]) -> dict[str, Any]:
     report.setdefault("gaps", [])
     report.setdefault("suggested_followups", [])
     return report
+
+
+def _normalize_evidence(evidence: Any) -> Any:
+    """Les modèles rendent souvent une preuve seule en texte, ou des objets {"query_ref": ...} : on les
+    ramène à une liste de query_ref plutôt que de refuser le rapport et de coûter un tour."""
+    if isinstance(evidence, (str, dict)):
+        evidence = [evidence]
+    if not isinstance(evidence, list):
+        return evidence
+    out = []
+    for e in evidence:
+        if isinstance(e, dict):
+            e = e.get("query_ref") or e.get("ref")
+        if isinstance(e, str) and e.strip():
+            out.append(e.strip().strip("[]"))
+    return out
 
 
 def _slug(text: str) -> str:
