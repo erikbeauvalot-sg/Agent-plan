@@ -88,3 +88,16 @@ def test_empty_response_is_retried_not_taken_as_final(tmp_path, monkeypatch):
     assert status == "failed" and "réponses vides" in answer
     events = [json.loads(line)["type"] for line in (log.dir / "events.jsonl").read_text().splitlines()]
     assert events.count("empty_response") == 3
+
+
+def test_tool_call_written_as_text_is_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    as_text = LLMResponse(text='{"role": "logs", "entity": "srv-pay-01", "objective": "erreurs", "period": "24 h"}',
+                          tool_calls=[], stop_reason="end")
+    provider = ScriptedProvider([as_text, LLMResponse(text="## Synthèse\nok", tool_calls=[], stop_reason="end")])
+    _, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
+    assert status == "completed" and answer == "## Synthèse\nok"
+    assert "appel d'outil dans le texte" in provider.requests[1].messages[-1].content
+    # Un JSON qui ne correspond à aucun outil reste une réponse.
+    provider = ScriptedProvider([LLMResponse(text='{"total": 3}', tool_calls=[], stop_reason="end")])
+    assert asyncio.run(cli.ask("Question", providers=only(provider)))[2] == '{"total": 3}'

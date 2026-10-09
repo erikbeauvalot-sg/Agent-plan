@@ -16,6 +16,8 @@ from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
 MAX_EMPTY_RETRIES = 2  # réponses vides relancées avant d'abandonner
+TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
+                   "l'outil, ou rends ta réponse finale en Markdown.")
 EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
                "prévu, ou rends ta réponse finale.")
 
@@ -114,13 +116,14 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             result.status = "failed"
             result.answer = "Le modèle a refusé de répondre (filtre de contenu)."
             break
-        if not response.tool_calls and not response.text.strip():
-            # gpt-oss s'arrête parfois après avoir raisonné, sans texte ni appel d'outil : ce vide ne doit pas
-            # passer pour une réponse finale (« completed » avec une analyse vide).
-            log.event(agent_id, "empty_response", {"retry": empty_retries + 1})
+        text_call = not response.tool_calls and _looks_like_tool_call(response.text, offered)
+        if not response.tool_calls and (not response.text.strip() or text_call):
+            # gpt-oss s'arrête parfois après avoir raisonné, sans texte ni appel d'outil, ou écrit l'appel
+            # d'outil dans son texte : ni l'un ni l'autre ne doit passer pour une réponse finale.
+            log.event(agent_id, "empty_response", {"retry": empty_retries + 1, "tool_call_as_text": text_call})
             if empty_retries < MAX_EMPTY_RETRIES and not cancel.cancelled:
                 empty_retries += 1
-                messages.append(Message("user", EMPTY_NUDGE))
+                messages.append(Message("user", TEXT_CALL_NUDGE if text_call else EMPTY_NUDGE))
                 continue
             result.status = "failed"
             result.answer = "Le modèle a rendu des réponses vides ; voir events.jsonl."
@@ -213,6 +216,24 @@ async def _call_tool(agent_id: str, call: Any, ref: str, hub: ToolHub, log: RunL
         content = content[:MAX_TOOL_RESULT_CHARS] + f"\n[… résultat tronqué, complet dans {ref}]"
     prefix = "ERREUR D'OUTIL : " if is_error else ""
     return f"[query_ref: {ref}]\n{prefix}{content}", not is_error
+
+
+def _looks_like_tool_call(text: str, tools: list[ToolSpec]) -> bool:
+    """Le texte n'est qu'un objet JSON qui contient les paramètres obligatoires d'un des outils offerts."""
+    stripped = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return False
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    for t in tools:
+        required = set((t.parameters or {}).get("required", []))
+        if required and required <= set(data):
+            return True
+    return False
 
 
 def _maybe_json(text: str) -> Any:
