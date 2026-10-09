@@ -34,7 +34,7 @@
         <select id="runs-filter" aria-label="Filtrer par catégorie"><option value="">Toutes catégories</option></select>
       </div>
       <ul id="runs" class="runs"></ul>
-      <button id="open-admin" hidden>Amélioration continue</button>
+      <button id="open-admin" hidden>Administration</button>
       <button id="logout" class="link">Se déconnecter</button>
     </aside>
 
@@ -58,7 +58,9 @@
             </div>
           </div>
           <div class="run-actions">
+            <span id="run-shared" class="pill" hidden>partagée</span>
             <span id="run-status" class="pill"></span>
+            <button id="share-run" hidden></button>
             <button id="stop-run" class="danger" hidden>Arrêter l'investigation</button>
           </div>
         </header>
@@ -101,16 +103,28 @@
         </section>
       </div>
       <div id="admin" hidden>
-        <header class="run-head"><div><h1>Amélioration continue</h1>
-          <p class="muted">Catégories, playbooks et propositions de l'agent d'apprentissage (<code>diagagent learn</code>).
-            Une proposition n'est appliquée qu'après validation par un Superviseur.</p></div></header>
+        <header class="run-head"><div><h1>Administration</h1>
+          <p class="muted">Revue des actions, amélioration continue des catégories et des playbooks
+            (<code>diagagent learn</code>), coûts et journal d'accès. Les validations sont réservées au Superviseur.</p></div></header>
+        <section class="card" id="review-box" hidden>
+          <h2>Actions proposées à valider <span class="muted">· jamais exécutées par l'agent</span></h2>
+          <div id="review" class="actions"></div>
+        </section>
         <section class="card" id="indicators-box" hidden>
           <h2>Indicateurs par catégorie</h2>
           <div id="indicators" class="table-wrap"></div>
         </section>
-        <section class="card">
-          <h2>Propositions</h2>
+        <section class="card" id="proposals-box" hidden>
+          <h2>Propositions d'évolution des catégories et playbooks</h2>
           <div id="proposals" class="actions"></div>
+        </section>
+        <section class="card" id="costs-box" hidden>
+          <h2>Coûts <span class="muted">· tokens par jour, utilisateur et modèle</span></h2>
+          <div id="costs" class="table-wrap"></div>
+        </section>
+        <section class="card" id="log-box" hidden>
+          <h2>Journal d'accès <span class="muted">· 200 dernières entrées</span></h2>
+          <div id="access-log" class="table-wrap"></div>
         </section>
       </div>
     </main>

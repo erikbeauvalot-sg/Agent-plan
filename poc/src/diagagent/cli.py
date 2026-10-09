@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
     p_user = sub.add_parser("user", help="Gérer la table d'utilisateurs (auth/users.yaml)")
     p_user.add_argument("action", choices=["add"])
     p_user.add_argument("login")
-    p_user.add_argument("--role", action="append", required=True, choices=["operateur", "superviseur", "administrateur"])
+    p_user.add_argument("--role", action="append", required=True, choices=["lecteur", "operateur", "superviseur", "administrateur", "auditeur"])
     p_user.add_argument("--name", help="Nom affiché")
     args = parser.parse_args(argv)
     if args.home:

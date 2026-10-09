@@ -220,3 +220,56 @@ def test_feedback_case_and_supervisor_review(env, tmp_path, monkeypatch):
     assert r.status_code == 200 and r.json()["status"] == "accepted"
     assert sophie.post(url, json={"accept": False}, headers=H).status_code == 409
     assert "Le stockage NAS-02 rame" in _yaml.safe_load((books / "performance.yaml").read_text())["examples"]
+
+
+def test_role_matrix_sharing_action_review_costs_and_access_log(env, tmp_path):
+    from test_actions_eval import ACTION
+
+    app, script = env
+    store = FileUserStore(tmp_path / "users.yaml")
+    for login, role in (("lea", "lecteur"), ("sophie", "superviseur"), ("audrey", "auditeur")):
+        store.add(login, PWD, [role])
+    script["lead"] = ScriptedProvider([
+        tools(("propose_action", ACTION)),
+        answer("## Synthèse\nRevenir à max_connections = 500 [lead/calls/0001.json]")])
+    alice, bob, admin, lea, sophie, audrey = (client(app, n) for n in ("alice", "bob", "admin", "lea", "sophie", "audrey"))
+    run_id = alice.post("/api/runs", json={"question": "Pourquoi paiement est lent ?"}, headers=H).json()["run_id"]
+    wait_status(alice, run_id)
+
+    # Lecteur et Auditeur ne posent pas de question.
+    for c in (lea, audrey):
+        assert c.post("/api/runs", json={"question": "Une question"}, headers=H).status_code == 403
+
+    # Partage : le Lecteur ne voit que les investigations partagées, sans prompts ni appels d'outils.
+    assert lea.get(f"/api/runs/{run_id}").status_code == 404 and lea.get("/api/runs").json() == []
+    assert bob.post(f"/api/runs/{run_id}/share", json={"shared": True}, headers=H).status_code == 404
+    assert alice.post(f"/api/runs/{run_id}/share", json={"shared": True}, headers=H).json() == {"shared": True}
+    assert [r["run_id"] for r in lea.get("/api/runs").json()] == [run_id]
+    data = lea.get(f"/api/runs/{run_id}").json()
+    assert data["can_details"] is False and data["can_share"] is False and "max_connections" in data["analysis"]
+    assert lea.get(f"/api/runs/{run_id}/agents/lead").status_code == 403
+    assert "event: end" in lea.get(f"/api/runs/{run_id}/events").text  # graphe et chronologie
+    assert bob.get(f"/api/runs/{run_id}").json()["can_details"] is False  # partagée : lisible, sans détails
+    # L'Auditeur lit tout, prompts compris, sans rien piloter.
+    assert audrey.get(f"/api/runs/{run_id}/agents/lead").status_code == 200
+    assert audrey.post(f"/api/runs/{run_id}/category", json={"category": "tendance"}, headers=H).status_code == 403
+
+    # Revue des actions : Superviseur seulement ; l'action validée n'est jamais exécutée.
+    assert admin.get("/api/actions").status_code == 403 and alice.get("/api/actions").status_code == 403
+    pending = sophie.get("/api/actions").json()
+    assert [(a["id"], a["status"], a["run_id"]) for a in pending] == [("A01", "proposed", run_id)]
+    url = f"/api/runs/{run_id}/actions/A01/decision"
+    assert admin.post(url, json={"accept": True}, headers=H).status_code == 403
+    r = sophie.post(url, json={"accept": True, "comment": "à planifier"}, headers=H)
+    assert r.status_code == 200 and r.json()["status"] == "validated" and r.json()["decision"]["by"] == "sophie"
+    assert sophie.post(url, json={"accept": False}, headers=H).status_code == 409
+    assert alice.get(f"/api/runs/{run_id}").json()["actions"][0]["status"] == "validated"
+
+    # Coûts : Superviseur, Administrateur, Auditeur ; journal d'accès : Administrateur et Auditeur.
+    assert alice.get("/api/costs").status_code == 403 and lea.get("/api/costs").status_code == 403
+    costs = admin.get("/api/costs").json()
+    assert costs["total"]["runs"] == 1 and costs["rows"][0]["user"] == "alice"
+    assert sophie.get("/api/costs").status_code == 200 and audrey.get("/api/costs").status_code == 200
+    assert sophie.get("/api/access-log").status_code == 403
+    log = audrey.get("/api/access-log").json()
+    assert {"share", "action_decision"} <= {e["action"] for e in log}
