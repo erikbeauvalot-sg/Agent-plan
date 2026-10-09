@@ -59,6 +59,7 @@ async function boot() {
   $("login").hidden = true; $("app").hidden = false;
   $("who").textContent = `${me.display_name} · ${me.roles.join(", ")}`;
   $("ask-form").hidden = !me.permissions.includes("ask");
+  $("open-admin").hidden = !(me.permissions.includes("review") || me.permissions.includes("view_indicators"));
   categories = await api("/api/categories");
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
@@ -137,7 +138,7 @@ async function openRun(runId) {
   const data = await api(`/api/runs/${runId}`);
   current = { runId, agents: {}, order: [], firstTs: null, lastTs: null, ended: false,
               canStop: data.can_stop, status: data.manifest.status };
-  $("empty").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
+  $("empty").hidden = true; $("admin").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
   $("run-question").textContent = data.manifest.question;
   $("run-meta").textContent = `${fmtDate(data.manifest.started_at)} · ${data.manifest.user} · ${runId}`;
   renderSummary(data);
@@ -172,7 +173,88 @@ function renderSummary(data) {
   $("plan").innerHTML = md(data.plan || "");
   $("precision-form").hidden = !(data.manifest.status === "needs_clarification" && me.permissions.includes("ask"));
   renderCategory(data.manifest);
+  renderFeedback(data.manifest);
 }
+
+// ---- Avis sur le diagnostic et cas confirmé
+
+const ENDED = ["completed", "partial", "stopped", "failed"];
+
+function renderFeedback(manifest) {
+  const f = manifest.feedback;
+  const canGive = manifest.user === me.login || me.permissions.includes("stop_all");
+  $("feedback-form").hidden = !!f || !canGive || !ENDED.includes(manifest.status);
+  $("feedback-done").hidden = !f;
+  if (f) $("feedback-done").textContent = `Avis de ${f.by} : ${f.verdict}${f.cause ? " · cause réelle : " + f.cause : ""}`;
+}
+
+$("feedback-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = { verdict: f.get("verdict"), cause: f.get("cause") || "", create_case: f.get("create_case") === "on" };
+  try {
+    await api(`/api/runs/${current.runId}/feedback`, { method: "POST", body: JSON.stringify(body) });
+    e.target.reset();
+    renderSummary(await api(`/api/runs/${current.runId}`));
+  } catch (err) { alert(err.message); }
+});
+
+// ---- Amélioration continue : indicateurs et propositions
+
+const pct = (x) => (x === null || x === undefined ? "–" : `${Math.round(x * 100)} %`);
+
+async function openAdmin() {
+  closeStream(); current = null; location.hash = "";
+  $("empty").hidden = true; $("run").hidden = true; $("drawer").hidden = true; $("admin").hidden = false;
+  document.querySelectorAll("#runs li").forEach((li) => li.classList.remove("active"));
+  if (me.permissions.includes("view_indicators")) {
+    const ind = await api("/api/indicators");
+    $("indicators-box").hidden = false;
+    const drafts = Object.entries(ind.draft_matches).map(([k, n]) => `${esc(k)} : ${n}`).join(", ");
+    $("indicators").innerHTML = `<p class="muted">${ind.runs} investigation(s) hors évaluation · classées autre : ${pct(ind.autre_share)}
+      ${drafts ? " · catégories en observation : " + drafts : ""}</p>
+      <table><thead><tr><th>Catégorie</th><th>Demandes</th><th>Part</th><th>Corrigées</th><th>Diagnostics justes</th>
+      <th>Durée moy.</th><th>Appels d'outils moy.</th></tr></thead><tbody>
+      ${ind.categories.map((c) => `<tr><td>${esc(c.category)}</td><td>${c.runs}</td><td>${pct(c.share)}</td>
+        <td>${pct(c.corrected_share)}</td><td>${pct(c.useful_share)} <span class="muted">(${c.feedback} avis)</span></td>
+        <td>${c.avg_duration_s} s</td><td>${c.avg_tool_calls}</td></tr>`).join("")}</tbody></table>`;
+  }
+  renderProposals(await api("/api/proposals"));
+}
+
+const KINDS = { add_examples: "ajout d'exemples", add_hypotheses: "ajout d'hypothèses", update_description: "nouvelle description",
+                new_category: "nouvelle catégorie (en observation)", activate: "activation d'une catégorie" };
+
+function renderProposals(list) {
+  const canReview = me.permissions.includes("review");
+  $("proposals").innerHTML = list.map((p) => {
+    const r = p.replay;
+    const replay = r ? `rejeu de la catégorisation : ${r.before} → ${r.after} / ${r.cases} ${r.ok ? "" : "(dégradation, écartée)"}` : "non rejouée";
+    const decision = p.decision ? `· ${esc(p.status)} par ${esc(p.decision.by)}${p.decision.comment ? " : " + esc(p.decision.comment) : ""}` : "";
+    return `<article class="action">
+      <header><strong>${esc(KINDS[p.kind] || p.kind)} · ${esc(p.target)}</strong><span class="pill ${esc(p.status)}">${esc(p.status)}</span></header>
+      <p>${esc(p.rationale)}</p>
+      <p class="muted">${esc(replay)} ${decision} · preuves : ${(p.evidence || []).map(esc).join(", ") || "–"}</p>
+      <details><summary>Changement proposé</summary><pre>${esc(JSON.stringify(p.change, null, 2))}</pre></details>
+      ${canReview && p.status === "pending" ? `<div class="decide" data-id="${esc(p.id)}">
+        <input placeholder="Commentaire (facultatif)"><button data-accept="1" class="primary">Accepter</button>
+        <button data-accept="0">Rejeter</button></div>` : ""}
+    </article>`;
+  }).join("") || '<p class="muted">Aucune proposition. Lancer <code>diagagent learn</code> pour en produire.</p>';
+}
+
+$("proposals").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-accept]");
+  if (!btn) return;
+  const box = btn.closest(".decide");
+  try {
+    await api(`/api/proposals/${box.dataset.id}/decision`, { method: "POST",
+      body: JSON.stringify({ accept: btn.dataset.accept === "1", comment: box.querySelector("input").value }) });
+    openAdmin();
+  } catch (err) { alert(err.message); }
+});
+
+$("open-admin").addEventListener("click", openAdmin);
 
 // ---- Catégorie de la demande : affichée, corrigeable, relançable
 

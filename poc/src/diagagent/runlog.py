@@ -84,6 +84,7 @@ class RunLog:
             "run_id": self.run_id, "path": str(self.dir.relative_to(self.runs_dir)),
             "started_at": self.manifest["started_at"], "ended_at": self.manifest["ended_at"],
             "user": self.manifest["user"], "question": self.manifest["question"],
-            "category": (self.manifest.get("category") or {}).get("id"), "status": status,
+            "category": (self.manifest.get("category") or {}).get("id"),
+            "draft_match": (self.manifest.get("category") or {}).get("draft_match"), "status": status,
             "usage": usage, "tool_calls": sum(self._calls.values()),
         })
