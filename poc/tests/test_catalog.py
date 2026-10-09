@@ -70,3 +70,24 @@ def test_search_rejects_operator_filters_and_lists_values():
     res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01", "state": ["New", "In Progress"]},
                          time_from="2026-10-01T00:00:00Z")
     assert [h["number"] for h in res["hits"]] == ["INC0098765"]
+
+
+def test_empty_search_reports_matches_outside_the_time_range():
+    # Heure de référence 2 jours après l'ouverture : la période par défaut (24 h) ne contient pas le ticket.
+    res = catalog.search("incidents", filters={"number": "INC0098765"}, time_from="2026-10-08T00:00:00Z",
+                         time_to="2026-10-09T00:00:00Z")
+    assert res["total"] == 0
+    assert res["outside_time_range"] == {"total": 1, "first": "2026-10-06T22:25:00Z", "last": "2026-10-06T22:25:00Z"}
+    assert "élargis time_from" in res["note"]
+    assert "outside_time_range" not in catalog.search("incidents", filters={"number": "INC0000000"})
+
+
+def test_masked_fields_cannot_be_confirmed_by_search():
+    # caller_email est masqué : ni filtre, ni recherche texte, ni agrégation ne doivent en confirmer une valeur.
+    email = "support.n1@example.com"
+    assert catalog.search("incidents", text=email, time_from="2026-09-01T00:00:00Z")["total"] == 0
+    assert "outside_time_range" not in catalog.search("incidents", text=email)
+    with pytest.raises(ValueError, match="caller_email"):
+        catalog.search("incidents", filters={"caller_email": email})
+    with pytest.raises(ValueError, match="caller_email"):
+        catalog.aggregate("incidents", "caller_email")

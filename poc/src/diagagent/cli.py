@@ -13,8 +13,8 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog, playbooks
-from .evaluation import replay_run, run_eval
+from . import catalog, knowledge, learning, playbooks
+from .evaluation import find_run, replay_run, run_eval
 from .orchestrator import Investigation, ProviderFactory, usage_total
 from .llm import LLMRequest, Message, make_provider
 from .runlog import RunLog
@@ -74,6 +74,32 @@ def list_playbooks() -> None:
     for book in playbooks.load_playbooks(include=playbooks.STATUSES).values():
         playbooks.validate(book, roles=roles)
         print(f"- {book['id']:<18} v{book['version']} {book['status']:<8} {len(book['steps'])} étape(s) · {book['owner']}")
+
+
+def run_learn(days: int, model: bool = True, replay: bool = True) -> None:
+    from .orchestrator import load_roles
+
+    models = _load("models.yaml")
+    drafter = make_provider(models, "learner")[0] if model else None
+    classifier = make_provider(models, "classifier")[0] if replay else None
+    written = learning.learn(catalog.runs_dir(_load("poc.yaml")), days, drafter, classifier, set(load_roles()), log=print)
+    pending = sum(p["status"] == "pending" for p in written)
+    print(f"{len(written)} proposition(s), dont {pending} à valider par un Superviseur")
+
+
+def manage_proposals(action: str, proposal_id: str | None, by: str | None, comment: str) -> None:
+    from .orchestrator import load_roles
+
+    if action == "list":
+        for p in learning.list_proposals():
+            replay = p.get("replay") or {}
+            score = f"rejeu {replay['before']}→{replay['after']}/{replay['cases']}" if replay else "non rejouée"
+            print(f"- {p['id']:<48} {p['status']:<9} {score} · {p['rationale']}")
+        return
+    if not proposal_id or not by:
+        sys.exit("Indiquer l'identifiant de la proposition et --by <superviseur>")
+    p = learning.decide(proposal_id, action == "accept", by, comment, roles=set(load_roles()))
+    print(f"{p['id']} : {p['status']}" + (f" (version {p['applied_version']})" if p.get("applied_version") else ""))
 
 
 def check_model() -> None:
@@ -159,7 +185,22 @@ def main(argv: list[str] | None = None) -> None:
     p_ask = sub.add_parser("ask", help="Poser une question à l'agent principal")
     p_ask.add_argument("question")
     p_ask.add_argument("--category", help="Imposer la catégorie (sans classifieur)")
-    sub.add_parser("playbooks", help="Vérifier et lister les playbooks")
+    p_books = sub.add_parser("playbooks", help="Vérifier et lister les playbooks")
+    p_books.add_argument("--rollback", metavar="ID", help="Revenir à la version précédente d'un playbook")
+    p_learn = sub.add_parser("learn", help="Agent d'apprentissage : écrit des propositions dans playbooks/proposals/")
+    p_learn.add_argument("--days", type=int, default=7, help="Période analysée (jours)")
+    p_learn.add_argument("--no-model", action="store_true", help="Propositions mécaniques seulement")
+    p_learn.add_argument("--no-replay", action="store_true", help="Ne pas rejouer la catégorisation")
+    p_prop = sub.add_parser("proposals", help="Lister, accepter ou rejeter les propositions")
+    p_prop.add_argument("action", nargs="?", choices=["list", "accept", "reject"], default="list")
+    p_prop.add_argument("id", nargs="?")
+    p_prop.add_argument("--by", help="Superviseur qui décide")
+    p_prop.add_argument("--comment", default="")
+    p_case = sub.add_parser("case", help="Créer un cas dans knowledge/ à partir d'une investigation confirmée")
+    p_case.add_argument("action", choices=["add"])
+    p_case.add_argument("run_id")
+    p_case.add_argument("--cause", required=True)
+    p_case.add_argument("--resolution", default="")
     sub.add_parser("tools", help="Lister les outils exposés par les serveurs MCP")
     sub.add_parser("check", help="Vérifier la connexion au modèle")
     p_eval = sub.add_parser("eval", help="Jouer un jeu d'évaluation avec le modèle configuré")
@@ -173,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
     p_user = sub.add_parser("user", help="Gérer la table d'utilisateurs (auth/users.yaml)")
     p_user.add_argument("action", choices=["add"])
     p_user.add_argument("login")
-    p_user.add_argument("--role", action="append", required=True, choices=["operateur", "administrateur"])
+    p_user.add_argument("--role", action="append", required=True, choices=["lecteur", "operateur", "superviseur", "administrateur", "auditeur"])
     p_user.add_argument("--name", help="Nom affiché")
     args = parser.parse_args(argv)
     if args.home:
@@ -193,7 +234,17 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "serve":
         serve(args.host, args.port)
     elif args.cmd == "playbooks":
+        if args.rollback:
+            book = playbooks.rollback(args.rollback)
+            print(f"{book['id']} revenu à la version {book['version']}")
         list_playbooks()
+    elif args.cmd == "learn":
+        run_learn(args.days, model=not args.no_model, replay=not args.no_replay)
+    elif args.cmd == "proposals":
+        manage_proposals(args.action, args.id, args.by, args.comment)
+    elif args.cmd == "case":
+        case = knowledge.create_case(find_run(args.run_id), getpass.getuser(), args.cause, args.resolution)
+        print(f"Cas {case['id']} créé ({case['category']}) dans {knowledge.knowledge_dir()}")
     elif args.cmd == "user":
         add_user(args.login, args.role, args.name)
     else:

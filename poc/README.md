@@ -11,6 +11,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Catalogue | `catalog/` | Une fiche YAML par source, glossaire, relations entre sources |
 | Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
 | Catégorisation et playbooks | `src/diagagent/playbooks.py`, `playbooks/<catégorie>.yaml` | Classifieur, décision (playbook, combinaison, précision), stratégie de collecte par catégorie |
+| Base de cas et apprentissage | `src/diagagent/knowledge.py`, `src/diagagent/learning.py` | Avis sur les diagnostics, cas confirmés, propositions d'évolution rejouées et validées par un Superviseur, indicateurs |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
 | Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
 | Interface web | `src/diagagent/web/` | Passerelle FastAPI (connexion, rôles, flux temps réel, arrêt) et écran de suivi |
@@ -124,6 +125,59 @@ peut la corriger, ou relancer avec une autre catégorie. Chaque correction est a
 `runs/feedback/categories.jsonl`, qui servira à l'apprentissage (étape 7). L'historique se filtre par
 catégorie.
 
+## Base de cas et apprentissage
+
+L'agent ne modifie jamais seul ses catégories ni ses playbooks : il propose, un Superviseur valide.
+
+**Ce qui alimente l'apprentissage**
+
+- Les corrections de catégorie faites dans l'interface (`runs/feedback/categories.jsonl`).
+- L'avis sur chaque diagnostic, donné sous la réponse : utile, partiel ou faux, avec la cause réelle
+  si on la connaît (`runs/feedback/diagnostics.jsonl`).
+- Les cas confirmés : un diagnostic jugé utile, avec sa cause, peut être enregistré comme cas
+  (case à cocher dans l'interface, ou `diagagent case add <run_id> --cause "…"`). Le cas va dans
+  `knowledge/cases/<run_id>.yaml` et dans l'index `knowledge/index.jsonl`.
+
+**Ce qui s'en sert tout de suite**
+
+- Le classifieur reçoit les demandes passées les plus proches dont la catégorie est confirmée.
+- L'agent principal reçoit les cas déjà vus proches de la demande (mots et entités en commun), à
+  vérifier, jamais à recopier sans preuve.
+
+**Agent d'apprentissage**
+
+```bash
+diagagent learn                     # analyse les 7 derniers jours, écrit playbooks/proposals/*.yaml
+diagagent learn --no-model          # propositions mécaniques seulement
+diagagent proposals                 # liste, avec le résultat du rejeu
+diagagent proposals accept <id> --by sophie --comment "…"
+diagagent playbooks --rollback performance   # revient à la version précédente (history/)
+```
+
+| Proposition | D'où elle vient |
+| --- | --- |
+| Ajout d'exemples à une catégorie | Corrections de catégorie (mécanique) |
+| Activation d'une catégorie en observation | Au moins 3 demandes qu'elle aurait captées (mécanique) |
+| Nouvelle catégorie, en observation (`draft`) | Demandes classées `autre` ou avec une confiance faible (modèle) |
+| Ajout d'hypothèses à un playbook | Cas confirmés dont la cause n'est pas parmi les hypothèses (modèle) |
+| Nouvelle description | Confusions récurrentes entre deux catégories (modèle) |
+
+Chaque proposition est rejouée : le classifieur reclasse les demandes de référence (cas de
+`eval/cases.yaml` avec une catégorie, demandes confirmées) avec les playbooks actuels puis avec la
+proposition. Une proposition qui fait baisser la justesse est écartée (`discarded`). La justesse des
+diagnostics n'est pas rejouée dans le POC, car il faudrait une investigation complète par demande.
+
+Un Superviseur accepte ou rejette chaque proposition dans l'écran **Amélioration continue** de
+l'interface. L'Administrateur y voit les indicateurs et les propositions, sans pouvoir valider. Une
+proposition acceptée écrit la nouvelle version du playbook, garde l'ancienne dans
+`playbooks/history/` et trace la décision dans `playbooks/proposals/decisions.jsonl`. Une nouvelle
+catégorie démarre en `draft` : le classifieur la voit, mais une demande qui y correspond suit la
+deuxième catégorie, ou `autre`. La correspondance est notée (`draft_match`) pour mesurer ce que la
+catégorie aurait capté.
+
+L'écran donne aussi, par catégorie : la part des demandes, la part classée `autre`, la part
+corrigée, la part de diagnostics jugés justes, la durée et le nombre d'appels d'outils moyens.
+
 ## Sous-agents
 
 Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par investigation
@@ -136,8 +190,16 @@ sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rô
 
 ```bash
 diagagent user add erik --role administrateur --name Erik     # demande le mot de passe (12 caractères min.)
+diagagent user add sophie --role superviseur --name Sophie    # valide les propositions d'évolution
 diagagent serve                                               # http://127.0.0.1:8080
+diagagent --now 2026-10-07T06:00:00Z serve                    # scénario de démonstration (voir ci-dessous)
 ```
+
+Les recherches sans période portent sur les 24 h qui précèdent l'**heure de référence**. Lancé sans
+`--now`, le serveur utilise l'heure réelle : les données de démonstration (nuit du 6 octobre 2026) sont
+alors hors période, et l'agent doit élargir lui-même ses recherches. Pour jouer le scénario comme
+`diagagent eval`, lancer le serveur avec `--now 2026-10-07T06:00:00Z` ; l'heure figée s'affiche dans la
+barre latérale, et l'heure de référence de chaque investigation sous sa question.
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.
@@ -152,9 +214,22 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
   « Arrêter l'investigation » demande à l'agent principal une synthèse partielle.
 
-Rôles du POC : `operateur` (pose des questions, voit et arrête les siennes) et `administrateur`
-(voit et arrête tout, arrêt immédiat). Comptes dans `auth/users.yaml` (mots de passe en Argon2id,
-verrouillage 15 min après 5 échecs) ; journal d'accès dans `audit/`.
+Les cinq rôles du document d'architecture :
+
+| Rôle | Ce qu'il peut faire |
+| --- | --- |
+| `lecteur` | Lire les investigations partagées, avec graphe et chronologie, sans prompts ni appels d'outils |
+| `operateur` | Poser des questions ; voir en détail, arrêter, partager, corriger et noter les siennes |
+| `superviseur` | Comme l'opérateur, sur toutes les investigations ; arrêt immédiat ; valider ou rejeter les actions proposées et les évolutions de playbooks ; indicateurs et coûts |
+| `administrateur` | Tout voir et tout arrêter ; gérer les utilisateurs ; indicateurs, coûts et journal d'accès ; ne valide pas |
+| `auditeur` | Tout lire, prompts et journal d'accès compris, sans rien piloter |
+
+Une investigation partagée (bouton **Partager**) devient lisible par tout utilisateur connecté, mais
+seuls son auteur et les rôles qui voient tout en ont le détail. L'écran **Administration** regroupe,
+selon le rôle : les actions à valider, les indicateurs par catégorie, les propositions d'évolution, les
+coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'équipe, un Superviseur voit
+tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
+15 min après 5 échecs) ; journal d'accès dans `audit/`.
 
 ![Investigation en cours](../docs/images/poc-interface-en-cours.png)
 
@@ -164,6 +239,11 @@ L'agent principal enregistre chaque action qu'il recommande avec `propose_action
 complémentaire, remédiation, contournement, ouverture de ticket), cible, justification et preuves,
 risque, procédure, retour arrière, passage ou non par la gestion des changements. Elles sont écrites
 dans `actions.json` et affichées dans l'interface ; aucun outil ne permet de les exécuter.
+
+Un Superviseur valide ou rejette chaque action, depuis l'investigation ou depuis la liste des actions
+en attente de l'écran Administration. La décision (qui, quand, commentaire) est écrite dans
+`actions.json` et dans le journal d'accès. Une action validée reste non exécutée : l'exécution avec
+validation humaine fera l'objet d'un document séparé.
 
 ## Évaluation et rejeu
 

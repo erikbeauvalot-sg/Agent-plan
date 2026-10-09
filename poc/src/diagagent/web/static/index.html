@@ -24,6 +24,7 @@
         <span>Agent de diagnostic</span>
         <span id="who" class="who"></span>
       </header>
+      <p id="ref-time" class="ref-time" hidden></p>
       <form id="ask-form" class="ask">
         <textarea name="question" rows="4" placeholder="Pose une question sur la production…" required></textarea>
         <button type="submit" class="primary">Lancer l'investigation</button>
@@ -34,6 +35,7 @@
         <select id="runs-filter" aria-label="Filtrer par catégorie"><option value="">Toutes catégories</option></select>
       </div>
       <ul id="runs" class="runs"></ul>
+      <button id="open-admin" hidden>Administration</button>
       <button id="logout" class="link">Se déconnecter</button>
     </aside>
 
@@ -57,7 +59,9 @@
             </div>
           </div>
           <div class="run-actions">
+            <span id="run-shared" class="pill" hidden>partagée</span>
             <span id="run-status" class="pill"></span>
+            <button id="share-run" hidden></button>
             <button id="stop-run" class="danger" hidden>Arrêter l'investigation</button>
           </div>
         </header>
@@ -82,11 +86,46 @@
         <section class="card">
           <h2>Réponse</h2>
           <div id="answer" class="md muted">L'analyse s'affichera ici à la fin de l'investigation.</div>
+          <form id="feedback-form" class="feedback" hidden>
+            <span class="muted">Ce diagnostic était :</span>
+            <label><input type="radio" name="verdict" value="utile" required> utile</label>
+            <label><input type="radio" name="verdict" value="partiel"> partiel</label>
+            <label><input type="radio" name="verdict" value="faux"> faux</label>
+            <input name="cause" placeholder="Cause réelle, si tu la connais">
+            <label class="case"><input type="checkbox" name="create_case"> enregistrer comme cas confirmé</label>
+            <button type="submit">Envoyer l'avis</button>
+          </form>
+          <p id="feedback-done" class="muted" hidden></p>
           <form id="precision-form" class="precision" hidden>
             <input name="precision" placeholder="Ta précision (par exemple : l'application Paiement)" required>
             <button type="submit" class="primary">Préciser et relancer</button>
           </form>
           <details id="plan-box" hidden><summary>Plan d'investigation</summary><div id="plan" class="md"></div></details>
+        </section>
+      </div>
+      <div id="admin" hidden>
+        <header class="run-head"><div><h1>Administration</h1>
+          <p class="muted">Revue des actions, amélioration continue des catégories et des playbooks
+            (<code>diagagent learn</code>), coûts et journal d'accès. Les validations sont réservées au Superviseur.</p></div></header>
+        <section class="card" id="review-box" hidden>
+          <h2>Actions proposées à valider <span class="muted">· jamais exécutées par l'agent</span></h2>
+          <div id="review" class="actions"></div>
+        </section>
+        <section class="card" id="indicators-box" hidden>
+          <h2>Indicateurs par catégorie</h2>
+          <div id="indicators" class="table-wrap"></div>
+        </section>
+        <section class="card" id="proposals-box" hidden>
+          <h2>Propositions d'évolution des catégories et playbooks</h2>
+          <div id="proposals" class="actions"></div>
+        </section>
+        <section class="card" id="costs-box" hidden>
+          <h2>Coûts <span class="muted">· tokens par jour, utilisateur et modèle</span></h2>
+          <div id="costs" class="table-wrap"></div>
+        </section>
+        <section class="card" id="log-box" hidden>
+          <h2>Journal d'accès <span class="muted">· 200 dernières entrées</span></h2>
+          <div id="access-log" class="table-wrap"></div>
         </section>
       </div>
     </main>
