@@ -43,6 +43,10 @@ class RunLog:
         _dump(self.dir / "manifest.json", self.manifest)
         (self.dir / "question.md").write_text(question + "\n", encoding="utf-8")
 
+    def update_manifest(self, **fields: Any) -> None:
+        self.manifest.update(fields)
+        _dump(self.dir / "manifest.json", self.manifest)
+
     def agent_dir(self, agent_id: str) -> Path:
         return self.dir / "lead" if agent_id == "lead" else self.dir / "subagents" / agent_id
 
@@ -79,6 +83,7 @@ class RunLog:
         _append(self.runs_dir / "index.jsonl", {
             "run_id": self.run_id, "path": str(self.dir.relative_to(self.runs_dir)),
             "started_at": self.manifest["started_at"], "ended_at": self.manifest["ended_at"],
-            "user": self.manifest["user"], "question": self.manifest["question"], "status": status,
+            "user": self.manifest["user"], "question": self.manifest["question"],
+            "category": (self.manifest.get("category") or {}).get("id"), "status": status,
             "usage": usage, "tool_calls": sum(self._calls.values()),
         })

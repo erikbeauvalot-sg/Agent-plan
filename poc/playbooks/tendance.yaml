@@ -1,0 +1,23 @@
+id: tendance
+version: 1
+status: active
+description: >
+  Chiffres sur une période et un périmètre : nombre d'incidents, hosts les plus instables, alertes les
+  plus fréquentes. Agrégations directes, sans diagnostic.
+examples:
+  - "Combien d'incidents P1 ce mois sur Paiement ?"
+  - "Quels sont les hosts les plus instables ?"
+  - "Quelles erreurs reviennent le plus dans les logs de srv-pay-01 ?"
+required_entities: {}
+hypotheses: []
+steps:
+  - name: agregation
+    direct: "L'agent principal répond lui-même avec aggregate ou search ; un sous-agent seulement si plusieurs sources sont nécessaires."
+    collect:
+      - "Fixer la période (par défaut : le mois en cours) et le périmètre"
+      - "Agréger sur la ou les sources concernées"
+stop_when:
+  - "les chiffres demandés sont obtenus"
+requalify: {}
+output: [synthese, tableau]
+owner: équipe exploitation applicative

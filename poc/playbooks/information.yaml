@@ -1,0 +1,27 @@
+id: information
+version: 1
+status: active
+description: >
+  Demande de renseignements sur un objet nommé (host, CI, application, service, équipe) : fiche,
+  dépendances, propriétaires, incidents et changements ouverts ou récents. Pas de diagnostic.
+examples:
+  - "Donne-moi les informations sur srv-pay-01"
+  - "Qui gère l'application Paiement ?"
+  - "Quels incidents sont ouverts sur srv-pay-01 ?"
+  - "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
+  - "Quelles alertes de supervision sont ouvertes en ce moment ?"
+required_entities: {}
+hypotheses: []
+steps:
+  - name: fiche
+    direct: "L'agent principal répond lui-même, sans sous-agent : une ou deux recherches suffisent."
+    collect:
+      - "Résoudre l'objet nommé (resolve_entity, fiche CMDB)"
+      - "Selon la question : dépendances, propriétaires, incidents ou changements ouverts ou récents, alertes"
+stop_when:
+  - "l'information demandée est trouvée, ou son absence est vérifiée dans la bonne source"
+requalify:
+  indisponibilite: "la question décrit en fait un service en panne ou en erreur"
+  performance: "la question décrit en fait une lenteur"
+output: [synthese, preuves]
+owner: équipe exploitation applicative

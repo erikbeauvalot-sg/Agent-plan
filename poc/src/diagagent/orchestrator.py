@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog
+from . import catalog, playbooks
 from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, run_agent
 from .llm import LLMProvider, ToolSpec
 from .runlog import RunLog
@@ -146,8 +146,9 @@ def _slug(text: str) -> str:
 
 class Investigation:
     def __init__(self, question: str, hub: ToolHub, log: RunLog, providers: ProviderFactory,
-                 poc_cfg: dict[str, Any]):
+                 poc_cfg: dict[str, Any], category: str | None = None):
         self.question = question
+        self.forced_category = category
         self.hub = hub
         self.log = log
         self.providers = providers
@@ -158,6 +159,8 @@ class Investigation:
         self.roles = {name: r for name, r in load_roles().items() if self._role_tools(r)}
         self.subagents: dict[str, SubAgent] = {}
         self.lead_cancel = CancelToken()
+        self.books: dict[str, dict[str, Any]] = {}
+        self.category: dict[str, Any] = {}
 
     # Pilotage (utilisé par l'interface web à l'étape 3)
 
@@ -191,21 +194,83 @@ class Investigation:
     # Agent principal
 
     async def run(self) -> AgentResult:
+        decision, section = await self.categorize()
+        if decision.mode == "clarify":
+            return AgentResult(status="needs_clarification", answer=self._clarification_text(decision))
         provider, role_cfg = self.providers("lead")
         result = await run_agent(
-            agent_id="lead", provider=provider, system=self.lead_system_prompt(),
+            agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
             user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
             budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
             local_tools=self._lead_tools())
         await self._close_pending()
         return result
 
-    def lead_system_prompt(self) -> str:
+    def lead_system_prompt(self, playbook: str = "") -> str:
         template = (catalog.home() / "prompts" / "lead.md").read_text(encoding="utf-8")
         roles = "\n".join(f"- {r.name} : {r.description}" for r in self.roles.values()) or "- (aucun)"
         return template.format(now=catalog.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
                                catalog=catalog.catalog_summary(), roles=roles,
-                               max_subagents=self.max_subagents)
+                               max_subagents=self.max_subagents,
+                               playbook=playbook or "Aucun playbook : stratégie générique.")
+
+    # Catégorisation (document d'architecture, « Catégorisation des demandes »)
+
+    async def categorize(self) -> tuple[playbooks.Decision, str]:
+        self.books = playbooks.load_playbooks()
+        if self.forced_category:
+            if self.forced_category not in self.books:
+                raise ValueError(f"Catégorie inconnue : {self.forced_category}")
+            c = playbooks.Classification(self.forced_category, "high", reason="catégorie choisie par l'utilisateur")
+            source = "user"
+        else:
+            self.log.event("lead", "classification_started", {})
+            try:
+                provider, _ = self.providers("classifier")
+            except Exception as e:  # pas de classifieur configuré : stratégie générique
+                provider, err = None, f"{type(e).__name__}: {e}"
+            if provider is None:
+                c = playbooks.Classification(playbooks.FALLBACK, "low", error=f"classifieur indisponible ({err})")
+            else:
+                c, raw = await asyncio.to_thread(playbooks.classify, provider, self.question, self.books)
+                if raw is not None:
+                    self.log.write_text("lead", "classification_response.txt", raw.text or "")
+            source = "classifier"
+        decision = playbooks.decide(c, self.books)
+        self._set_category(c, decision, source)
+        self.log.event("lead", "request_classified", {**self.category, "mode": decision.mode})
+        section = "" if decision.mode == "clarify" else playbooks.lead_section(
+            decision, c, self.books, set(self.roles))
+        return decision, section
+
+    def _set_category(self, c: playbooks.Classification, decision: playbooks.Decision, source: str) -> None:
+        self.category = {
+            "id": decision.categories[0], "confidence": c.confidence, "source": source, "mode": decision.mode,
+            "playbooks": {cat: self.books[cat]["version"] for cat in decision.categories},
+            **{k: v for k, v in c.as_dict().items() if k not in ("category", "confidence")},
+        }
+        self.log.update_manifest(category=self.category)
+
+    def _clarification_text(self, decision: playbooks.Decision) -> str:
+        choices = self.category.get("choices") or []
+        text = f"## Précision nécessaire\n{decision.clarification}"
+        if choices:
+            text += "\n" + "\n".join(f"- {c}" for c in choices)
+        return text
+
+    async def _requalify(self, args: dict[str, Any]) -> str:
+        target = args.get("category", "")
+        if target not in self.books:
+            raise LocalToolError(f"Catégorie inconnue : {target}. Catégories : {', '.join(self.books)}")
+        previous = self.category.get("id")
+        if target == previous:
+            raise LocalToolError(f"La demande est déjà dans la catégorie {target}")
+        history = self.category.get("history", []) + [{"from": previous, "reason": args.get("reason", "")}]
+        self.category.update(id=target, source="requalify", mode="playbook", history=history,
+                             playbooks={target: self.books[target]["version"]})
+        self.log.update_manifest(category=self.category)
+        self.log.event("lead", "category_changed", {"from": previous, "to": target, "reason": args.get("reason", "")})
+        return playbooks.render(self.books[target], set(self.roles))
 
     def _lead_tools(self) -> dict[str, LocalTool]:
         role_names = list(self.roles)
@@ -237,6 +302,15 @@ class Investigation:
                 "et rend leurs rapports.",
                 {"type": "object", "properties": {"task_ids": {"type": "array", "items": {"type": "string"}}}}),
                 self._wait),
+            "requalify": LocalTool(ToolSpec(
+                "requalify",
+                "Change la catégorie de la demande quand les faits collectés contredisent la catégorie de "
+                "départ (une « panne » qui s'avère être une lenteur extrême). Rend le nouveau playbook à suivre.",
+                {"type": "object", "properties": {
+                    "category": {"type": "string", "enum": list(self.books)},
+                    "reason": {"type": "string", "description": "Faits qui justifient le changement"},
+                }, "required": ["category", "reason"]}),
+                self._requalify),
             "propose_action": LocalTool(ToolSpec(
                 "propose_action",
                 "Enregistre une action proposée dans actions.json. L'action n'est jamais exécutée : elle est "

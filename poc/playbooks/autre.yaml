@@ -1,0 +1,17 @@
+id: autre
+version: 1
+status: active
+description: >
+  Demande non reconnue par les autres catégories. Stratégie générique : cadrage, question de précision
+  si besoin, investigation libre. La demande est marquée pour l'apprentissage.
+examples: []
+required_entities: {}
+hypotheses: []
+steps:
+  - name: libre
+    direct: "Cadrage habituel, puis investigation libre : réponse directe pour un fait, sous-agents pour un diagnostic."
+stop_when:
+  - "la question est traitée, ou il manque une précision qu'il faut demander"
+requalify: {}
+output: [synthese]
+owner: équipe exploitation applicative

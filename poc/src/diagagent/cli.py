@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog
+from . import catalog, playbooks
 from .evaluation import replay_run, run_eval
 from .orchestrator import Investigation, ProviderFactory, usage_total
 from .llm import LLMRequest, Message, make_provider
@@ -37,9 +37,11 @@ def default_providers() -> ProviderFactory:
 
 
 async def ask(question: str, providers: ProviderFactory | None = None, user: str | None = None,
-              on_started: Callable[[RunLog, Investigation], None] | None = None) -> tuple[RunLog, str, str]:
+              on_started: Callable[[RunLog, Investigation], None] | None = None,
+              category: str | None = None) -> tuple[RunLog, str, str]:
     """Une investigation complète. on_started est appelé dès que l'investigation est pilotable
-    (utilisé par la passerelle web pour l'arrêt)."""
+    (utilisé par la passerelle web pour l'arrêt). category impose la catégorie et saute le classifieur
+    (correction de l'utilisateur, rejeu)."""
     poc = _load("poc.yaml")
     providers = providers or default_providers()
     lead, lead_cfg = providers("lead")
@@ -48,7 +50,7 @@ async def ask(question: str, providers: ProviderFactory | None = None, user: str
                                       "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
                   "reference_time": catalog.now().isoformat()})
     async with ToolHub(poc["mcp_servers"]) as hub:
-        investigation = Investigation(question, hub, log, providers, poc)
+        investigation = Investigation(question, hub, log, providers, poc, category=category)
         if on_started:
             on_started(log, investigation)
         result = await investigation.run()
@@ -63,6 +65,15 @@ async def list_tools() -> None:
     async with ToolHub(_load("poc.yaml")["mcp_servers"]) as hub:
         for spec in hub.specs.values():
             print(f"- {spec.name} : {spec.description.splitlines()[0] if spec.description else ''}")
+
+
+def list_playbooks() -> None:
+    from .orchestrator import load_roles
+
+    roles = set(load_roles())
+    for book in playbooks.load_playbooks(include=playbooks.STATUSES).values():
+        playbooks.validate(book, roles=roles)
+        print(f"- {book['id']:<18} v{book['version']} {book['status']:<8} {len(book['steps'])} étape(s) · {book['owner']}")
 
 
 def check_model() -> None:
@@ -80,7 +91,9 @@ def print_eval(report: dict[str, Any]) -> bool:
             if not c["ok"]:
                 print(f"       ✗ {c['check']}" + (f" ({c['detail']})" if "detail" in c else ""))
     s = report["summary"]
-    print(f"\n{s['passed']}/{s['cases']} cas réussis · {s['tokens']} tokens · rapport : {report['path']}")
+    categories = (f" · catégorie juste {s['categories']['correct']}/{s['categories']['cases']}"
+                  if "categories" in s else "")
+    print(f"\n{s['passed']}/{s['cases']} cas réussis{categories} · {s['tokens']} tokens · rapport : {report['path']}")
     return s["passed"] == s["cases"]
 
 
@@ -145,6 +158,8 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_ask = sub.add_parser("ask", help="Poser une question à l'agent principal")
     p_ask.add_argument("question")
+    p_ask.add_argument("--category", help="Imposer la catégorie (sans classifieur)")
+    sub.add_parser("playbooks", help="Vérifier et lister les playbooks")
     sub.add_parser("tools", help="Lister les outils exposés par les serveurs MCP")
     sub.add_parser("check", help="Vérifier la connexion au modèle")
     p_eval = sub.add_parser("eval", help="Jouer un jeu d'évaluation avec le modèle configuré")
@@ -177,10 +192,12 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0 if print_replay(asyncio.run(replay_run(args.run_id))) else 1)
     elif args.cmd == "serve":
         serve(args.host, args.port)
+    elif args.cmd == "playbooks":
+        list_playbooks()
     elif args.cmd == "user":
         add_user(args.login, args.role, args.name)
     else:
-        log, status, answer = asyncio.run(ask(args.question))
+        log, status, answer = asyncio.run(ask(args.question, category=args.category))
         print(answer)
         print(f"\n---\nStatut : {status} · traces : {log.dir}", file=sys.stderr)
         print(json.dumps(log.manifest.get("usage", {})), file=sys.stderr)

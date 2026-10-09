@@ -33,7 +33,10 @@ def test_lead_agent_calls_tools_and_writes_traces(tmp_path, monkeypatch):
     call = json.loads((d / "lead" / "calls" / "0002.json").read_text())
     assert call["tool"] == "search" and call["output"]["total"] == 2
     types = [json.loads(line)["type"] for line in (d / "events.jsonl").read_text().splitlines()]
-    assert types[0] == "agent_started" and types[-1] == "agent_ended"
+    # La catégorisation précède l'agent principal ; sans classifieur, la stratégie générique.
+    assert types[:3] == ["classification_started", "request_classified", "agent_started"]
+    assert types[-1] == "agent_ended"
+    assert json.loads((d / "manifest.json").read_text())["category"]["id"] == "autre"
     assert (tmp_path / "runs" / "index.jsonl").exists()
     assert "Date et heure de référence : 2026-10-07T06:00:00Z" in (d / "lead" / "system_prompt.md").read_text()
 
@@ -51,7 +54,12 @@ def test_budget_forces_a_partial_answer(tmp_path, monkeypatch):
 
 
 def only(provider):
-    return lambda role: (provider, {})
+    """Le même fournisseur pour tous les agents ; pas de classifieur (catégorie autre)."""
+    def providers(role):
+        if role == "classifier":
+            raise KeyError(role)
+        return provider, {}
+    return providers
 
 
 def _load_with_runs(tmp_path, budget=None):

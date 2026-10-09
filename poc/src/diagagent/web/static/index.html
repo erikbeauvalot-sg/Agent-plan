@@ -29,7 +29,10 @@
         <button type="submit" class="primary">Lancer l'investigation</button>
         <p id="ask-error" class="error" hidden></p>
       </form>
-      <h2>Investigations</h2>
+      <div class="runs-head">
+        <h2>Investigations</h2>
+        <select id="runs-filter" aria-label="Filtrer par catégorie"><option value="">Toutes catégories</option></select>
+      </div>
       <ul id="runs" class="runs"></ul>
       <button id="logout" class="link">Se déconnecter</button>
     </aside>
@@ -41,6 +44,17 @@
           <div>
             <h1 id="run-question"></h1>
             <p id="run-meta" class="muted"></p>
+            <div id="run-category" class="category" hidden>
+              <span id="cat-label"></span>
+              <span id="cat-detail" class="muted"></span>
+              <button id="cat-edit" class="link">Corriger</button>
+              <form id="cat-form" class="cat-form" hidden>
+                <select id="cat-select" aria-label="Catégorie"></select>
+                <button type="submit">Enregistrer</button>
+                <button type="button" id="cat-rerun">Relancer avec cette catégorie</button>
+                <button type="button" id="cat-cancel" class="link">Annuler</button>
+              </form>
+            </div>
           </div>
           <div class="run-actions">
             <span id="run-status" class="pill"></span>
@@ -68,6 +82,10 @@
         <section class="card">
           <h2>Réponse</h2>
           <div id="answer" class="md muted">L'analyse s'affichera ici à la fin de l'investigation.</div>
+          <form id="precision-form" class="precision" hidden>
+            <input name="precision" placeholder="Ta précision (par exemple : l'application Paiement)" required>
+            <button type="submit" class="primary">Préciser et relancer</button>
+          </form>
           <details id="plan-box" hidden><summary>Plan d'investigation</summary><div id="plan" class="md"></div></details>
         </section>
       </div>

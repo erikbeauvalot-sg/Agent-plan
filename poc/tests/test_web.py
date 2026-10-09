@@ -95,7 +95,8 @@ def test_ask_stream_and_visibility(env):
 
     body = alice.get(f"/api/runs/{run_id}/events").text
     events = [json.loads(l[6:]) for l in body.splitlines() if l.startswith("data: {\"seq")]
-    assert events[0]["type"] == "agent_started" and events[-1]["type"] == "agent_ended"
+    assert [e["type"] for e in events[:3]] == ["classification_started", "request_classified", "agent_started"]
+    assert events[-1]["type"] == "agent_ended"
     assert "event: end" in body
     # Reprise après coupure : seulement les événements après Last-Event-ID.
     tail = alice.get(f"/api/runs/{run_id}/events", headers={"Last-Event-ID": str(len(events) - 1)}).text
@@ -143,3 +144,33 @@ def test_stop_subagent_from_the_interface(env):
     body = alice.get(f"/api/runs/{run_id}/events").text
     stop = [json.loads(l[6:]) for l in body.splitlines() if '"stop_requested"' in l][0]
     assert stop["data"] == {"by": "alice", "scope": "agent"}
+
+
+def test_category_is_shown_corrected_and_forced(env, tmp_path):
+    app, script = env
+    script["lead"] = ScriptedProvider([answer("## Synthèse\nok"), answer("## Synthèse\nok")])
+    script["classifier"] = ScriptedProvider([LLMResponse(
+        '{"category": "information", "confidence": "medium"}', [], "end")])
+    alice, bob, admin = client(app, "alice"), client(app, "bob"), client(app, "admin")
+    assert {c["id"] for c in alice.get("/api/categories").json()} >= {"information", "performance", "autre"}
+
+    run_id = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H).json()["run_id"]
+    data = wait_status(alice, run_id)
+    assert data["manifest"]["category"]["id"] == "information"
+    assert next(r for r in alice.get("/api/runs").json() if r["run_id"] == run_id)["category"] == "information"
+
+    # Seuls l'auteur et un administrateur corrigent ; la correction est tracée pour l'apprentissage.
+    assert bob.post(f"/api/runs/{run_id}/category", json={"category": "tendance"}, headers=H).status_code == 404
+    assert alice.post(f"/api/runs/{run_id}/category", json={"category": "inconnue"}, headers=H).status_code == 400
+    r = alice.post(f"/api/runs/{run_id}/category", json={"category": "tendance"}, headers=H)
+    assert r.status_code == 200 and r.json()["category"]["correction"]["by"] == "alice"
+    assert alice.get(f"/api/runs/{run_id}").json()["manifest"]["category"]["correction"]["category"] == "tendance"
+    feedback = (tmp_path / "runs" / "feedback" / "categories.jsonl").read_text().splitlines()
+    assert json.loads(feedback[-1])["from"] == "information" and json.loads(feedback[-1])["to"] == "tendance"
+    assert admin.post(f"/api/runs/{run_id}/category", json={"category": "information"}, headers=H).status_code == 200
+
+    # Relance avec une catégorie imposée : le classifieur n'est pas rappelé.
+    run2 = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "category": "tendance"},
+                      headers=H).json()["run_id"]
+    assert wait_status(alice, run2)["manifest"]["category"]["source"] == "user"
+    assert len(script["classifier"].requests) == 1

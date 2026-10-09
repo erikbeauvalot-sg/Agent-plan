@@ -35,6 +35,12 @@ def check_case(case: dict[str, Any], status: str, answer: str, run_dir: Path) ->
     tool_errors = sum(1 for e in events if e["type"] == "tool_call_ended" and e["data"].get("is_error"))
     text = answer.lower()
     checks = [{"check": "status", "ok": status in case.get("status", ["completed"]), "detail": status}]
+    if "category" in case:
+        # Catégorie rendue par le classifieur, avant toute requalification par l'agent principal.
+        expected = case["category"] if isinstance(case["category"], list) else [case["category"]]
+        found = next((e["data"].get("id") for e in events if e["type"] == "request_classified"), None)
+        checks.append({"check": f"catégorie {' ou '.join(expected)}", "ok": found in expected,
+                       "detail": found, "kind": "category"})
     for s in case.get("must_mention", []):
         checks.append({"check": f"mentionne « {s} »", "ok": s.lower() in text})
     for s in case.get("must_not_mention", []):
@@ -83,6 +89,9 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
         catalog.load_catalog.cache_clear()
     summary = {"cases": len(results), "passed": sum(r["passed"] for r in results),
                "tokens": sum(sum(r["usage"].values()) for r in results)}
+    category_checks = [c for r in results for c in r["checks"] if c.get("kind") == "category"]
+    if category_checks:
+        summary["categories"] = {"cases": len(category_checks), "correct": sum(c["ok"] for c in category_checks)}
     report = {"date": datetime.now(timezone.utc).isoformat(), "cases_file": str(cases_path),
               "summary": summary, "results": results}
     out = out_dir or catalog.home() / "eval" / "results"
@@ -134,7 +143,10 @@ async def replay_run(run_id: str) -> dict[str, Any]:
     saved = os.environ.get("DIAGAGENT_NOW")
     os.environ["DIAGAGENT_NOW"] = manifest.get("reference_time") or manifest["started_at"]
     try:
-        log, status, _ = await ask(manifest["question"], providers=lambda role: (provider, {}), user="replay")
+        # La catégorie d'origine est imposée : le classifieur n'est pas rejoué, seules les décisions
+        # de l'agent principal et des sous-agents le sont.
+        log, status, _ = await ask(manifest["question"], providers=lambda role: (provider, {}), user="replay",
+                                   category=(manifest.get("category") or {}).get("id"))
     finally:
         _set_env("DIAGAGENT_NOW", saved)
     return {"original": run_id, "replay": log.run_id, "status": status, "original_status": manifest["status"],
