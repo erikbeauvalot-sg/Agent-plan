@@ -250,6 +250,7 @@ validation humaine fera l'objet d'un document séparé.
 ```bash
 diagagent eval                                   # joue eval/cases.yaml avec le modèle configuré
 diagagent eval --only diag-paiement              # un seul cas
+diagagent eval --repeat 3                        # chaque cas 3 fois : taux de réussite par cas
 diagagent replay 20261008T061159Z-5f31           # rejoue une investigation sans appeler le modèle
 ```
 
@@ -258,7 +259,9 @@ mentions attendues ou interdites, nombre de sous-agents, actions proposées, err
 donne aussi la justesse de catégorisation. Le rapport va dans `eval/results/`.
 `eval/cases.yaml` porte sur le scénario de démonstration ; `eval/cases-maison.example.yaml` sert de
 modèle pour des questions sur tes propres sources. Changer de modèle dans `config/models.yaml` puis
-relancer `eval` permet de comparer les modèles sur les mêmes questions.
+relancer `eval` permet de comparer les modèles sur les mêmes questions. Avec un modèle local, les résultats varient
+d'un passage à l'autre (le même code a donné 7 puis 4 cas réussis sur 9 avec `gpt-oss:20b`) : comparer
+avec `--repeat` plutôt que sur un seul passage.
 
 `replay` refait passer les décisions enregistrées du modèle dans les outils actuels et signale chaque
 appel d'outil dont le résultat a changé : utile après une modification d'un serveur MCP ou du catalogue. La
