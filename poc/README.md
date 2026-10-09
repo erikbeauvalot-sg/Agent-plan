@@ -207,9 +207,22 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
   « Arrêter l'investigation » demande à l'agent principal une synthèse partielle.
 
-Rôles du POC : `operateur` (pose des questions, voit et arrête les siennes) et `administrateur`
-(voit et arrête tout, arrêt immédiat). Comptes dans `auth/users.yaml` (mots de passe en Argon2id,
-verrouillage 15 min après 5 échecs) ; journal d'accès dans `audit/`.
+Les cinq rôles du document d'architecture :
+
+| Rôle | Ce qu'il peut faire |
+| --- | --- |
+| `lecteur` | Lire les investigations partagées, avec graphe et chronologie, sans prompts ni appels d'outils |
+| `operateur` | Poser des questions ; voir en détail, arrêter, partager, corriger et noter les siennes |
+| `superviseur` | Comme l'opérateur, sur toutes les investigations ; arrêt immédiat ; valider ou rejeter les actions proposées et les évolutions de playbooks ; indicateurs et coûts |
+| `administrateur` | Tout voir et tout arrêter ; gérer les utilisateurs ; indicateurs, coûts et journal d'accès ; ne valide pas |
+| `auditeur` | Tout lire, prompts et journal d'accès compris, sans rien piloter |
+
+Une investigation partagée (bouton **Partager**) devient lisible par tout utilisateur connecté, mais
+seuls son auteur et les rôles qui voient tout en ont le détail. L'écran **Administration** regroupe,
+selon le rôle : les actions à valider, les indicateurs par catégorie, les propositions d'évolution, les
+coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'équipe, un Superviseur voit
+tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
+15 min après 5 échecs) ; journal d'accès dans `audit/`.
 
 ![Investigation en cours](../docs/images/poc-interface-en-cours.png)
 
@@ -219,6 +232,11 @@ L'agent principal enregistre chaque action qu'il recommande avec `propose_action
 complémentaire, remédiation, contournement, ouverture de ticket), cible, justification et preuves,
 risque, procédure, retour arrière, passage ou non par la gestion des changements. Elles sont écrites
 dans `actions.json` et affichées dans l'interface ; aucun outil ne permet de les exécuter.
+
+Un Superviseur valide ou rejette chaque action, depuis l'investigation ou depuis la liste des actions
+en attente de l'écran Administration. La décision (qui, quand, commentaire) est écrite dans
+`actions.json` et dans le journal d'accès. Une action validée reste non exécutée : l'exécution avec
+validation humaine fera l'objet d'un document séparé.
 
 ## Évaluation et rejeu
 

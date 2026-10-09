@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -100,6 +101,10 @@ class FeedbackBody(BaseModel):
     resolution: str = Field(default="", max_length=2000)
 
 
+class ShareBody(BaseModel):
+    shared: bool
+
+
 class DecisionBody(BaseModel):
     accept: bool
     comment: str = Field(default="", max_length=2000)
@@ -158,7 +163,11 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
             raise HTTPException(403, "Fonction non autorisée pour votre rôle")
 
     def can_view(user: User, manifest: dict[str, Any]) -> bool:
-        return user.can("view_all") or (user.can("view_own") and manifest.get("user") == user.login)
+        return (user.can("view_all") or (user.can("view_own") and manifest.get("user") == user.login)
+                or (user.can("view_shared") and bool(manifest.get("shared"))))
+
+    def can_details(user: User, manifest: dict[str, Any]) -> bool:
+        return user.can("details_all") or (user.can("details_own") and manifest.get("user") == user.login)
 
     def load_run(user: User, run_id: str) -> tuple[Path, dict[str, Any]]:
         path = run_path(run_id)
@@ -285,7 +294,10 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
                     "started_at": r.log.manifest["started_at"], "status": "running",
                     "category": (r.log.manifest.get("category") or {}).get("id")}
                    for rid, r in manager.live.items() if rid not in finished]
-        rows = [r for r in running + done if can_view(user, r)]
+        shared = set()
+        if not user.can("view_all"):  # les investigations partagées se lisent dans leur manifest
+            shared = {r["run_id"] for r in done if (read_json(runs_dir() / r["path"] / "manifest.json") or {}).get("shared")}
+        rows = [r for r in running + done if can_view(user, {**r, "shared": r["run_id"] in shared})]
         return sorted(rows, key=lambda r: r["started_at"], reverse=True)[:100]
 
     @app.get("/api/runs/{run_id}")
@@ -293,6 +305,8 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
         path, manifest = load_run(user, run_id)
         return {"manifest": manifest, "plan": read_text(path / "plan.md"),
                 "analysis": read_text(path / "analysis.md"), "actions": read_json(path / "actions.json") or [],
+                "can_details": can_details(user, manifest),
+                "can_share": user.can("share_all") or (user.can("share_own") and manifest.get("user") == user.login),
                 "can_stop": manifest.get("status") == "running" and run_id in manager.live
                 and (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login))}
 
@@ -326,7 +340,9 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
 
     @app.get("/api/runs/{run_id}/agents/{agent_id}")
     def agent_detail(run_id: str, agent_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        path, _ = load_run(user, run_id)
+        path, manifest = load_run(user, run_id)
+        if not can_details(user, manifest):
+            raise HTTPException(403, "Prompts, transcripts et appels d'outils non visibles pour votre rôle")
         if not AGENT_ID.match(agent_id):
             raise HTTPException(404, "Agent inconnu")
         adir = path / "lead" if agent_id == "lead" else path / "subagents" / agent_id
@@ -357,8 +373,8 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
         own = manifest.get("user") == user.login
         if not (user.can("stop_all") or (user.can("stop_own") and own)):
             raise HTTPException(403, "Vous ne pouvez arrêter que vos propres investigations")
-        if kill and not user.can("stop_all"):
-            raise HTTPException(403, "Arrêt immédiat réservé à l'administrateur")
+        if kill and not user.can("kill"):
+            raise HTTPException(403, "Arrêt immédiat réservé au superviseur et à l'administrateur")
         live = manager.live.get(run_id)
         if live is None or live.investigation is None or manifest.get("status") != "running":
             raise HTTPException(409, "Investigation terminée")
@@ -371,6 +387,84 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
             raise HTTPException(409, "Agent déjà terminé ou inconnu")
         audit(user, "stop", {"run_id": run_id, "agent_id": agent_id, "kill": kill})
         return {"status": "stopping"}
+
+    @app.post("/api/runs/{run_id}/share")
+    def share(run_id: str, body: ShareBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Partage avec les Lecteurs : l'investigation devient lisible par tout utilisateur connecté."""
+        path, manifest = load_run(user, run_id)
+        if not (user.can("share_all") or (user.can("share_own") and manifest.get("user") == user.login)):
+            raise HTTPException(403, "Seul l'auteur, un superviseur ou un administrateur partage une investigation")
+        if manifest.get("status") == "running" and run_id in manager.live:
+            manager.live[run_id].log.update_manifest(shared=body.shared)
+        else:
+            manifest["shared"] = body.shared
+            _dump(path / "manifest.json", manifest)
+        audit(user, "share", {"run_id": run_id, "shared": body.shared})
+        return {"shared": body.shared}
+
+    # Revue des actions proposées : validées ou rejetées par un Superviseur, jamais exécutées par l'agent.
+
+    @app.get("/api/actions")
+    def pending_actions(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        require(user, "review")
+        index = runs_dir() / "index.jsonl"
+        out = []
+        for r in (json.loads(line) for line in index.read_text(encoding="utf-8").splitlines()) if index.exists() else []:
+            for a in read_json(runs_dir() / r["path"] / "actions.json") or []:
+                out.append({**a, "run_id": r["run_id"], "question": r["question"], "user": r["user"]})
+        return sorted(out, key=lambda a: (a["status"] != "proposed", a["run_id"]), reverse=False)
+
+    @app.post("/api/runs/{run_id}/actions/{action_id}/decision")
+    def decide_action(run_id: str, action_id: str, body: DecisionBody,
+                      user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "review")
+        path, manifest = load_run(user, run_id)
+        if manifest.get("status") == "running":
+            raise HTTPException(409, "Investigation en cours")
+        actions = read_json(path / "actions.json") or []
+        action = next((a for a in actions if a["id"] == action_id), None)
+        if action is None:
+            raise HTTPException(404, "Action inconnue")
+        if action["status"] != "proposed":
+            raise HTTPException(409, f"Action déjà {action['status']}")
+        action["status"] = "validated" if body.accept else "rejected"
+        action["decision"] = {"by": user.login, "at": _ts(), "comment": body.comment}
+        _dump(path / "actions.json", actions)
+        audit(user, "action_decision", {"run_id": run_id, "action_id": action_id, "status": action["status"]})
+        return action
+
+    # Coûts et journal d'accès
+
+    @app.get("/api/costs")
+    def costs(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Tokens consommés par jour, utilisateur et modèle (le POC n'a pas de notion d'équipe : un
+        Superviseur voit tout). Le prix dépend du contrat du fournisseur : on compte des tokens."""
+        require(user, "view_costs")
+        index = runs_dir() / "index.jsonl"
+        rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for r in (json.loads(line) for line in index.read_text(encoding="utf-8").splitlines()) if index.exists() else []:
+            manifest = read_json(runs_dir() / r["path"] / "manifest.json") or {}
+            lead = (manifest.get("models") or {}).get("lead") or {}
+            key = (r["started_at"][:10], r.get("user") or "?", f"{lead.get('provider', '?')}/{lead.get('model', '?')}")
+            row = rows.setdefault(key, {"day": key[0], "user": key[1], "model": key[2], "runs": 0,
+                                        "input_tokens": 0, "output_tokens": 0})
+            row["runs"] += 1
+            for k in ("input_tokens", "output_tokens"):
+                row[k] += (r.get("usage") or {}).get(k, 0)
+        out = sorted(rows.values(), key=lambda x: (x["day"], x["user"]), reverse=True)
+        return {"rows": out, "total": {k: sum(x[k] for x in out) for k in ("runs", "input_tokens", "output_tokens")}}
+
+    @app.get("/api/access-log")
+    def access_log(limit: int = 200, user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        require(user, "view_access_log")
+        root = Path(os.environ.get("DIAGAGENT_AUDIT_DIR") or catalog.home() / "audit")
+        out: list[dict[str, Any]] = []
+        for f in sorted(root.glob("*/*/*.jsonl"), reverse=True) if root.exists() else []:
+            out += [json.loads(line) for line in reversed(f.read_text(encoding="utf-8").splitlines())]
+            if len(out) >= limit:
+                break
+        audit(user, "read_access_log", {})
+        return out[:max(1, min(limit, 1000))]
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

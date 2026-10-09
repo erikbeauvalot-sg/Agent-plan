@@ -40,6 +40,9 @@ input, textarea { font: inherit; width: 100%; padding: .5rem; border: 1px solid 
 .feedback label { display: flex; gap: .25rem; align-items: center; }
 .feedback input[type=radio], .feedback input[type=checkbox] { width: auto; }
 .feedback input[name=cause] { flex: 1; min-width: 12rem; }
+.decide-action { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .5rem; }
+.decide-action input { flex: 1; min-width: 10rem; }
+.run-link { cursor: pointer; text-decoration: underline; }
 .decide { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .5rem; }
 .decide input { flex: 1; min-width: 10rem; }
 .table-wrap { overflow-x: auto; }
