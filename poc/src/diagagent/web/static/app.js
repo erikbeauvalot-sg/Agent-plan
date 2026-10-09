@@ -4,6 +4,8 @@
 const SIGNALS = { stuckSeconds: 120, loopRepeats: 3, errorStreak: 3, budgetRatio: 0.8 };
 const $ = (id) => document.getElementById(id);
 let me = null;
+let categories = [];
+let runsCache = [];
 let current = null;   // { runId, agents, order, firstTs, lastTs, ended, source, canStop, status }
 let clock = null;
 
@@ -57,6 +59,10 @@ async function boot() {
   $("login").hidden = true; $("app").hidden = false;
   $("who").textContent = `${me.display_name} · ${me.roles.join(", ")}`;
   $("ask-form").hidden = !me.permissions.includes("ask");
+  categories = await api("/api/categories");
+  const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
+  $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
+  $("cat-select").innerHTML = options;
   await loadRuns();
   const fromHash = location.hash.slice(1);
   if (fromHash) openRun(fromHash);
@@ -81,14 +87,23 @@ $("logout").addEventListener("click", async () => {
 // ---- Investigations
 
 async function loadRuns() {
-  const runs = await api("/api/runs");
+  runsCache = await api("/api/runs");
+  renderRuns();
+}
+
+function renderRuns() {
+  const filter = $("runs-filter").value;
+  const runs = runsCache.filter((r) => !filter || r.category === filter);
   $("runs").innerHTML = runs.map((r) => `
     <li data-id="${esc(r.run_id)}" class="${current?.runId === r.run_id ? "active" : ""}">
       <span class="q">${esc(r.question)}</span>
       <span class="meta"><span class="dot ${esc(r.status)}"></span>${esc(fmtDate(r.started_at))}
+        ${r.category ? `<span class="tag">${esc(r.category)}</span>` : ""}
         ${me.permissions.includes("view_all") ? "· " + esc(r.user) : ""}</span>
     </li>`).join("") || '<li class="muted">Aucune investigation</li>';
 }
+
+$("runs-filter").addEventListener("change", renderRuns);
 
 $("runs").addEventListener("click", (e) => {
   const li = e.target.closest("li[data-id]");
@@ -100,13 +115,17 @@ $("ask-form").addEventListener("submit", async (e) => {
   const form = e.target, btn = form.querySelector("button");
   btn.disabled = true; $("ask-error").hidden = true;
   try {
-    const { run_id } = await api("/api/runs", { method: "POST", body: JSON.stringify({ question: form.question.value }) });
+    await startRun({ question: form.question.value });
     form.reset();
-    await loadRuns();
-    openRun(run_id);
   } catch (err) { $("ask-error").textContent = err.message; $("ask-error").hidden = false; }
   finally { btn.disabled = false; }
 });
+
+async function startRun(body) {
+  const { run_id } = await api("/api/runs", { method: "POST", body: JSON.stringify(body) });
+  await loadRuns();
+  openRun(run_id);
+}
 
 function fmtDate(iso) {
   return iso ? new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "";
@@ -151,7 +170,59 @@ function renderSummary(data) {
   renderActions(data.actions || []);
   $("plan-box").hidden = !data.plan;
   $("plan").innerHTML = md(data.plan || "");
+  $("precision-form").hidden = !(data.manifest.status === "needs_clarification" && me.permissions.includes("ask"));
+  renderCategory(data.manifest);
 }
+
+// ---- Catégorie de la demande : affichée, corrigeable, relançable
+
+const MODES = { playbook: "playbook appliqué", combined: "deux playbooks combinés", clarify: "précision demandée",
+                generic: "stratégie générique" };
+const CONFIDENCE = { low: "faible", medium: "moyenne", high: "élevée" };
+
+function renderCategory(manifest) {
+  const c = manifest.category;
+  $("run-category").hidden = !c;
+  if (!c) return;
+  const playbooks = Object.entries(c.playbooks || {}).map(([id, v]) => `${id} v${v}`).join(" + ");
+  $("cat-label").innerHTML = `Catégorie <span class="tag strong">${esc(c.correction?.category || c.id)}</span>`;
+  const parts = [`confiance ${CONFIDENCE[c.confidence] || c.confidence}`, MODES[c.mode] || c.mode];
+  if (playbooks) parts.push(playbooks);
+  if (c.source === "user") parts.push("choisie par l'utilisateur");
+  if (c.history?.length) parts.push(`requalifiée depuis ${c.history.map((h) => h.from).join(", ")}`);
+  if (c.correction) parts.push(`corrigée par ${c.correction.by} (classée ${c.id})`);
+  if (c.error) parts.push(`classifieur : ${c.error}`);
+  $("cat-detail").textContent = "· " + parts.join(" · ");
+  $("cat-edit").hidden = !(manifest.user === me.login || me.permissions.includes("stop_all"));
+  $("cat-rerun").hidden = !me.permissions.includes("ask");
+  $("cat-select").value = c.correction?.category || c.id;
+}
+
+$("cat-edit").addEventListener("click", () => { $("cat-form").hidden = false; $("cat-edit").hidden = true; });
+$("cat-cancel").addEventListener("click", () => { $("cat-form").hidden = true; $("cat-edit").hidden = false; });
+$("cat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api(`/api/runs/${current.runId}/category`, { method: "POST", body: JSON.stringify({ category: $("cat-select").value }) });
+    $("cat-form").hidden = true;
+    renderSummary(await api(`/api/runs/${current.runId}`));
+  } catch (err) { alert(err.message); }
+});
+$("cat-rerun").addEventListener("click", async () => {
+  const category = $("cat-select").value;
+  try {
+    await api(`/api/runs/${current.runId}/category`, { method: "POST", body: JSON.stringify({ category }) });
+    await startRun({ question: $("run-question").textContent, category });
+  } catch (err) { alert(err.message); }
+});
+$("precision-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const precision = e.target.precision.value.trim();
+  try {
+    await startRun({ question: `${$("run-question").textContent}\nPrécision : ${precision}` });
+    e.target.reset();
+  } catch (err) { alert(err.message); }
+});
 
 function renderActions(actions) {
   $("actions-box").hidden = !actions.length;
@@ -169,7 +240,7 @@ function renderActions(actions) {
 
 function statusLabel(s) {
   return { running: "en cours", completed: "terminée", partial: "partielle", stopped: "arrêtée", failed: "en échec",
-           stopping: "arrêt demandé" }[s] || s;
+           stopping: "arrêt demandé", needs_clarification: "précision demandée" }[s] || s;
 }
 
 // ---- Réduction des événements en état d'agents
@@ -215,6 +286,14 @@ function apply(e) {
     case "report_submitted": a.report = d.status; break;
     case "action_proposed": scheduleSummary(); break;
     case "agent_ended": a.status = d.status; a.end = ts; break;
+    case "classification_started": a.open.cls = ts; break;
+    case "request_classified":
+      // La classification apparaît comme un appel au modèle de l'agent principal ; une demande de précision
+      // termine l'investigation sans lancer l'agent.
+      if (a.open.cls) a.segs.push({ kind: "llm", start: a.open.cls, end: ts, label: `classification : ${d.id}` });
+      if (d.mode === "clarify") { a.status = "needs_clarification"; a.end = ts; }
+      scheduleSummary(); break;
+    case "category_changed": scheduleSummary(); break;
     case "run_failed": a.status = "failed"; a.end = ts; break;
   }
 }

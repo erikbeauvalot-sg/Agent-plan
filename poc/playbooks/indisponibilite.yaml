@@ -1,0 +1,43 @@
+id: indisponibilite
+version: 1
+status: active
+description: >
+  Un service ou une fonction ne répond plus ou renvoie des erreurs pour les utilisateurs. On part du
+  service métier et on descend la chaîne de dépendances.
+examples:
+  - "Mon site web ne fonctionne pas"
+  - "L'application Paiement renvoie des erreurs 500"
+  - "Impossible de se connecter à l'extranet"
+required_entities:
+  service: "De quel site ou application parles-tu ?"
+hypotheses:
+  - id: change-recent
+    signal: "change terminé sur un maillon dans les 48 h avant le début"
+  - id: dependance-ko
+    signal: "erreurs de connexion vers un maillon aval (base, API, stockage)"
+  - id: saturation
+    signal: "ressource à plus de 90 % sur un maillon au début du symptôme"
+  - id: certificat-expire
+    signal: "erreurs TLS ou date d'expiration dépassée"
+steps:
+  - name: deja-connu
+    parallel:
+      - {role: events,  objective: "alertes ouvertes sur le service et ses CI"}
+      - {role: generic, objective: "incidents ouverts sur le service", sources: [incidents]}
+  - name: chaine
+    parallel:
+      - {role: host, objective: "chaîne de dépendances du service, profondeur 3"}
+  - name: causes
+    parallel:
+      - {role: changes, objective: "changes sur la chaîne, 48 h avant le début"}
+      - {role: logs,    objective: "erreurs par maillon depuis le début"}
+  - name: confirmation
+    parallel:
+      - {role: metrics, objective: "métriques des maillons suspects vs veille"}
+stop_when:
+  - "une hypothèse est confirmée par deux sources indépendantes"
+  - "un incident ouvert explique déjà le symptôme"
+requalify:
+  performance: "le service répond, mais lentement"
+output: [synthese, maillon_defaillant, chronologie, cause_probable, actions]
+owner: équipe exploitation applicative

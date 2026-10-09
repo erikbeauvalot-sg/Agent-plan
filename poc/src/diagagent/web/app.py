@@ -18,9 +18,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from diagagent import catalog
+from diagagent import catalog, playbooks
 from diagagent.orchestrator import Investigation, ProviderFactory
-from diagagent.runlog import RunLog
+from diagagent.runlog import RunLog, _append, _dump, _ts
 
 from .auth import AuthProvider, FileUserStore, Sessions, User, audit
 
@@ -47,7 +47,7 @@ class RunManager:
     providers: Callable[[], ProviderFactory]
     live: dict[str, LiveRun] = field(default_factory=dict)
 
-    async def start(self, question: str, user: User) -> str:
+    async def start(self, question: str, user: User, category: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -62,7 +62,8 @@ class RunManager:
 
         async def go() -> None:
             try:
-                await ask(question, providers=self.providers(), user=user.login, on_started=on_started)
+                await ask(question, providers=self.providers(), user=user.login, on_started=on_started,
+                          category=category)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
                     started.set_exception(e)
@@ -84,6 +85,11 @@ class LoginBody(BaseModel):
 
 class AskBody(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
+    category: str | None = None
+
+
+class CategoryBody(BaseModel):
+    category: str
 
 
 def runs_dir() -> Path:
@@ -172,12 +178,45 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
     @app.post("/api/runs")
     async def ask_question(body: AskBody, user: User = Depends(current_user)) -> dict[str, str]:
         require(user, "ask")
+        if body.category and body.category not in playbooks.load_playbooks():
+            raise HTTPException(400, f"Catégorie inconnue : {body.category}")
         try:
-            run_id = await manager.start(body.question.strip(), user)
+            run_id = await manager.start(body.question.strip(), user, body.category)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
-        audit(user, "ask", {"run_id": run_id})
+        audit(user, "ask", {"run_id": run_id, "category": body.category})
         return {"run_id": run_id}
+
+    @app.get("/api/categories")
+    def categories(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        return [{"id": b["id"], "version": b["version"], "description": " ".join(b["description"].split())}
+                for b in playbooks.load_playbooks().values()]
+
+    @app.post("/api/runs/{run_id}/category")
+    def correct_category(run_id: str, body: CategoryBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Correction de catégorie par l'utilisateur : tracée dans le manifest et dans
+        runs/feedback/categories.jsonl, qui alimente l'apprentissage. L'investigation n'est pas relancée."""
+        path, manifest = load_run(user, run_id)
+        if not (user.can("stop_all") or manifest.get("user") == user.login):
+            raise HTTPException(403, "Seul l'auteur de la question ou un administrateur peut corriger la catégorie")
+        if body.category not in playbooks.load_playbooks():
+            raise HTTPException(400, f"Catégorie inconnue : {body.category}")
+        correction = {"category": body.category, "by": user.login, "at": _ts()}
+        live = manager.live.get(run_id)
+        if live and live.investigation and manifest.get("status") == "running":
+            # L'investigation en cours tient le manifest en mémoire : on corrige sa catégorie à elle.
+            category = live.investigation.category
+            category["correction"] = correction
+            live.log.update_manifest(category=category)
+        else:
+            category = {**(manifest.get("category") or {}), "correction": correction}
+            manifest["category"] = category
+            _dump(path / "manifest.json", manifest)
+        _append(runs_dir() / "feedback" / "categories.jsonl", {
+            "run_id": run_id, "question": manifest.get("question"), "from": category.get("id"),
+            "to": body.category, "by": user.login, "at": correction["at"]})
+        audit(user, "correct_category", {"run_id": run_id, "category": body.category})
+        return {"category": category}
 
     @app.get("/api/runs")
     def list_runs(user: User = Depends(current_user)) -> list[dict[str, Any]]:
@@ -185,7 +224,8 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
         done = [json.loads(line) for line in index.read_text(encoding="utf-8").splitlines()] if index.exists() else []
         finished = {r["run_id"] for r in done}
         running = [{"run_id": rid, "question": r.log.manifest["question"], "user": r.user,
-                    "started_at": r.log.manifest["started_at"], "status": "running"}
+                    "started_at": r.log.manifest["started_at"], "status": "running",
+                    "category": (r.log.manifest.get("category") or {}).get("id")}
                    for rid, r in manager.live.items() if rid not in finished]
         rows = [r for r in running + done if can_view(user, r)]
         return sorted(rows, key=lambda r: r["started_at"], reverse=True)[:100]

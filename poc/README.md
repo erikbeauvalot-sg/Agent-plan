@@ -10,6 +10,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Couche LLM agnostique | `src/diagagent/llm/` | Format pivot, adaptateurs `azure_openai`, `openai_compatible` (Ollama, vLLM) et `scripted` (tests) |
 | Catalogue | `catalog/` | Une fiche YAML par source, glossaire, relations entre sources |
 | Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
+| Catégorisation et playbooks | `src/diagagent/playbooks.py`, `playbooks/<catégorie>.yaml` | Classifieur, décision (playbook, combinaison, précision), stratégie de collecte par catégorie |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
 | Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
 | Interface web | `src/diagagent/web/` | Passerelle FastAPI (connexion, rôles, flux temps réel, arrêt) et écran de suivi |
@@ -93,6 +94,36 @@ events.jsonl          journal horodaté (base du futur suivi temps réel)
 
 `runs/index.jsonl` liste toutes les investigations.
 
+## Catégorisation et playbooks
+
+Avant l'agent principal, un appel au modèle séparé (le classifieur) range la demande dans une des
+catégories de `playbooks/` : `information`, `indisponibilite`, `performance`, `analyse-evenement`,
+`impact-change`, `tendance` ou `autre`. Il reçoit la description et les exemples de chaque catégorie
+active et rend la catégorie, sa confiance, une éventuelle deuxième catégorie, les entités repérées et
+les entités indispensables qui manquent.
+
+| Classification | Ce qui se passe |
+| --- | --- |
+| Une catégorie | Son playbook est injecté dans le prompt de l'agent principal comme plan de départ |
+| Deux catégories plausibles (confiance moyenne ou faible) | Les deux playbooks sont injectés ; l'agent commence par les étapes communes puis tranche |
+| Entité indispensable manquante (« mon site » sans dire lequel) | L'investigation s'arrête au statut `needs_clarification` avec la question à poser ; l'interface propose de préciser et relancer |
+| Aucune catégorie, ou classifieur indisponible ou illisible | Catégorie `autre`, stratégie générique |
+
+En cours de route, l'agent principal peut appeler `requalify` si les faits contredisent la catégorie ;
+le changement est tracé (`category_changed` dans `events.jsonl`). La catégorie, sa confiance et la
+version des playbooks appliqués sont dans `manifest.json` (clé `category`) et dans `runs/index.jsonl`.
+
+```bash
+diagagent playbooks                               # valide et liste les playbooks
+diagagent ask --category performance "…"          # impose la catégorie, sans classifieur
+```
+
+Le classifieur utilise le rôle `classifier` de `config/models.yaml` ; absent, il prend le modèle de
+`subagent`. Dans l'interface, la catégorie s'affiche sous la question ; l'auteur ou un administrateur
+peut la corriger, ou relancer avec une autre catégorie. Chaque correction est ajoutée à
+`runs/feedback/categories.jsonl`, qui servira à l'apprentissage (étape 7). L'historique se filtre par
+catégorie.
+
 ## Sous-agents
 
 Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par investigation
@@ -142,14 +173,16 @@ diagagent eval --only diag-paiement              # un seul cas
 diagagent replay 20261008T061159Z-5f31           # rejoue une investigation sans appeler le modèle
 ```
 
-`eval` pose chaque question du jeu de cas et vérifie la réponse : mentions attendues ou interdites,
-nombre de sous-agents, actions proposées, erreurs d'outil. Le rapport va dans `eval/results/`.
+`eval` pose chaque question du jeu de cas et vérifie la réponse : catégorie rendue par le classifieur,
+mentions attendues ou interdites, nombre de sous-agents, actions proposées, erreurs d'outil. Le résumé
+donne aussi la justesse de catégorisation. Le rapport va dans `eval/results/`.
 `eval/cases.yaml` porte sur le scénario de démonstration ; `eval/cases-maison.example.yaml` sert de
 modèle pour des questions sur tes propres sources. Changer de modèle dans `config/models.yaml` puis
 relancer `eval` permet de comparer les modèles sur les mêmes questions.
 
 `replay` refait passer les décisions enregistrées du modèle dans les outils actuels et signale chaque
-appel d'outil dont le résultat a changé : utile après une modification d'un serveur MCP ou du catalogue.
+appel d'outil dont le résultat a changé : utile après une modification d'un serveur MCP ou du catalogue. La
+catégorie d'origine est imposée : le classifieur n'est pas rejoué.
 
 ## Brancher Prometheus et Alertmanager
 

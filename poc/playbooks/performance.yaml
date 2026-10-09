@@ -1,0 +1,41 @@
+id: performance
+version: 1
+status: active
+description: >
+  Un composant ou un service répond, mais lentement : temps de réponse élevés, stockage ou base lents.
+  On mesure la dégradation par rapport à une référence, puis on cherche le goulot et sa cause.
+examples:
+  - "Le stockage est lent"
+  - "Temps de réponse élevés sur l'extranet"
+  - "Pourquoi le service paiement est-il lent depuis hier soir ?"
+required_entities:
+  service: "Quel composant ou quelle application est lent ?"
+hypotheses:
+  - id: change-recent
+    signal: "change terminé sur le composant ou une dépendance peu avant le début de la dégradation"
+  - id: saturation
+    signal: "ressource partagée (CPU, mémoire, connexions, disque) saturée au début de la dégradation"
+  - id: limite-configuration
+    signal: "plafond atteint (pool, max_connections, quota) et erreurs d'attente associées"
+  - id: consommateur
+    signal: "un consommateur ou un traitement inhabituel concentre la charge"
+steps:
+  - name: mesure
+    parallel:
+      - {role: metrics, objective: "latence et ressources du composant comparées à la veille : début et ampleur de la dégradation"}
+      - {role: host,    objective: "chaîne de dépendances du composant et ressources partagées"}
+  - name: causes
+    parallel:
+      - {role: changes, objective: "changes sur le composant et ses dépendances, 48 h avant le début"}
+      - {role: events,  objective: "alertes sur le composant et ses voisins autour du début"}
+      - {role: logs,    objective: "erreurs et attentes dans les logs depuis le début, par rapport à la veille"}
+  - name: confirmation
+    parallel:
+      - {role: metrics, objective: "métriques des dépendances suspectes (connexions, saturation) vs veille"}
+stop_when:
+  - "le goulot et le début de la dégradation sont établis, et une cause est confirmée par deux sources indépendantes"
+  - "rien de nouveau après une vague d'investigations"
+requalify:
+  indisponibilite: "le service ne répond plus du tout ou renvoie des erreurs à tous les utilisateurs"
+output: [synthese, goulot, chronologie, cause_probable, actions]
+owner: équipe exploitation applicative

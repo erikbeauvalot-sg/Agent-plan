@@ -7,6 +7,7 @@
 #   must_not_mention  chaînes interdites
 #   status            statuts acceptés (défaut : completed)
 #   min_subagents / max_subagents, min_actions, max_tool_errors
+#   category          catégorie (ou liste de catégories acceptées) rendue par le classifieur
 defaults:
   now: "2026-10-07T06:00:00Z"
   demo: true
@@ -14,26 +15,51 @@ defaults:
 cases:
   - id: diag-paiement
     question: "Pourquoi le service paiement est-il lent depuis hier soir ?"
+    category: performance
     must_mention: [CHG0034567, db-pay-02, max_connections]
     min_subagents: 2
     min_actions: 1
 
   - id: incidents-ouverts
     question: "Quels incidents sont ouverts sur srv-pay-01 ?"
+    category: information
     must_mention: [INC0098765]
     max_subagents: 0
 
   - id: changements-db
     question: "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
+    category: information
     must_mention: [CHG0034567]
     max_subagents: 1
 
   - id: proprietaire-db
     question: "Quelle équipe est responsable de db-pay-02 ?"
+    category: information
     must_mention: ["équipe Bases de données"]
     max_subagents: 0
 
   - id: alertes-ouvertes
     question: "Quelles alertes de supervision sont ouvertes en ce moment ?"
+    category: information
     must_mention: [srv-pay-01, db-pay-02]
     must_not_mention: ["srv-web-03"]
+
+  - id: impact-change
+    question: "Le change CHG0034567 a-t-il eu un impact ?"
+    category: impact-change
+    must_mention: [db-pay-02, max_connections]
+
+  - id: analyse-incident
+    question: "Analyse l'incident INC0098765"
+    category: analyse-evenement
+    must_mention: [CHG0034567]
+
+  - id: precision-site
+    question: "Mon site web ne fonctionne pas"
+    category: indisponibilite
+    status: [needs_clarification]
+
+  - id: tendance-erreurs
+    question: "Quelles erreurs reviennent le plus dans les logs de srv-pay-01 depuis hier soir ?"
+    category: [tendance, information]
+    must_mention: [connection]
