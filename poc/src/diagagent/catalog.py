@@ -185,7 +185,8 @@ def _clean(doc: dict[str, Any], exclude: list[str]) -> dict[str, Any]:
     return out
 
 
-def _matches(doc: dict[str, Any], filters: dict[str, Any] | None, text: str | None) -> bool:
+def _matches(doc: dict[str, Any], filters: dict[str, Any] | None, text: str | None,
+             exclude: list[str] | None = None) -> bool:
     for key, expected in (filters or {}).items():
         actual = field_value(doc, key)
         if isinstance(expected, list):
@@ -196,7 +197,10 @@ def _matches(doc: dict[str, Any], filters: dict[str, Any] | None, text: str | No
                 return False
         elif str(actual).lower() != str(expected).lower():
             return False
-    if text and text.lower() not in json.dumps(doc, ensure_ascii=False).lower():
+    # La recherche texte ne porte pas sur les champs masqués : sinon un résultat non vide confirmerait
+    # une valeur cachée (adresse de l'appelant, par exemple) sans jamais l'afficher.
+    visible = {k: v for k, v in doc.items() if k not in (exclude or [])}
+    if text and text.lower() not in json.dumps(visible, ensure_ascii=False).lower():
         return False
     return True
 
@@ -208,7 +212,8 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     size = max(1, min(size, limits.get("max_hits", DEFAULT_MAX_HITS)))
     time_field = card.get("time_field")
     _check_filters(source_id, filters)
-    matching = [d for d in rows(source_id) if _matches(d, filters, text)]
+    exclude = limits.get("exclude_fields", [])
+    matching = [d for d in rows(source_id) if _matches(d, filters, text, exclude)]
     hits, window = matching, None
     if time_field:
         start, end = time_window(time_from, time_to)
@@ -216,7 +221,6 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         hits = [d for d in matching
                 if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
         hits.sort(key=lambda d: field_value(d, time_field), reverse=True)
-    exclude = limits.get("exclude_fields", [])
     result = {
         "source": source_id,
         "time_range": window,

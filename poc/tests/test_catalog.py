@@ -80,3 +80,14 @@ def test_empty_search_reports_matches_outside_the_time_range():
     assert res["outside_time_range"] == {"total": 1, "first": "2026-10-06T22:25:00Z", "last": "2026-10-06T22:25:00Z"}
     assert "élargis time_from" in res["note"]
     assert "outside_time_range" not in catalog.search("incidents", filters={"number": "INC0000000"})
+
+
+def test_masked_fields_cannot_be_confirmed_by_search():
+    # caller_email est masqué : ni filtre, ni recherche texte, ni agrégation ne doivent en confirmer une valeur.
+    email = "support.n1@example.com"
+    assert catalog.search("incidents", text=email, time_from="2026-09-01T00:00:00Z")["total"] == 0
+    assert "outside_time_range" not in catalog.search("incidents", text=email)
+    with pytest.raises(ValueError, match="caller_email"):
+        catalog.search("incidents", filters={"caller_email": email})
+    with pytest.raises(ValueError, match="caller_email"):
+        catalog.aggregate("incidents", "caller_email")
