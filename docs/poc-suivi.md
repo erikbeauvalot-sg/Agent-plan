@@ -11,8 +11,8 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 4. Sources réelles | Connecteurs Prometheus (métriques, historique d'alertes) et Alertmanager (alertes, silences), fiches catalogue, mode sans démonstration | Fait pour Prometheus et Alertmanager (PR #2) |
 | 5. Actions et évaluation | `propose_action` et `actions.json` affichés dans l'interface ; jeu de cas `eval/cases.yaml` et `diagagent eval` ; adaptateur `replay` et `diagagent replay` | Fait (PR #5) |
 | 6. Catégorisation et playbooks | Sept playbooks `playbooks/<categorie>.yaml` ; classifieur (appel au modèle séparé, sortie structurée) ; décision : playbook appliqué, deux playbooks combinés, question de précision, `autre` ; playbook injecté dans le prompt de l'agent principal ; outil `requalify` ; catégorie, confiance et version du playbook dans `manifest.json` et `index.jsonl` ; catégorie affichée et corrigeable dans l'interface, filtre de l'historique ; contrôle `category` dans `diagagent eval` | Fait (PR #9) |
-| 7. Base de cas et apprentissage | Retours sur les diagnostics (utile, partiel, faux) ; base `knowledge/cases/` et `knowledge/index.jsonl` ; demandes proches données au classifieur et cas « déjà vu » à l'agent principal ; rôle Superviseur ; `diagagent learn` écrit des propositions dans `playbooks/proposals/`, rejouées sur le jeu d'évaluation ; validation dans l'interface ; catégories `draft` en observation ; indicateurs par catégorie | Fait (PR #10) |
-| 8. Rôles complets et revue des actions | Rôles Lecteur et Auditeur, matrice complète du document ; partage d'une investigation ; détail des agents réservé aux rôles autorisés ; arrêt immédiat pour Superviseur et Administrateur ; validation ou rejet des actions proposées par un Superviseur ; écran Administration : actions à valider, coûts en tokens, journal d'accès | Fait (PR #11) |
+| 7. Base de cas et apprentissage | Retours sur les diagnostics (utile, partiel, faux) ; base `knowledge/cases/` et `knowledge/index.jsonl` ; demandes proches données au classifieur et cas « déjà vu » à l'agent principal ; rôle Superviseur ; `diagagent learn` écrit des propositions dans `playbooks/proposals/`, rejouées sur le jeu d'évaluation ; validation dans l'interface ; catégories `draft` en observation ; indicateurs par catégorie | Fait (PR #10, fusionnée dans `main` par la PR #12) |
+| 8. Rôles complets et revue des actions | Rôles Lecteur et Auditeur, matrice complète du document ; partage d'une investigation ; détail des agents réservé aux rôles autorisés ; arrêt immédiat pour Superviseur et Administrateur ; validation ou rejet des actions proposées par un Superviseur ; écran Administration : actions à valider, coûts en tokens, journal d'accès | Fait (PR #11, fusionnée dans `main` par la PR #12) |
 
 ## Critères de sortie
 
@@ -42,3 +42,6 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-09 : PR #9 ouverte (étape 6, catégorie juste sur 9 cas sur 9 avec gpt-oss:20b en local) ; étape 7
   livrée par la PR #10, empilée sur la #9.
 - 2026-10-09 : PR #8 complétée (opérateurs dans les filtres) ; étape 8 livrée par la PR #11, empilée sur la #10.
+- 2026-10-09 : PR #8 et #9 fusionnées dans `main` ; les PR #10 et #11, fusionnées dans leurs branches
+  de base, arrivent dans `main` par la PR #12, avec le signalement des documents hors période et la
+  recherche texte qui ignore les champs masqués.
