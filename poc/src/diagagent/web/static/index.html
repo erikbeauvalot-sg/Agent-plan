@@ -34,6 +34,7 @@
         <select id="runs-filter" aria-label="Filtrer par catégorie"><option value="">Toutes catégories</option></select>
       </div>
       <ul id="runs" class="runs"></ul>
+      <button id="open-admin" hidden>Amélioration continue</button>
       <button id="logout" class="link">Se déconnecter</button>
     </aside>
 
@@ -82,11 +83,34 @@
         <section class="card">
           <h2>Réponse</h2>
           <div id="answer" class="md muted">L'analyse s'affichera ici à la fin de l'investigation.</div>
+          <form id="feedback-form" class="feedback" hidden>
+            <span class="muted">Ce diagnostic était :</span>
+            <label><input type="radio" name="verdict" value="utile" required> utile</label>
+            <label><input type="radio" name="verdict" value="partiel"> partiel</label>
+            <label><input type="radio" name="verdict" value="faux"> faux</label>
+            <input name="cause" placeholder="Cause réelle, si tu la connais">
+            <label class="case"><input type="checkbox" name="create_case"> enregistrer comme cas confirmé</label>
+            <button type="submit">Envoyer l'avis</button>
+          </form>
+          <p id="feedback-done" class="muted" hidden></p>
           <form id="precision-form" class="precision" hidden>
             <input name="precision" placeholder="Ta précision (par exemple : l'application Paiement)" required>
             <button type="submit" class="primary">Préciser et relancer</button>
           </form>
           <details id="plan-box" hidden><summary>Plan d'investigation</summary><div id="plan" class="md"></div></details>
+        </section>
+      </div>
+      <div id="admin" hidden>
+        <header class="run-head"><div><h1>Amélioration continue</h1>
+          <p class="muted">Catégories, playbooks et propositions de l'agent d'apprentissage (<code>diagagent learn</code>).
+            Une proposition n'est appliquée qu'après validation par un Superviseur.</p></div></header>
+        <section class="card" id="indicators-box" hidden>
+          <h2>Indicateurs par catégorie</h2>
+          <div id="indicators" class="table-wrap"></div>
+        </section>
+        <section class="card">
+          <h2>Propositions</h2>
+          <div id="proposals" class="actions"></div>
         </section>
       </div>
     </main>

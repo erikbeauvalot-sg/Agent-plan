@@ -11,6 +11,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | Catalogue | `catalog/` | Une fiche YAML par source, glossaire, relations entre sources |
 | Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
 | Catégorisation et playbooks | `src/diagagent/playbooks.py`, `playbooks/<catégorie>.yaml` | Classifieur, décision (playbook, combinaison, précision), stratégie de collecte par catégorie |
+| Base de cas et apprentissage | `src/diagagent/knowledge.py`, `src/diagagent/learning.py` | Avis sur les diagnostics, cas confirmés, propositions d'évolution rejouées et validées par un Superviseur, indicateurs |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
 | Sous-agents | `src/diagagent/orchestrator.py`, `agents/<rôle>.yaml`, `prompts/subagent.md` | Plan, lancement en parallèle, rapports structurés, arrêt |
 | Interface web | `src/diagagent/web/` | Passerelle FastAPI (connexion, rôles, flux temps réel, arrêt) et écran de suivi |
@@ -124,6 +125,59 @@ peut la corriger, ou relancer avec une autre catégorie. Chaque correction est a
 `runs/feedback/categories.jsonl`, qui servira à l'apprentissage (étape 7). L'historique se filtre par
 catégorie.
 
+## Base de cas et apprentissage
+
+L'agent ne modifie jamais seul ses catégories ni ses playbooks : il propose, un Superviseur valide.
+
+**Ce qui alimente l'apprentissage**
+
+- Les corrections de catégorie faites dans l'interface (`runs/feedback/categories.jsonl`).
+- L'avis sur chaque diagnostic, donné sous la réponse : utile, partiel ou faux, avec la cause réelle
+  si on la connaît (`runs/feedback/diagnostics.jsonl`).
+- Les cas confirmés : un diagnostic jugé utile, avec sa cause, peut être enregistré comme cas
+  (case à cocher dans l'interface, ou `diagagent case add <run_id> --cause "…"`). Le cas va dans
+  `knowledge/cases/<run_id>.yaml` et dans l'index `knowledge/index.jsonl`.
+
+**Ce qui s'en sert tout de suite**
+
+- Le classifieur reçoit les demandes passées les plus proches dont la catégorie est confirmée.
+- L'agent principal reçoit les cas déjà vus proches de la demande (mots et entités en commun), à
+  vérifier, jamais à recopier sans preuve.
+
+**Agent d'apprentissage**
+
+```bash
+diagagent learn                     # analyse les 7 derniers jours, écrit playbooks/proposals/*.yaml
+diagagent learn --no-model          # propositions mécaniques seulement
+diagagent proposals                 # liste, avec le résultat du rejeu
+diagagent proposals accept <id> --by sophie --comment "…"
+diagagent playbooks --rollback performance   # revient à la version précédente (history/)
+```
+
+| Proposition | D'où elle vient |
+| --- | --- |
+| Ajout d'exemples à une catégorie | Corrections de catégorie (mécanique) |
+| Activation d'une catégorie en observation | Au moins 3 demandes qu'elle aurait captées (mécanique) |
+| Nouvelle catégorie, en observation (`draft`) | Demandes classées `autre` ou avec une confiance faible (modèle) |
+| Ajout d'hypothèses à un playbook | Cas confirmés dont la cause n'est pas parmi les hypothèses (modèle) |
+| Nouvelle description | Confusions récurrentes entre deux catégories (modèle) |
+
+Chaque proposition est rejouée : le classifieur reclasse les demandes de référence (cas de
+`eval/cases.yaml` avec une catégorie, demandes confirmées) avec les playbooks actuels puis avec la
+proposition. Une proposition qui fait baisser la justesse est écartée (`discarded`). La justesse des
+diagnostics n'est pas rejouée dans le POC, car il faudrait une investigation complète par demande.
+
+Un Superviseur accepte ou rejette chaque proposition dans l'écran **Amélioration continue** de
+l'interface. L'Administrateur y voit les indicateurs et les propositions, sans pouvoir valider. Une
+proposition acceptée écrit la nouvelle version du playbook, garde l'ancienne dans
+`playbooks/history/` et trace la décision dans `playbooks/proposals/decisions.jsonl`. Une nouvelle
+catégorie démarre en `draft` : le classifieur la voit, mais une demande qui y correspond suit la
+deuxième catégorie, ou `autre`. La correspondance est notée (`draft_match`) pour mesurer ce que la
+catégorie aurait capté.
+
+L'écran donne aussi, par catégorie : la part des demandes, la part classée `autre`, la part
+corrigée, la part de diagnostics jugés justes, la durée et le nombre d'appels d'outils moyens.
+
 ## Sous-agents
 
 Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par investigation
@@ -136,6 +190,7 @@ sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rô
 
 ```bash
 diagagent user add erik --role administrateur --name Erik     # demande le mot de passe (12 caractères min.)
+diagagent user add sophie --role superviseur --name Sophie    # valide les propositions d'évolution
 diagagent serve                                               # http://127.0.0.1:8080
 ```
 

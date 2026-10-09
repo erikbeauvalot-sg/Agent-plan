@@ -10,7 +10,9 @@ une sortie structurée. La décision (playbook appliqué, deux playbooks combin�
 from __future__ import annotations
 
 import json
+import os
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,10 +31,14 @@ class PlaybookError(ValueError):
     pass
 
 
+def playbooks_dir() -> Path:
+    return Path(os.environ.get("DIAGAGENT_PLAYBOOKS_DIR") or catalog.home() / "playbooks")
+
+
 def load_playbooks(include: tuple[str, ...] = ("active",)) -> dict[str, dict[str, Any]]:
     """Playbooks par id, dans l'ordre des fichiers ; `include` filtre sur le statut."""
     books = {}
-    for path in sorted((catalog.home() / "playbooks").glob("*.yaml")):
+    for path in sorted(playbooks_dir().glob("*.yaml")):
         book = yaml.safe_load(path.read_text(encoding="utf-8"))
         validate(book, path.stem)
         if book["status"] in include:
@@ -60,7 +66,7 @@ def validate(book: dict[str, Any], stem: str | None = None, roles: set[str] | No
             if roles is not None and inv["role"] not in roles:
                 raise PlaybookError(f"{book['id']}/{step['name']} : rôle inconnu {inv['role']}")
     for target in book.get("requalify") or {}:
-        if not (catalog.home() / "playbooks" / f"{target}.yaml").exists():
+        if not (playbooks_dir() / f"{target}.yaml").exists():
             raise PlaybookError(f"{book['id']} : requalify vers une catégorie inconnue {target}")
 
 
@@ -76,6 +82,7 @@ class Classification:
     choices: list[str] = field(default_factory=list)
     reason: str = ""
     error: str | None = None
+    draft_match: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items() if v not in (None, "", [], {})}
@@ -113,7 +120,8 @@ Réponds uniquement par un objet JSON, sans texte autour :
 def classifier_prompt(books: dict[str, dict[str, Any]], similar: list[dict[str, Any]] | None = None) -> str:
     lines = []
     for b in books.values():
-        lines.append(f"## {b['id']}\n{' '.join(b['description'].split())}")
+        draft = " (catégorie en observation)" if b["status"] == "draft" else ""
+        lines.append(f"## {b['id']}{draft}\n{' '.join(b['description'].split())}")
         if b.get("examples"):
             lines.append("Exemples : " + " ; ".join(f"« {e} »" for e in b["examples"]))
         if b.get("required_entities"):
@@ -126,22 +134,29 @@ def classifier_prompt(books: dict[str, dict[str, Any]], similar: list[dict[str, 
 
 
 def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classification:
+    """Une catégorie `draft` (en observation) n'est jamais appliquée : elle est notée dans draft_match
+    et la demande suit la deuxième catégorie si elle est active, sinon `autre`."""
     match = re.search(r"\{.*\}", text or "", re.S)
     if not match:
         raise PlaybookError("pas d'objet JSON dans la réponse du classifieur")
     data = json.loads(match.group(0))
-    category = data.get("category")
-    if category not in books:
+    active = {k for k, b in books.items() if b["status"] == "active"}
+    category, alternative, draft_match = data.get("category"), data.get("alternative"), None
+    if category in books and category not in active:
+        draft_match = category
+        category = alternative if alternative in active else FALLBACK
+        alternative = None
+    if category not in active:
         category = FALLBACK
-    alternative = data.get("alternative")
-    if alternative not in books or alternative == category:
+    if alternative not in active or alternative == category:
         alternative = None
     confidence = data.get("confidence") if data.get("confidence") in CONFIDENCES else "low"
     entities = {k: str(v) for k, v in (data.get("entities") or {}).items() if v not in (None, "", [])}
     required = books[category].get("required_entities") or {}
     missing = [m for m in data.get("missing") or [] if m in required and m not in entities]
     return Classification(category, confidence, alternative, entities, missing,
-                          [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""))
+                          [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
+                          draft_match=draft_match)
 
 
 def classify(provider: LLMProvider, question: str, books: dict[str, dict[str, Any]],
@@ -210,3 +225,62 @@ def lead_section(decision: Decision, c: Classification, books: dict[str, dict[st
                  "puis tranche avec les faits et appelle requalify pour retenir la bonne.")
     body = "\n\n".join(render(books[cat], available_roles) for cat in decision.categories)
     return f"{head}\n\n{body}"
+
+
+# Évolution des playbooks (propositions validées par un Superviseur)
+
+CHANGE_KINDS = ("add_examples", "add_hypotheses", "update_description", "new_category", "activate")
+
+
+def apply_change(book: dict[str, Any] | None, kind: str, change: dict[str, Any]) -> dict[str, Any]:
+    """Nouvelle version d'un playbook après une proposition ; ne touche pas au disque."""
+    if kind not in CHANGE_KINDS:
+        raise PlaybookError(f"kind doit valoir {', '.join(CHANGE_KINDS)}")
+    if kind == "new_category":
+        new = dict(change["playbook"])
+        new.update(version=1, status="draft")
+        return new
+    if book is None:
+        raise PlaybookError("playbook cible inconnu")
+    new = json.loads(json.dumps(book))
+    new["version"] = book["version"] + 1
+    if kind == "add_examples":
+        new["examples"] = list(dict.fromkeys([*(book.get("examples") or []), *change["examples"]]))
+    elif kind == "add_hypotheses":
+        known = {h["id"] for h in book.get("hypotheses") or []}
+        new["hypotheses"] = [*(book.get("hypotheses") or []),
+                             *[h for h in change["hypotheses"] if h["id"] not in known]]
+    elif kind == "update_description":
+        new["description"] = change["description"]
+    elif kind == "activate":
+        new["status"] = "active"
+    return new
+
+
+def save_playbook(book: dict[str, Any], roles: set[str] | None = None) -> Path:
+    """Écrit un playbook validé ; la version précédente est gardée dans history/ pour le retour arrière."""
+    validate(book, roles=roles)
+    path = playbooks_dir() / f"{book['id']}.yaml"
+    if path.exists():
+        old = yaml.safe_load(path.read_text(encoding="utf-8"))
+        backup = playbooks_dir() / "history" / f"{old['id']}-v{old['version']}.yaml"
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    path.write_text(yaml.safe_dump(book, allow_unicode=True, sort_keys=False, width=110), encoding="utf-8")
+    return path
+
+
+def rollback(book_id: str) -> dict[str, Any]:
+    """Revient à la version précédente gardée dans history/ (la version retirée y reste aussi)."""
+    history = sorted((playbooks_dir() / "history").glob(f"{book_id}-v*.yaml"),
+                     key=lambda p: int(p.stem.rsplit("-v", 1)[1]))
+    path = playbooks_dir() / f"{book_id}.yaml"
+    current = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
+    previous = [p for p in history if current is None or int(p.stem.rsplit("-v", 1)[1]) < current["version"]]
+    if not previous:
+        raise PlaybookError(f"Aucune version antérieure de {book_id} dans history/")
+    if current is not None:
+        retired = playbooks_dir() / "history" / f"{book_id}-v{current['version']}.yaml"
+        retired.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    path.write_text(previous[-1].read_text(encoding="utf-8"), encoding="utf-8")
+    return yaml.safe_load(path.read_text(encoding="utf-8"))

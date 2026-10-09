@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from diagagent import catalog, playbooks
+from diagagent import catalog, knowledge, learning, playbooks
 from diagagent.orchestrator import Investigation, ProviderFactory
 from diagagent.runlog import RunLog, _append, _dump, _ts
 
@@ -90,6 +90,19 @@ class AskBody(BaseModel):
 
 class CategoryBody(BaseModel):
     category: str
+
+
+class FeedbackBody(BaseModel):
+    verdict: str
+    cause: str = Field(default="", max_length=2000)
+    comment: str = Field(default="", max_length=2000)
+    create_case: bool = False
+    resolution: str = Field(default="", max_length=2000)
+
+
+class DecisionBody(BaseModel):
+    accept: bool
+    comment: str = Field(default="", max_length=2000)
 
 
 def runs_dir() -> Path:
@@ -217,6 +230,51 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
             "to": body.category, "by": user.login, "at": correction["at"]})
         audit(user, "correct_category", {"run_id": run_id, "category": body.category})
         return {"category": category}
+
+    @app.post("/api/runs/{run_id}/feedback")
+    def feedback(run_id: str, body: FeedbackBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Avis sur le diagnostic ; avec une cause confirmée, l'investigation peut devenir un cas."""
+        path, manifest = load_run(user, run_id)
+        if not (user.can("stop_all") or manifest.get("user") == user.login):
+            raise HTTPException(403, "Seul l'auteur de la question, un superviseur ou un administrateur donne un avis")
+        if manifest.get("status") == "running":
+            raise HTTPException(409, "Investigation en cours")
+        try:
+            result: dict[str, Any] = {"feedback": knowledge.record_feedback(
+                path, runs_dir(), body.verdict, user.login, body.cause, body.comment)}
+            if body.create_case:
+                if body.verdict != "utile":
+                    raise ValueError("Seul un diagnostic jugé utile devient un cas")
+                result["case"] = knowledge.create_case(path, user.login, body.cause, body.resolution)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        audit(user, "feedback", {"run_id": run_id, "verdict": body.verdict, "case": body.create_case})
+        return result
+
+    @app.get("/api/indicators")
+    def indicators(user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "view_indicators")
+        return learning.indicators(runs_dir())
+
+    @app.get("/api/proposals")
+    def proposals(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        if not (user.can("review") or user.can("view_indicators")):
+            raise HTTPException(403, "Accès réservé aux superviseurs et administrateurs")
+        return sorted(learning.list_proposals(), key=lambda p: (p["status"] != "pending", p["id"]))
+
+    @app.post("/api/proposals/{proposal_id}/decision")
+    def decide(proposal_id: str, body: DecisionBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "review")
+        from diagagent.orchestrator import load_roles
+
+        try:
+            p = learning.decide(proposal_id, body.accept, user.login, body.comment, roles=set(load_roles()))
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
+        audit(user, "proposal_decision", {"proposal": proposal_id, "status": p["status"]})
+        return p
 
     @app.get("/api/runs")
     def list_runs(user: User = Depends(current_user)) -> list[dict[str, Any]]:

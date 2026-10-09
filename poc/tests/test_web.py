@@ -174,3 +174,49 @@ def test_category_is_shown_corrected_and_forced(env, tmp_path):
                       headers=H).json()["run_id"]
     assert wait_status(alice, run2)["manifest"]["category"]["source"] == "user"
     assert len(script["classifier"].requests) == 1
+
+
+def test_feedback_case_and_supervisor_review(env, tmp_path, monkeypatch):
+    import shutil
+    import yaml as _yaml
+    from conftest import POC
+    from diagagent import learning
+
+    books = tmp_path / "playbooks"
+    shutil.copytree(POC / "playbooks", books, ignore=shutil.ignore_patterns("proposals", "history"))
+    monkeypatch.setenv("DIAGAGENT_PLAYBOOKS_DIR", str(books))
+    app, script = env
+    from diagagent.web.auth import FileUserStore
+    FileUserStore(tmp_path / "users.yaml").add("sophie", PWD, ["superviseur"])
+    script["lead"] = ScriptedProvider([answer("## Synthèse\nCHG0034567 [lead/calls/0001.json]")])
+    script["classifier"] = ScriptedProvider([LLMResponse('{"category": "information", "confidence": "high"}', [], "end")])
+    alice, bob, admin, sophie = (client(app, n) for n in ("alice", "bob", "admin", "sophie"))
+    run_id = alice.post("/api/runs", json={"question": "Le stockage NAS-02 rame"}, headers=H).json()["run_id"]
+    wait_status(alice, run_id)
+
+    # Avis : réservé à l'auteur (ou superviseur, administrateur) ; un cas exige un avis utile et une cause.
+    body = {"verdict": "utile", "cause": "max_connections réduit", "create_case": True}
+    assert bob.post(f"/api/runs/{run_id}/feedback", json=body, headers=H).status_code == 404
+    assert alice.post(f"/api/runs/{run_id}/feedback", json={**body, "verdict": "faux"}, headers=H).status_code == 400
+    r = alice.post(f"/api/runs/{run_id}/feedback", json=body, headers=H)
+    assert r.status_code == 200 and r.json()["case"]["cause"] == "max_connections réduit"
+    assert alice.get(f"/api/runs/{run_id}").json()["manifest"]["feedback"]["verdict"] == "utile"
+    assert (tmp_path / "knowledge" / "cases" / f"{run_id}.yaml").exists()
+
+    # Indicateurs : superviseur et administrateur ; pas l'opérateur.
+    assert alice.get("/api/indicators").status_code == 403
+    assert admin.get("/api/indicators").json()["runs"] == 1
+    assert sophie.get("/api/indicators").status_code == 200
+
+    alice.post(f"/api/runs/{run_id}/category", json={"category": "performance"}, headers=H)
+    from diagagent.orchestrator import load_roles
+    proposal = learning.learn(tmp_path / "runs", roles=set(load_roles()))[0]
+    assert alice.get("/api/proposals").status_code == 403
+    assert admin.get("/api/proposals").json()[0]["id"] == proposal["id"]
+    # Seul le Superviseur valide (matrice des rôles : l'Administrateur ne valide pas).
+    url = f"/api/proposals/{proposal['id']}/decision"
+    assert admin.post(url, json={"accept": True}, headers=H).status_code == 403
+    r = sophie.post(url, json={"accept": True, "comment": "ok"}, headers=H)
+    assert r.status_code == 200 and r.json()["status"] == "accepted"
+    assert sophie.post(url, json={"accept": False}, headers=H).status_code == 409
+    assert "Le stockage NAS-02 rame" in _yaml.safe_load((books / "performance.yaml").read_text())["examples"]

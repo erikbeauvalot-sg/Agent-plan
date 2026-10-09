@@ -25,17 +25,19 @@ from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from diagagent import catalog
 
-ROLES = ("operateur", "administrateur")
+ROLES = ("operateur", "superviseur", "administrateur")
 MIN_PASSWORD = 12
 MAX_FAILURES = 5
 LOCK_MINUTES = 15
 SESSION_IDLE_S = 15 * 60
 SESSION_MAX_S = 8 * 3600
 
-# Fonctions autorisées par rôle (matrice du document d'architecture, rôles de la V1 du POC).
+# Fonctions autorisées par rôle (matrice du document d'architecture). Seul le Superviseur valide les
+# évolutions de catégories et de playbooks (review) ; l'Administrateur voit les indicateurs sans valider.
 PERMISSIONS = {
     "operateur": {"ask", "view_own", "stop_own"},
-    "administrateur": {"ask", "view_own", "stop_own", "view_all", "stop_all", "manage_users"},
+    "superviseur": {"ask", "view_own", "stop_own", "view_all", "stop_all", "review", "view_indicators"},
+    "administrateur": {"ask", "view_own", "stop_own", "view_all", "stop_all", "manage_users", "view_indicators"},
 }
 
 _hasher = PasswordHasher()
