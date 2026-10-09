@@ -1,6 +1,6 @@
 # Architecture de l'agent IA de diagnostic de production
 
-7 octobre 2026 · Erik
+7 octobre 2026, mis à jour le 9 octobre 2026 · Erik
 
 > Version de référence éditable : [Claude Doc](https://claude.ai/code/artifact/870f5346-1d59-4188-a73e-dca1913ca8f9). Ce fichier en est l'export Markdown.
 
@@ -180,7 +180,7 @@ Chaque connecteur impose une période et un pas maximal, pour ne pas surcharger 
 Chaque question suit six étapes ; seules les étapes 3 et 4 peuvent boucler, au plus trois fois, si l'analyse révèle un manque d'information.
 
 1. **Cadrage** : l'agent principal reformule la question, en extrait les entités (host, service, application, période) et les résout via `resolve_entity` et la CMDB. Une entité introuvable ou ambiguë est signalée plutôt que devinée.
-2. **Classification** : question simple (une source, une réponse factuelle) ou complexe (diagnostic, corrélation, cause). Une question simple est traitée directement par l'agent principal, sans sous-agent.
+2. **Classification** : l'agent détermine la catégorie de la demande (information, indisponibilité, performance, etc.) et charge le playbook correspondant, qui donne le plan de collecte de départ (voir « Catégorisation des demandes »). Une demande de la catégorie information est traitée directement par l'agent principal, sans sous-agent.
 3. **Plan d'investigation** : pour une question complexe, l'agent écrit `plan.md` : hypothèses à tester, investigations nécessaires, source visée et critère de fin de chacune. Les investigations indépendantes sont lancées en parallèle.
 4. **Collecte** : chaque sous-agent exécute son investigation et rend un rapport structuré (schéma ci-dessous).
 5. **Analyse** : l'agent principal croise les rapports sur une chronologie commune, confronte chaque hypothèse aux faits et attribue un niveau de confiance. S'il manque une information décisive, il relance une investigation ciblée (retour à l'étape 3).
@@ -231,6 +231,151 @@ Chaque fait référence l'appel d'outil qui l'a produit (`query_ref`) : l'agent 
 | `procedure` | Étapes manuelles ou référence de runbook |
 | `rollback` | Comment revenir en arrière |
 | `requires_change` | oui ou non, selon la politique de gestion des changements |
+
+## Catégorisation des demandes
+
+La première chose que fait l'agent est de comprendre quel type de demande il reçoit, car c'est ce type qui décide quoi collecter, dans quel ordre et quand s'arrêter. « Donne-moi les informations sur srv-pay-01 », « mon site web ne fonctionne pas » et « le stockage est lent » ne demandent ni les mêmes sources ni le même raisonnement. Chaque catégorie a donc sa propre stratégie de collecte, décrite dans un fichier appelé playbook.
+
+![Cheminement d'une demande : catégorie, playbook, collecte et boucle d'apprentissage](images/cheminement-demande.png)
+
+La classification choisit la catégorie, donc le playbook qui guide la collecte ; les retours et les incidents clos reviennent, après validation humaine, améliorer les catégories et les playbooks.
+
+**Catégories initiales** (liste de départ, à valider, appelée à évoluer)
+
+| Catégorie | Exemples de demandes | Point de départ | Ordre de collecte | Résultat attendu |
+| --- | --- | --- | --- | --- |
+| `information` | « Infos sur srv-pay-01 », « qui gère l'application Paiement ? » | L'objet nommé, résolu dans la CMDB | Fiche CMDB, dépendances, propriétaires, puis incidents et changes ouverts ou récents | Fiche de synthèse, sans diagnostic |
+| `indisponibilite` | « Mon site web ne fonctionne pas », « l'appli Paiement renvoie des erreurs » | Le service métier, du haut vers le bas | 1. incidents et alertes déjà ouverts sur le service ; 2. chaîne de dépendances CMDB ; 3. changes récents sur toute la chaîne ; 4. erreurs dans les logs, maillon par maillon ; 5. métriques des maillons suspects | Maillon défaillant et cause probable |
+| `performance` | « Le stockage est lent », « temps de réponse élevés sur l'extranet » | Le composant et la mesure de lenteur | 1. métriques comparées à une référence (veille, semaine précédente) ; 2. saturation des ressources partagées ; 3. changes et alertes sur le composant et ses voisins ; 4. principaux consommateurs | Goulot, début de la dégradation, cause probable |
+| `analyse-evenement` | « Analyse l'incident INC0012345 », « que s'est-il passé avec cette alerte ? » | Le ticket ou l'alerte existant | Contenu de l'objet, CI touchés, chronologie autour de l'heure de début, incidents similaires passés, changes proches | Chronologie, cause probable, cas similaires |
+| `impact-change` | « Le change CHG0045678 a-t-il eu un impact ? » | Le change | Périmètre des CI, fenêtre d'intervention, comparaison avant et après (erreurs, métriques, incidents), changes similaires passés | Impact constaté ou absence d'impact, preuves |
+| `tendance` | « Combien d'incidents P1 ce mois sur Paiement ? », « les hosts les plus instables » | La période et le périmètre | Agrégations directes sur les sources concernées | Chiffres et tableau |
+| `autre` | Demande non reconnue | La question telle quelle | Stratégie générique : cadrage, question de précision si besoin, investigation libre | Réponse, et demande marquée pour l'apprentissage |
+
+**Comment l'agent catégorise une demande**
+
+1. **Extraction des entités** : host, service, application, ticket, change, période, symptôme décrit (« ne fonctionne pas », « lent », « erreurs »).
+2. **Classification** : le modèle reçoit la liste des catégories avec leur description et leurs exemples (tirés des playbooks), plus les demandes passées les plus proches déjà bien classées. Il rend une sortie structurée : catégorie, niveau de confiance, entités, informations manquantes.
+3. **Décision** :
+   - confiance élevée : le playbook de la catégorie est appliqué ;
+   - deux catégories plausibles (une lenteur qui ressemble à une panne) : les deux playbooks sont combinés, en commençant par leurs étapes communes ;
+   - entité indispensable manquante (« mon site » sans savoir lequel) : une seule question de précision à l'utilisateur, avec des choix ;
+   - aucune catégorie reconnue : `autre`, stratégie générique.
+4. **Requalification en cours de route** : si les faits collectés contredisent la catégorie (une « panne » qui s'avère être une lenteur extrême), l'agent principal change de playbook et le note dans `events.jsonl`.
+5. **Contrôle humain** : la catégorie et le playbook choisis s'affichent dans l'interface ; l'utilisateur peut les corriger, et cette correction alimente l'apprentissage.
+
+## Playbooks : une stratégie de collecte par catégorie
+
+Chaque catégorie est décrite par un fichier `playbooks/<categorie>.yaml`, versionné comme le catalogue. Le playbook ne fige pas le raisonnement : il donne à l'agent principal un plan de départ, les hypothèses à tester en priorité et les critères d'arrêt. L'agent peut ajouter des investigations si les faits l'y conduisent.
+
+**Contenu d'un playbook**
+
+| Champ | Rôle |
+| --- | --- |
+| `id`, `version`, `status` | Identifiant, version, état (`active`, `draft`, `retired`) |
+| `description`, `examples` | Ce que couvre la catégorie et des demandes types ; servent à la classification |
+| `required_entities` | Entités sans lesquelles on ne démarre pas, et la question à poser si elles manquent |
+| `hypotheses` | Causes fréquentes à tester, avec le signal qui les confirme ou les écarte |
+| `steps` | Étapes ordonnées ; dans une étape, les investigations parallèles, leur rôle de sous-agent, leurs sources et leur objectif |
+| `stop_when` | Conditions pour conclure : cause confirmée, budget atteint, rien de nouveau après une vague |
+| `requalify` | Signaux qui doivent faire changer de catégorie |
+| `output` | Rubriques attendues dans la réponse |
+| `owner` | Équipe qui valide le playbook |
+
+**Exemple : `playbooks/indisponibilite.yaml`**
+
+```yaml
+id: indisponibilite
+version: 3
+status: active
+description: >
+  Un service ou une fonction ne répond plus ou renvoie des erreurs pour les
+  utilisateurs. On part du service métier et on descend la chaîne de dépendances.
+examples:
+  - "mon site web ne fonctionne pas"
+  - "l'application Paiement renvoie des erreurs 500"
+  - "impossible de se connecter à l'extranet"
+required_entities:
+  service: "De quel site ou application parles-tu ?"
+hypotheses:
+  - id: change-recent
+    signal: "change terminé sur un maillon dans les 48 h avant le début"
+  - id: dependance-ko
+    signal: "erreurs de connexion vers un maillon aval (base, API, stockage)"
+  - id: saturation
+    signal: "ressource à plus de 90 % sur un maillon au début du symptôme"
+  - id: certificat-expire
+    signal: "erreurs TLS ou date d'expiration dépassée"
+steps:
+  - name: deja-connu
+    parallel:
+      - {role: events,  objective: "alertes ouvertes sur le service et ses CI"}
+      - {role: generic, objective: "incidents ouverts sur le service", sources: [incidents]}
+  - name: chaine
+    parallel:
+      - {role: host, objective: "chaîne de dépendances du service, profondeur 3"}
+  - name: causes
+    parallel:
+      - {role: changes, objective: "changes sur la chaîne, 48 h avant le début"}
+      - {role: logs,    objective: "erreurs par maillon depuis le début"}
+  - name: confirmation
+    parallel:
+      - {role: metrics, objective: "métriques des maillons suspects vs veille"}
+stop_when:
+  - "une hypothèse est confirmée par deux sources indépendantes"
+  - "un incident ouvert explique déjà le symptôme"
+requalify:
+  performance: "le service répond, mais lentement"
+output: [synthese, maillon_defaillant, chronologie, cause_probable, actions]
+owner: équipe exploitation applicative
+```
+
+Le plan d'investigation (`plan.md`) de chaque demande part du playbook : l'agent principal y recopie les étapes, les adapte aux entités résolues et note ce qu'il ajoute ou saute, et pourquoi.
+
+## Évolution des catégories : apprentissage
+
+Les catégories et les playbooks s'enrichissent à partir de ce que l'agent voit passer, mais l'agent ne modifie jamais seul ce qui tourne en production : il propose, un humain valide. C'est la même logique que pour le catalogue de sources, et elle garde le comportement de l'agent prévisible et traçable.
+
+**Ce qui alimente l'apprentissage**
+
+| Source | Ce que l'agent y cherche | Ce qu'il peut proposer |
+| --- | --- | --- |
+| Demandes classées `autre` ou avec une confiance faible | Groupes de demandes semblables qui reviennent | Une nouvelle catégorie, ou de nouveaux exemples pour une catégorie existante |
+| Corrections de catégorie faites dans l'interface | Confusions récurrentes entre deux catégories | Des descriptions et exemples plus discriminants, une règle `requalify` |
+| Incidents clôturés avec cause racine (index incidents) | Causes qui reviennent, et comment elles ont été trouvées | Une hypothèse ajoutée à un playbook, une étape réordonnée |
+| Nouveaux types d'events et d'alertes | Noms d'alertes ou familles jamais vus | Un rattachement à une catégorie, ou un playbook dédié |
+| Nouveaux types de changes | Types de changes liés à des incidents | Une hypothèse `change-recent` plus précise |
+| Retours sur les diagnostics (utile, partiel, faux) et cause réelle une fois l'incident clos | Étapes qui ont trouvé la cause, étapes inutiles | Un playbook raccourci ou réordonné |
+| Nouvelles sources au catalogue | Sources pertinentes pour une catégorie | Une étape de collecte supplémentaire |
+
+**Fonctionnement**
+
+1. **Agent d'apprentissage** : un agent dédié tourne chaque semaine, et à la demande. Il lit `runs/index.jsonl`, les retours des utilisateurs, les corrections de catégorie et les incidents clôturés de la période.
+2. **Propositions en fichiers** : il écrit chaque proposition dans `playbooks/proposals/AAAA-MM-JJ-<sujet>.yaml`, avec sa justification et les liens vers les investigations ou incidents qui la motivent.
+3. **Rejeu avant validation** : la proposition est rejouée sur le jeu d'évaluation (adaptateur `replay` et incidents passés). Elle n'est présentée que si elle ne dégrade ni la justesse de catégorisation ni celle des diagnostics.
+4. **Validation humaine** : un Superviseur (ou le référent de la catégorie, champ `owner`) accepte, modifie ou rejette la proposition depuis l'interface ou en demande de fusion. Toute décision est tracée.
+5. **Mise en service progressive** : une nouvelle catégorie démarre en `draft`. Le classifieur la propose dans l'interface sans l'appliquer, ce qui permet de mesurer combien de demandes elle aurait captées avant de la passer en `active`.
+6. **Retour arrière** : chaque investigation enregistre la version de catégorie et de playbook utilisée ; une version qui fait baisser les indicateurs est retirée en revenant à la précédente.
+
+**Base de cas diagnostiqués**
+
+Chaque investigation dont la cause a été confirmée (par l'utilisateur ou par la clôture de l'incident) devient un cas dans `knowledge/cases/<id>.yaml` : symptôme, catégorie, entités, cause, preuves décisives, résolution, lien vers l'investigation. Ces cas servent trois fois :
+
+- comme exemples pour la classification des nouvelles demandes ;
+- comme « déjà vu » pendant l'analyse, quand un symptôme ressemble à un cas passé ;
+- comme statistiques pour ordonner les hypothèses d'un playbook (la cause la plus fréquente testée en premier).
+
+Fidèle au choix sans base de données, la recherche se fait sur un index `knowledge/index.jsonl` (entités, catégorie, mots-clés du symptôme). Si le volume grandit, cet index peut être chargé dans ELK, comme celui des investigations, sans changer le format des fichiers.
+
+**Indicateurs suivis par catégorie** (écran Administration)
+
+| Indicateur | À quoi il sert |
+| --- | --- |
+| Part des demandes | Voir quelles catégories comptent vraiment |
+| Part classée `autre` | Repérer un besoin de nouvelle catégorie |
+| Part corrigée par l'utilisateur | Repérer une catégorie mal décrite |
+| Part de diagnostics jugés justes | Mesurer la qualité du playbook |
+| Durée et nombre d'appels d'outils moyens | Repérer un playbook trop long |
 
 ## Orchestration multi-agents
 
@@ -296,10 +441,10 @@ Chaque question crée un dossier d'investigation ; tout ce qui entre dans le mod
 
 ```
 runs/
-  index.jsonl                          # une ligne par investigation (id, date, question, statut, durée, coût)
+  index.jsonl                          # une ligne par investigation (id, date, question, catégorie, statut, durée, coût)
   2026/10/07/
     20261007T063012Z-7f3a/             # une investigation = un dossier
-      manifest.json                    # question, utilisateur, version du catalogue, modèles, statut
+      manifest.json                    # question, utilisateur, catégorie et confiance, version du playbook et du catalogue, modèles, statut
       question.md                      # question originale
       plan.md                          # plan d'investigation, versions successives
       lead/
@@ -354,13 +499,13 @@ Sur cet exemple fictif, T03 n'a rien reçu depuis 3 minutes et T05 enchaîne les
 
 | Écran | Contenu | Sert à |
 | --- | --- | --- |
-| Conversation | Fil de questions et réponses avec l'agent principal ; réponse affichée au fil de l'eau, faits cliquables vers leur preuve | Poser une question, demander une précision, relancer |
+| Conversation | Fil de questions et réponses avec l'agent principal ; catégorie détectée affichée et corrigeable en un clic ; réponse affichée au fil de l'eau, faits cliquables vers leur preuve | Poser une question, demander une précision, relancer |
 | Graphe d'investigation | Arbre agent principal → sous-agents, coloré par état, mis à jour en direct | Voir d'un coup d'œil qui travaille, qui attend, qui a échoué |
 | Chronologie | Une ligne par agent sur un axe de temps : appels au modèle, appels d'outils, attentes, erreurs | Trouver où le temps est passé et quel appel bloque |
 | Détail d'un agent | Prompt reçu, échanges avec le modèle, chaque appel d'outil avec entrée, sortie, durée ; jauges de budget | Comprendre pourquoi un agent se trompe ou tourne en rond |
 | Actions proposées | Liste des actions avec risque, justification et preuves ; validation ou rejet par un rôle habilité | Revue humaine avant toute exécution future |
-| Historique | Recherche dans `index.jsonl` par date, utilisateur, host, statut ; ouverture d'une investigation passée en lecture | Retrouver et comparer des analyses |
-| Administration | Catalogue des sources, configuration des modèles par rôle, budgets, utilisateurs et rôles, coûts | Exploiter la plateforme |
+| Historique | Recherche dans `index.jsonl` par date, utilisateur, catégorie, host, statut ; ouverture d'une investigation passée en lecture | Retrouver et comparer des analyses |
+| Administration | Catalogue des sources, catégories et playbooks, propositions d'évolution à valider avec leur résultat de rejeu, indicateurs de classification, configuration des modèles par rôle, budgets, utilisateurs et rôles, coûts | Exploiter la plateforme |
 
 **Détection visuelle des problèmes d'exécution**
 
@@ -436,7 +581,7 @@ users:
 | --- | --- | --- |
 | Lecteur | Managers, équipes métier, astreinte secondaire | Consulte les investigations partagées et l'historique |
 | Opérateur | Ingénieurs d'exploitation, support N2 et N3 | Pose des questions, pilote et arrête ses propres investigations |
-| Superviseur | Responsables d'exploitation, leads d'astreinte | Voit et arrête toutes les investigations, valide les actions proposées |
+| Superviseur | Responsables d'exploitation, leads d'astreinte | Voit et arrête toutes les investigations, valide les actions proposées et les évolutions de catégories et de playbooks |
 | Administrateur | Équipe plateforme de l'agent | Configure sources, modèles, budgets, rôles |
 | Auditeur | Sécurité, conformité | Lit toutes les traces, prompts et journaux d'accès, sans rien piloter |
 
@@ -450,7 +595,7 @@ users:
 | Voir prompts, transcripts et appels d'outils | non | les siens | tous | tous | tous |
 | Arrêter un sous-agent ou une investigation | non | les siens | tous | tous | non |
 | Arrêt immédiat, ajuster un budget | non | non | oui | oui | non |
-| Valider ou rejeter une action proposée | non | non | oui | non | non |
+| Valider ou rejeter une action proposée, une évolution de catégorie ou de playbook | non | non | oui | non | non |
 | Modifier le catalogue de sources | non | non | non | oui | non |
 | Choisir modèles et fournisseurs par rôle d'agent | non | non | non | oui | non |
 | Gérer les rôles et les groupes | non | non | non | oui | non |
@@ -579,9 +724,9 @@ Grâce à la couche LLM agnostique, d'autres modèles disponibles dans le même 
 
 La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 
-1. **Socle** : branchement Azure OpenAI (identité de service, point de terminaison privé, déploiement GPT-5.6 Luna), catalogue (3 sources : incidents, changes, CMDB), `mcp-catalog` et `mcp-elk`, couche LLM avec adaptateurs `azure_openai` et `replay`, agent principal seul, journalisation fichier complète. Critère de sortie : réponses justes à 20 questions simples de référence.
+1. **Socle** : branchement Azure OpenAI (identité de service, point de terminaison privé, déploiement GPT-5.6 Luna), catalogue (3 sources : incidents, changes, CMDB), `mcp-catalog` et `mcp-elk`, couche LLM avec adaptateurs `azure_openai` et `replay`, agent principal seul, classification et playbooks des sept catégories initiales, journalisation fichier complète. Critère de sortie : réponses justes à 20 questions simples de référence.
 2. **Multi-agents et interface** : `spawn_subagent`, rôles `host`, `logs`, `metrics`, `events`, rapports structurés, consolidation ; interface web avec conversation, graphe d'investigation, chronologie et arrêt d'agent ; authentification par table d'utilisateurs interne avec les rôles Opérateur et Administrateur. Critère de sortie : cause correcte sur une majorité d'un jeu de 20 incidents passés.
-3. **Actions proposées et rôles complets** : `propose_action`, lien vers les runbooks, écran de revue des actions ; rôles Lecteur, Superviseur et Auditeur, journal d'accès ; signaux de détection (blocage, boucle, budget).
+3. **Actions proposées et rôles complets** : `propose_action`, lien vers les runbooks, écran de revue des actions ; rôles Lecteur, Superviseur et Auditeur, journal d'accès ; signaux de détection (blocage, boucle, budget) ; base de cas \`knowledge/\` et boucle d'apprentissage (agent hebdomadaire, propositions rejouées sur le jeu d'évaluation, validation par un Superviseur, mode observation pour les nouvelles catégories).
 4. **Industrialisation** : ensemble des sources au catalogue, comparaison de plusieurs déploiements sur le jeu d'évaluation, branchement sur l'annuaire d'entreprise (OIDC), périmètres de données par utilisateur, suivi des quotas et des coûts Azure, archivage. L'exécution d'actions avec validation humaine fera l'objet d'un document séparé.
 
 **Points ouverts**
@@ -594,6 +739,8 @@ La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 - [x] Plateforme LLM : Azure OpenAI déjà accessible, authentification en place (confirmé le 7 octobre 2026).
 - [ ] Modèle Azure OpenAI : GPT-5.6 Luna (confirmé le 7 octobre 2026). Reste à connaître le quota de tokens par minute du déploiement.
 - [ ] Outils de métriques : Druid, Prometheus et ELK (confirmé le 7 octobre 2026). Reste à savoir quels hosts, applications et métriques couvre chacun.
+- [ ] Catégories initiales : valider la liste des sept catégories et leurs exemples avec les équipes d'exploitation.
+- [ ] Validation des évolutions de catégories et de playbooks : par défaut un Superviseur ; à confirmer s'il faut aussi l'accord du propriétaire de la source concernée.
 
 * [x] Authentification : table d'utilisateurs interne pour commencer, annuaire d'entreprise plus tard (décidé le 7 octobre 2026).
 * [x] Périmètres de données par utilisateur : aucun en V1, tout utilisateur connecté voit toutes les sources (décidé le 7 octobre 2026).
