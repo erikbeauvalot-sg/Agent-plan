@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +19,13 @@ def _ts() -> str:
 
 
 def _dump(path: Path, data: Any) -> None:
+    """Écriture atomique (fichier temporaire puis renommage) : l'interface web lit manifest.json
+    pendant l'investigation et ne doit jamais tomber sur un fichier vidé en cours de réécriture."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
+                                     suffix=".tmp", delete=False) as f:
+        f.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    os.replace(f.name, path)
 
 
 def _append(path: Path, data: Any) -> None:

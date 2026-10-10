@@ -126,6 +126,12 @@ les entités indispensables qui manquent.
 | Entité indispensable manquante (« mon site » sans dire lequel) | L'investigation s'arrête au statut `needs_clarification` avec la question à poser ; l'interface propose de préciser et relancer |
 | Aucune catégorie, ou classifieur indisponible ou illisible | Catégorie `autre`, stratégie générique |
 
+Le modèle oublie parfois une entité écrite dans la demande. Avant de poser une question de précision,
+l'orchestrateur relit la demande : un numéro `INC` ou `CHG`, ou le nom exact d'une alerte connue
+(en cours dans Alertmanager ou règle d'alerte de Prometheus), complète l'entité manquante (événement
+`entities_completed`). Une demande classée `autre` qui nomme une alerte connue passe en
+`analyse-evenement`, avec une confiance faible.
+
 En cours de route, l'agent principal peut appeler `requalify` si les faits contredisent la catégorie ;
 le changement est tracé (`category_changed` dans `events.jsonl`). La catégorie, sa confiance et la
 version des playbooks appliqués sont dans `manifest.json` (clé `category`) et dans `runs/index.jsonl`.

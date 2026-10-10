@@ -173,3 +173,28 @@ def test_report_evidence_is_normalized():
     with pytest.raises(LocalToolError):
         validate_report({"status": "completed", "summary": "ok",
                          "findings": [{"fact": "a", "evidence": [{}], "confidence": "high"}]})
+
+
+def test_manifest_is_never_read_half_written(tmp_path):
+    """L'interface relit manifest.json pendant les mises à jour : jamais de fichier vide ou tronqué."""
+    import threading
+
+    from diagagent.runlog import RunLog
+    log = RunLog(tmp_path / "runs", "Q", "alice")
+    stop, errors = threading.Event(), []
+
+    def reader():
+        while not stop.is_set():
+            try:
+                json.loads((log.dir / "manifest.json").read_text(encoding="utf-8"))
+            except ValueError as e:
+                errors.append(e)
+
+    t = threading.Thread(target=reader)
+    t.start()
+    for i in range(300):
+        log.update_manifest(step=i, padding="x" * 20000)
+    stop.set()
+    t.join()
+    assert errors == [] and json.loads((log.dir / "manifest.json").read_text())["step"] == 299
+    assert [p.name for p in log.dir.iterdir() if p.name.endswith(".tmp")] == []

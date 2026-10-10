@@ -218,3 +218,17 @@ def test_home_mode_offers_only_roles_with_sources(home_monitoring, tmp_path):
     async def fn(hub):
         return set(Investigation("Q", hub, RunLog(tmp_path, "Q", "t"), lambda r: None, {}).roles)
     assert _run(fn) == {"host", "metrics", "events", "changes", "generic"}
+
+
+def test_alert_names_from_alertmanager_and_rules(home_monitoring):
+    from diagagent.connectors.alertmanager import alert_names
+    assert alert_names() == {"DiskAlmostFull", "Other"}
+
+
+def test_alert_names_ignore_unreachable_sources(monkeypatch):
+    from diagagent.connectors.alertmanager import alert_names
+    monkeypatch.setenv("PROMETHEUS_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ALERTMANAGER_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("DIAGAGENT_SOURCES", "maison")
+    catalog.load_catalog.cache_clear()
+    assert alert_names(timeout=1) == set()

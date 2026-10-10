@@ -186,6 +186,42 @@ def classify(provider: LLMProvider, question: str, books: dict[str, dict[str, An
         return Classification(FALLBACK, "low", error=f"Réponse illisible : {e}"[:300]), response
 
 
+IDENTIFIERS = {"ticket": r"\bINC\d{7}\b", "change": r"\bCHG\d{7}\b"}
+ALERT_CATEGORY = "analyse-evenement"
+
+
+def named_alert(question: str, alert_names: set[str] | frozenset[str]) -> str | None:
+    """Nom d'alerte connue écrit tel quel dans la demande (le plus long si plusieurs se recouvrent)."""
+    return next((n for n in sorted(alert_names, key=len, reverse=True)
+                 if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", question)), None)
+
+
+def alert_fallback(c: Classification, question: str, alert_names: set[str] | frozenset[str],
+                   books: dict[str, dict[str, Any]]) -> Classification:
+    """Une demande classée `autre` qui nomme une alerte connue est une analyse d'événement."""
+    alert = named_alert(question, alert_names)
+    if c.category != FALLBACK or not alert or books.get(ALERT_CATEGORY, {}).get("status") != "active":
+        return c
+    return Classification(ALERT_CATEGORY, "low", entities={**c.entities, "ticket": alert},
+                          reason=f"alerte {alert} nommée dans la demande ; le classifieur proposait {FALLBACK}",
+                          error=c.error)
+
+
+def complete_entities(c: Classification, question: str, alert_names: set[str] | frozenset[str] = frozenset()
+                      ) -> list[str]:
+    """Entités indispensables écrites dans la demande mais que le classifieur a déclarées manquantes :
+    numéro INC ou CHG, nom d'une alerte connue (ticket). Rend les entités complétées."""
+    found = {k: m.group(0) for k, pattern in IDENTIFIERS.items() if (m := re.search(pattern, question))}
+    alert = named_alert(question, alert_names)
+    if alert and "ticket" not in found:
+        found["ticket"] = alert
+    completed = [m for m in c.missing if m in found]
+    for m in completed:
+        c.entities[m] = found[m]
+    c.missing = [m for m in c.missing if m not in found]
+    return completed
+
+
 def decide(c: Classification, books: dict[str, dict[str, Any]]) -> Decision:
     if c.missing:
         book = books[c.category]

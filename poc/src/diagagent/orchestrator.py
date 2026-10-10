@@ -17,6 +17,7 @@ from typing import Any, Callable
 import yaml
 
 from . import catalog, knowledge, playbooks
+from .connectors import alertmanager
 from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, run_agent
 from .llm import LLMProvider, ToolSpec
 from .llm.base import to_jsonable
@@ -283,6 +284,14 @@ class Investigation:
                     classifier_usage = {"model": raw.model, "usage": to_jsonable(raw.usage)}
                 if raw is not None:
                     self.log.write_text("lead", "classification_response.txt", raw.text or "")
+            if c.missing or c.category == playbooks.FALLBACK:
+                # Précision demandée alors que la demande nomme l'alerte (« l'alerte SwapUsageHigh »),
+                # ou demande non classée : on cherche les alertes connues dans la question.
+                names = await asyncio.to_thread(alertmanager.alert_names)
+                c = playbooks.alert_fallback(c, self.question, names, self.books)
+                completed = playbooks.complete_entities(c, self.question, names)
+                if completed:
+                    self.log.event("lead", "entities_completed", {m: c.entities[m] for m in completed})
             source = "classifier"
         decision = playbooks.decide(c, self.books)
         self._set_category(c, decision, source)
