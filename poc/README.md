@@ -289,17 +289,29 @@ catégorie d'origine est imposée : le classifieur n'est pas rejoué.
 
 ## Brancher Prometheus et Alertmanager
 
-Deux variables suffisent ; les sources de démonstration se coupent avec `DIAGAGENT_DEMO=0` pour que
-l'agent ne mélange pas données factices et réelles :
+Deux variables suffisent, de préférence dans `poc/.env` :
 
 ```bash
-export PROMETHEUS_URL=http://192.168.1.15:9090
-export ALERTMANAGER_URL=http://192.168.1.15:9093
-export DIAGAGENT_DEMO=0
-diagagent tools             # doit lister list_hosts, promql, list_alerts, alert_history…
-diagagent ask "Quelles machines sont suivies et lesquelles ont une alerte en cours ?"
-diagagent ask "Pourquoi le NAS était-il lent cette nuit ?"
+PROMETHEUS_URL=http://192.168.1.15:9090
+ALERTMANAGER_URL=http://192.168.1.15:9093
 ```
+
+Les sources forment deux jeux : `demo` (données factices de `demo_data/`) et `maison` (Prometheus,
+Alertmanager, actives seulement si leur variable est définie). Par défaut les deux sont actifs ; le
+choix se fait par investigation, sans toucher à `.env` :
+
+```bash
+diagagent tools                                  # doit lister list_hosts, promql, list_alerts, alert_history…
+diagagent ask "Pourquoi le NAS était-il lent cette nuit ?"           # démo + maison
+diagagent --sources maison ask "Quelles machines sont suivies ?"     # seulement les sources réelles
+diagagent --sources demo ask "…"                                     # seulement la démo
+```
+
+Dans l'interface web, le sélecteur « Données » (affiché dès qu'une source réelle est configurée)
+propose les trois choix ; le manifest note les jeux utilisés (`sources`). Les tests `pytest` et le
+banc `eval/cases.yaml` (`sources: demo`) n'utilisent que la démo, même si `PROMETHEUS_URL` est
+définie : ils restent reproductibles. Les données de démo sont datées autour du 7 octobre 2026
+(`--now`) : en mode mixte à l'heure réelle, elles sortent de la fenêtre par défaut de 24 h.
 
 Sans `--now`, l'heure de référence est l'heure réelle. Ce que l'agent obtient :
 

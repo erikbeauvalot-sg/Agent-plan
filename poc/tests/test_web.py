@@ -131,8 +131,13 @@ def test_models_profile_chosen_per_request(env):
     first = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "models": "openai"}, headers=H)
     assert wait_status(alice, first.json()["run_id"])["manifest"]["models_profile"] == "openai"
     second = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H)
-    assert wait_status(alice, second.json()["run_id"])["manifest"]["models_profile"] == "ollama"
+    manifest = wait_status(alice, second.json()["run_id"])["manifest"]
+    assert manifest["models_profile"] == "ollama" and manifest["sources"] == ["demo"]
     assert script["_profiles"] == ["openai", None]
+    # Sans PROMETHEUS_URL ni ALERTMANAGER_URL, seul le jeu démo est proposé.
+    assert alice.get("/api/sources").json() == {"choices": ["demo"], "default": "demo"}
+    assert alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "sources": "maison"},
+                      headers=H).status_code == 400
 
 
 def test_stop_subagent_from_the_interface(env):

@@ -50,7 +50,7 @@ class RunManager:
     live: dict[str, LiveRun] = field(default_factory=dict)
 
     async def start(self, question: str, user: User, category: str | None = None,
-                    models: str | None = None) -> str:
+                    models: str | None = None, sources: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -66,7 +66,7 @@ class RunManager:
         async def go() -> None:
             try:
                 await ask(question, providers=self.providers(models), user=user.login, on_started=on_started,
-                          category=category)
+                          category=category, sources=sources)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
                     started.set_exception(e)
@@ -90,6 +90,7 @@ class AskBody(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     category: str | None = None
     models: str | None = None  # profil de config/models.yaml ; défaut : celui du fichier
+    sources: str | None = None  # demo, maison ou demo,maison ; défaut : DIAGAGENT_SOURCES, sinon les deux
 
 
 class CategoryBody(BaseModel):
@@ -208,12 +209,27 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
             raise HTTPException(400, f"Catégorie inconnue : {body.category}")
         if body.models and body.models not in model_choices()["profiles"]:
             raise HTTPException(400, f"Profil de modèles inconnu : {body.models}")
+        if body.sources and body.sources not in source_choices()["choices"]:
+            raise HTTPException(400, f"Jeu de sources inconnu ou non configuré : {body.sources}")
         try:
-            run_id = await manager.start(body.question.strip(), user, body.category, body.models)
+            run_id = await manager.start(body.question.strip(), user, body.category, body.models, body.sources)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
-        audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models})
+        audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models,
+                            "sources": body.sources})
         return {"run_id": run_id}
+
+    def source_choices() -> dict[str, Any]:
+        """« maison » n'est proposé que si une source réelle est configurée (PROMETHEUS_URL…)."""
+        configured = catalog.configured_sources()
+        choices = ["demo,maison", "demo", "maison"] if "maison" in configured else ["demo"]
+        default = ",".join(sorted(catalog.active_sources() & set(configured))) or "demo"
+        return {"choices": choices, "default": default if default in choices else choices[0]}
+
+    @app.get("/api/sources")
+    def sources(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Jeux de sources proposés au lancement d'une investigation."""
+        return source_choices()
 
     def model_choices() -> dict[str, Any]:
         from diagagent.cli import _load

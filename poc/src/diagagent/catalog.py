@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -46,21 +48,73 @@ def time_window(time_from: str | None, time_to: str | None) -> tuple[datetime, d
     return start, end
 
 
-def demo_enabled() -> bool:
-    """Sources de démonstration actives sauf si DIAGAGENT_DEMO=0."""
-    return os.environ.get("DIAGAGENT_DEMO", "1") != "0"
+SOURCE_SETS = ("demo", "maison")
+# Jeux de sources d'une investigation, choisis par requête (interface web, ask) ; sinon DIAGAGENT_SOURCES.
+_sources: ContextVar[frozenset[str] | None] = ContextVar("diagagent_sources", default=None)
+
+
+def parse_sources(value: str | list[str] | None) -> frozenset[str]:
+    """« demo », « maison », « demo,maison » (ou une liste) ; un nom inconnu lève ValueError."""
+    names = value.split(",") if isinstance(value, str) else list(value or [])
+    found = frozenset(n.strip() for n in names if n.strip())
+    unknown = found - set(SOURCE_SETS)
+    if unknown or not found:
+        raise ValueError(f"Jeu de sources inconnu : {value} (possibles : demo, maison, demo,maison)")
+    return found
+
+
+def active_sources() -> frozenset[str]:
+    """Jeux de sources actifs : celui de l'investigation en cours, sinon DIAGAGENT_SOURCES, sinon les deux.
+    DIAGAGENT_DEMO=0 (ancien réglage) vaut « maison »."""
+    chosen = _sources.get()
+    if chosen is not None:
+        return chosen
+    if os.environ.get("DIAGAGENT_SOURCES"):
+        return parse_sources(os.environ["DIAGAGENT_SOURCES"])
+    return frozenset({"maison"}) if os.environ.get("DIAGAGENT_DEMO") == "0" else frozenset(SOURCE_SETS)
+
+
+@contextmanager
+def using_sources(value: str | list[str] | None) -> Iterator[frozenset[str]]:
+    """Fixe les jeux de sources pour une investigation (tâche asyncio comprise) ; None garde le réglage."""
+    token = _sources.set(parse_sources(value) if value else active_sources())
+    try:
+        yield _sources.get()  # type: ignore[misc]
+    finally:
+        _sources.reset(token)
+
+
+def source_set(entry: dict[str, Any]) -> str | None:
+    """Jeu d'une fiche ou d'un serveur : « demo » (demo: true), « maison » (source réelle, requires_env),
+    None pour l'infrastructure commune (catalogue, routage des métriques)."""
+    if entry.get("demo"):
+        return "demo"
+    return "maison" if entry.get("requires_env") else None
 
 
 def enabled(entry: dict[str, Any]) -> bool:
-    """Une fiche ou un serveur est actif si ses variables d'environnement sont définies
-    (`requires_env`) et, pour une source de démonstration (`demo: true`), si le mode démo est actif."""
-    if entry.get("demo") and not demo_enabled():
+    """Une fiche ou un serveur est actif si son jeu de sources est actif et si ses variables
+    d'environnement (`requires_env`) sont définies."""
+    kind = source_set(entry)
+    if kind and kind not in active_sources():
         return False
     return all(os.environ.get(var) for var in entry.get("requires_env", []))
 
 
-@lru_cache(maxsize=1)
+def configured_sources() -> list[str]:
+    """Jeux de sources utilisables : « demo » toujours, « maison » si une source réelle est configurée."""
+    cards = [yaml.safe_load(p.read_text(encoding="utf-8")) for p in (home() / "catalog" / "sources").glob("*.yaml")]
+    real = any(source_set(c) == "maison" and all(os.environ.get(v) for v in c["requires_env"]) for c in cards)
+    return ["demo", "maison"] if real else ["demo"]
+
+
 def load_catalog() -> dict[str, dict[str, Any]]:
+    return _load_catalog(active_sources())
+
+
+@lru_cache(maxsize=8)
+def _load_catalog(active: frozenset[str]) -> dict[str, dict[str, Any]]:
+    """active ne sert qu'à la clé du cache : enabled() relit les jeux actifs."""
     sources = {}
     for path in sorted((home() / "catalog" / "sources").glob("*.yaml")):
         card = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -72,6 +126,8 @@ def load_catalog() -> dict[str, dict[str, Any]]:
         sources[card["id"]] = card
     return sources
 
+
+load_catalog.cache_clear = _load_catalog.cache_clear  # type: ignore[attr-defined]
 
 UI_PAGES = ("/query", "/graph", "/alerts", "/targets", "/status")
 

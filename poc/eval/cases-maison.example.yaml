@@ -2,7 +2,7 @@
 # Copie ce fichier en cases-maison.yaml, remplace les exemples par des questions dont tu connais
 # la réponse, puis : diagagent eval --cases eval/cases-maison.yaml
 defaults:
-  demo: false          # coupe les sources de démonstration (DIAGAGENT_DEMO=0)
+  sources: maison      # seulement les sources réelles (demo,maison pour les deux)
   # now: absent -> heure réelle
 
 cases:

@@ -10,7 +10,7 @@ from typing import Any
 
 from mcp import Client, StdioServerParameters
 
-from .catalog import enabled, home
+from .catalog import active_sources, enabled, home
 from .llm import ToolSpec
 
 
@@ -32,7 +32,8 @@ class ToolHub:
         self.specs: dict[str, ToolSpec] = {}
 
     async def __aenter__(self) -> "ToolHub":
-        env = {**os.environ, "DIAGAGENT_HOME": str(home())}
+        # Les serveurs héritent des jeux de sources de l'investigation (choisis par requête).
+        env = {**os.environ, "DIAGAGENT_HOME": str(home()), "DIAGAGENT_SOURCES": ",".join(sorted(active_sources()))}
         for name, cfg in self._servers_cfg.items():
             if not enabled(cfg):
                 continue

@@ -69,18 +69,19 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
     spec = yaml.safe_load(cases_path.read_text(encoding="utf-8"))
     defaults = spec.get("defaults", {})
     results = []
-    saved = {k: os.environ.get(k) for k in ("DIAGAGENT_NOW", "DIAGAGENT_DEMO")}
+    saved = {k: os.environ.get(k) for k in ("DIAGAGENT_NOW",)}
     try:
         for case in spec["cases"]:
             if only and case["id"] not in only:
                 continue
             case = {**defaults, **case}
             _set_env("DIAGAGENT_NOW", case.get("now"))
-            _set_env("DIAGAGENT_DEMO", None if case.get("demo", True) else "0")
+            # sources: du cas (demo, maison, demo,maison) ; l'ancien demo: false vaut « maison ».
+            sources = case.get("sources") or ("maison" if case.get("demo") is False else None)
             catalog.load_catalog.cache_clear()
             for attempt in range(1, max(1, repeat) + 1):
                 started = time.monotonic()
-                log, status, answer = await ask(case["question"], providers=providers, user="eval")
+                log, status, answer = await ask(case["question"], providers=providers, user="eval", sources=sources)
                 checks = check_case(case, status, answer, log.dir)
                 results.append({"id": case["id"], "attempt": attempt, "question": case["question"],
                                 "run_id": log.run_id, "passed": all(c["ok"] for c in checks), "checks": checks,
