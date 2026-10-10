@@ -44,18 +44,20 @@ def default_providers(profile: str | None = None) -> ProviderFactory:
 
 async def ask(question: str, providers: ProviderFactory | None = None, user: str | None = None,
               on_started: Callable[[RunLog, Investigation], None] | None = None,
-              category: str | None = None, sources: str | list[str] | None = None) -> tuple[RunLog, str, str]:
+              category: str | None = None, sources: str | list[str] | None = None,
+              rerun_of: str | None = None) -> tuple[RunLog, str, str]:
     """Une investigation complète. on_started est appelé dès que l'investigation est pilotable
     (utilisé par la passerelle web pour l'arrêt). category impose la catégorie et saute le classifieur
     (correction de l'utilisateur, rejeu). sources choisit les jeux de sources (demo, maison) ; défaut :
-    DIAGAGENT_SOURCES, sinon les deux."""
+    DIAGAGENT_SOURCES, sinon les deux. rerun_of : investigation d'origine d'une relance, notée dans le
+    manifest."""
     with catalog.using_sources(sources):
-        return await _ask(question, providers, user, on_started, category)
+        return await _ask(question, providers, user, on_started, category, rerun_of)
 
 
 async def _ask(question: str, providers: ProviderFactory | None, user: str | None,
                on_started: Callable[[RunLog, Investigation], None] | None,
-               category: str | None) -> tuple[RunLog, str, str]:
+               category: str | None, rerun_of: str | None = None) -> tuple[RunLog, str, str]:
     poc = _load("poc.yaml")
     providers = providers or default_providers()
     lead, lead_cfg = providers("lead")
@@ -64,7 +66,8 @@ async def _ask(question: str, providers: ProviderFactory | None, user: str | Non
                                       "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
                   "models_profile": getattr(providers, "profile", None),
                   "sources": sorted(catalog.active_sources()),
-                  "reference_time": catalog.now().isoformat()})
+                  "reference_time": catalog.now().isoformat(),
+                  **({"rerun_of": rerun_of} if rerun_of else {})})
     async with ToolHub(poc["mcp_servers"]) as hub:
         investigation = Investigation(question, hub, log, providers, poc, category=category)
         if on_started:

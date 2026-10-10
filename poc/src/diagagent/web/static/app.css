@@ -70,6 +70,8 @@ select { font: inherit; padding: .4rem; border: 1px solid var(--line); border-ra
 .ask-row { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; }
 .ask-row label { display: flex; gap: .4rem; align-items: center; font-size: .9rem; color: var(--muted); }
 .ask-row button { margin-left: auto; }
+.rerun-note { margin: 0; padding: .5rem .7rem; border-left: 3px solid var(--accent); background: var(--bg); font-size: .9rem; }
+.rerun-note a, #run-meta a { color: var(--accent); }
 .hint { margin: 0; font-size: .8rem; min-height: 1em; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .6rem; }
 .card-head h2 { margin: 0; }

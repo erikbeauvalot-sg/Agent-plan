@@ -240,7 +240,13 @@ barre du haut, et l'heure de référence de chaque investigation sous sa questio
   jour, dernier résultat d'éval par modèle, alertes Alertmanager en cours (« Investiguer » préremplit la
   question), et **statistiques** sur 1, 7 ou 30 jours : réussite par catégorie, par agent (principal et
   sous-agents par rôle) et par modèle, évaluations exclues sauf demande. Le détail d'une investigation
-  s'ouvre au clic (`#<run_id>`, partageable) ; « ← Accueil » y revient.
+  s'ouvre au clic (`#<run_id>`, partageable) ; « ← Accueil » y revient. Le choix **catégorie**
+  (automatique par défaut) impose un playbook sans passer par le classifieur.
+- **Relancer…** (sur une investigation) : prépare une nouvelle demande sur l'accueil, préremplie avec la
+  question, le modèle, les données et la catégorie imposée ou corrigée de l'investigation d'origine, **sans
+  la lancer** : on change la question ou les options, puis « Lancer l'investigation ». La nouvelle
+  investigation note `rerun_of` dans son manifest et affiche un lien vers l'originale ; les relances
+  « Relancer avec cette catégorie » et « Préciser et relancer » le notent aussi.
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.

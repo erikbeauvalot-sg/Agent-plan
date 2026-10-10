@@ -20,6 +20,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 13. Remédiation | Quatre pistes examinées après la cause : impact réel, problème connu, réglage de l'application, réglage du système ; règle d'alerte lue dans Prometheus (`alert_rule`) ; recherche web (`mcp-web`, DuckDuckGo ou SearXNG, garde-fous sur la requête et l'adresse) ; actions dédoublonnées, règle PromQL testée avant d'être proposée | Fait (PR #22, #24) |
 | 14. Classifieur | Entité oubliée par le modèle complétée depuis la demande : numéro INC ou CHG, nom d'une alerte connue (Alertmanager, règles Prometheus) ; demande `autre` qui nomme une alerte connue classée `analyse-evenement` | Fait (PR #26) |
 | 15. Vagues imposées | Réponse finale contrôlée : étapes du playbook dont aucun rôle spécialisé n'a été lancé, rappelées une fois à l'agent principal ; valeurs de `propose_action` reconnues sans casse ni accents | Fait (PR #27) |
+| 16. Relancer une demande | Bouton « Relancer… » : nouvelle demande préremplie (question, modèle, données, catégorie), lancée après modification des options ; choix de la catégorie sur l'accueil ; lien `rerun_of` vers l'investigation d'origine | Fait (PR #28) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
@@ -77,3 +78,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
   fusionnée (conteneurs).
 - 2026-10-10 : PR #25 fusionnée (suivi à jour) ; PR #26 ouverte (alerte nommée reconnue par le classifieur).
 - 2026-10-10 : PR #26 fusionnée (classifieur, écriture atomique des traces) ; PR #27 ouverte (vagues du playbook rappelées à l'agent principal).
+- 2026-10-10 : PR #27 fusionnée (vagues rappelées) ; PR #28 ouverte (relancer une demande avec d'autres options).
