@@ -70,6 +70,7 @@ def models_status(models_cfg: dict[str, Any]) -> list[dict[str, Any]]:
 def sources_status() -> dict[str, Any]:
     """État des jeux de sources et alertes en cours (Alertmanager), quel que soit le réglage actif."""
     from .connectors.alertmanager import Alertmanager
+    from .connectors.ssh import SshProbe
 
     with catalog.using_sources("demo,maison"):
         cards = catalog.load_catalog()
@@ -96,6 +97,15 @@ def sources_status() -> dict[str, Any]:
         except (ValueError, KeyError) as e:
             items.append({"set": "maison", "name": name, "ok": False, "configured": True,
                           "detail": f"erreur : {str(e)[:100]}"})
+    # SSH : machines déclarées seulement, sans connexion (une sonde par machine ralentirait l'accueil).
+    ssh_card = next((c for c in cards.values() if c.get("kind") == "system"), None)
+    if ssh_card is None:
+        items.append({"set": "maison", "name": "SSH", "ok": False, "configured": False,
+                      "detail": "non configuré (SSH_HOSTS)"})
+    else:
+        hosts = sorted(SshProbe(ssh_card).hosts)
+        items.append({"set": "maison", "name": "SSH", "ok": bool(hosts), "configured": True,
+                      "detail": f"{len(hosts)} machine(s) : {', '.join(hosts)}"})
     alerts.sort(key=lambda a: (a.get("severity") != "critical", a.get("starts_at") or ""))
     return {"sources": items, "alerts": [{k: a.get(k) for k in ("alertname", "host", "severity", "starts_at", "summary")}
                                          for a in alerts[:10]]}

@@ -1,0 +1,14 @@
+id: system-ssh
+kind: system
+requires_env: [SSH_HOSTS]
+description: >
+  État en direct des machines par SSH, en lecture seule : mémoire et swap, processus et conteneurs
+  Docker qui occupent la RAM et le swap, pression mémoire, messages OOM du noyau. Interroger via
+  list_ssh_hosts, host_memory, top_processes, container_memory et oom_events. Donne l'état au moment
+  de l'appel : pour dater un pic passé, croiser avec les métriques Prometheus.
+backend:
+  type: ssh
+  hosts_env: SSH_HOSTS     # « xdocker,pdocker » ou « xdocker=192.168.1.20 » ; mêmes noms que Prometheus
+  user_env: SSH_USER       # facultatif, sinon ~/.ssh/config
+  key_env: SSH_KEY         # facultatif, chemin de la clé privée
+owner: Erik

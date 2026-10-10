@@ -1,0 +1,48 @@
+#!/bin/sh
+# Sonde en lecture seule de mcp-system : état mémoire d'une machine Linux, sans privilège root.
+#
+# Le nom de la sonde est le dernier mot de la commande reçue : `diagagent-probe processes`, ou
+# SSH_ORIGINAL_COMMAND quand ce script est la commande forcée d'une clé (authorized_keys) :
+#   command="/usr/local/bin/diagagent-probe",restrict ssh-ed25519 AAAA... diagagent
+# Sans commande forcée, mcp-system envoie ce script sur l'entrée standard (`sh -s -- processes`).
+# Toute autre demande est refusée : la clé ne permet rien d'autre que ces lectures.
+set -u
+LC_ALL=C
+export LC_ALL
+
+request=${SSH_ORIGINAL_COMMAND:-$*}
+probe=${request##* }
+
+case $probe in
+  memory)
+    echo "### meminfo"; cat /proc/meminfo
+    echo "### psi"; cat /proc/pressure/memory 2>/dev/null
+    echo "### swappiness"; cat /proc/sys/vm/swappiness
+    echo "### uptime"; cat /proc/uptime
+    ;;
+  processes)
+    echo "### ps"; ps -eo pid=,user:32=,rss=,etimes=,args= | cut -c1-400
+    echo "### swap"; grep -H '^VmSwap:' /proc/[0-9]*/status 2>/dev/null
+    echo "### cgroup"; grep -H '^0::' /proc/[0-9]*/cgroup 2>/dev/null
+    echo "### docker"; docker ps --no-trunc --format '{{.ID}} {{.Names}}' 2>/dev/null
+    ;;
+  containers)
+    echo "### cgroups"
+    # Pilote systemd (system.slice/docker-<id>.scope) ou cgroupfs (docker/<id>), cgroup v2.
+    for d in /sys/fs/cgroup/system.slice/docker-*.scope /sys/fs/cgroup/docker/*/; do
+      [ -r "$d/memory.current" ] || continue
+      id=$(basename "$d" .scope); id=${id#docker-}
+      echo "$id $(cat "$d/memory.current") $(cat "$d/memory.swap.current" 2>/dev/null || echo -) $(cat "$d/memory.peak" 2>/dev/null || echo -) $(cat "$d/memory.max" 2>/dev/null || echo -)"
+    done
+    echo "### docker"; docker ps --no-trunc --format '{{.ID}} {{.Names}}' 2>/dev/null
+    ;;
+  oom)
+    echo "### oom"
+    { journalctl -k -q --no-pager -o short-iso --since "-7 days" 2>/dev/null || dmesg -T 2>/dev/null; } \
+      | grep -iE 'out of memory|oom-kill|killed process' | tail -n 40
+    ;;
+  *)
+    echo "diagagent-probe : sonde inconnue « $probe » (memory, processes, containers, oom)" >&2
+    exit 2
+    ;;
+esac
