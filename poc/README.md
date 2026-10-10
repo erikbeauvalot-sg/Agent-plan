@@ -215,12 +215,23 @@ Les recherches sans période portent sur les 24 h qui précèdent l'**heure de r
 `--now`, le serveur utilise l'heure réelle : les données de démonstration (nuit du 6 octobre 2026) sont
 alors hors période, et l'agent doit élargir lui-même ses recherches. Pour jouer le scénario comme
 `diagagent eval`, lancer le serveur avec `--now 2026-10-07T06:00:00Z` ; l'heure figée s'affiche dans la
-barre latérale, et l'heure de référence de chaque investigation sous sa question.
+barre du haut, et l'heure de référence de chaque investigation sous sa question.
+
+- **Accueil** : la question avec le choix du **modèle** (profils de `config/models.yaml`) et des
+  **données** (démo, maison ou les deux). Une option indisponible reste visible, grisée, avec la raison ;
+  le navigateur retient le dernier choix, sinon le défaut du serveur (`DIAGAGENT_MODELS`,
+  `DIAGAGENT_SOURCES` dans `.env`). Puis : investigations en cours et dernières investigations
+  (recherche, filtre par catégorie, modèle, durée, tokens), **état** des modèles et des sources
+  (Ollama interrogé, clés présentes, cibles Prometheus up, alertes ; aucun appel payant), chiffres du
+  jour, dernier résultat d'éval par modèle, alertes Alertmanager en cours (« Investiguer » préremplit la
+  question), et **statistiques** sur 1, 7 ou 30 jours : réussite par catégorie, par agent (principal et
+  sous-agents par rôle) et par modèle, évaluations exclues sauf demande. Le détail d'une investigation
+  s'ouvre au clic (`#<run_id>`, partageable) ; « ← Accueil » y revient.
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.
 
-- **Conversation** : on pose la question à gauche ; la réponse s'affiche à la fin, chaque preuve
+- **Conversation** : on pose la question sur l'accueil ; la réponse s'affiche à la fin, chaque preuve
   `[…/calls/NNNN.json]` est cliquable.
 - **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec la jauge de
   budget et les signaux (bloqué depuis 120 s, boucle, 3 erreurs d'outil, budget à 80 %, erreur modèle).

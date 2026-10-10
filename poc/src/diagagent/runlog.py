@@ -87,4 +87,9 @@ class RunLog:
             "category": (self.manifest.get("category") or {}).get("id"),
             "draft_match": (self.manifest.get("category") or {}).get("draft_match"), "status": status,
             "usage": usage, "tool_calls": sum(self._calls.values()),
+            # Pour la page d'accueil : modèles, sources et issue de chaque sous-agent sans relire le manifest.
+            "models_profile": self.manifest.get("models_profile"), "sources": self.manifest.get("sources"),
+            "model": ((self.manifest.get("models") or {}).get("lead") or {}).get("model"),
+            "subagents": [{"role": s.get("role"), "status": s.get("status")}
+                          for s in (self.manifest.get("subagents") or {}).values()],
         })

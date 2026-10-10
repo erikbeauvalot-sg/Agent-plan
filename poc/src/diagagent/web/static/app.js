@@ -67,20 +67,170 @@ async function boot() {
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
   $("cat-select").innerHTML = options;
-  // Profil de modèles choisi à chaque investigation ; le sélecteur n'apparaît que s'il y a le choix.
-  const models = await api("/api/models");
-  $("ask-models").innerHTML = models.profiles.map((p) =>
-    `<option value="${esc(p)}"${p === models.default ? " selected" : ""}>Modèles : ${esc(p)}</option>`).join("");
-  $("ask-models").hidden = models.profiles.length < 2;
-  const sources = await api("/api/sources");
-  const sourceLabel = { "demo,maison": "démo + maison", demo: "démo", maison: "maison" };
-  $("ask-sources").innerHTML = sources.choices.map((s) =>
-    `<option value="${esc(s)}"${s === sources.default ? " selected" : ""}>Données : ${esc(sourceLabel[s] || s)}</option>`).join("");
-  $("ask-sources").hidden = sources.choices.length < 2;
-  await loadRuns();
-  const fromHash = location.hash.slice(1);
-  if (fromHash) openRun(fromHash);
+  await loadChoices();
+  route();
 }
+
+// ---- Navigation : #  accueil · #admin  administration · #<run_id>  détail d'une investigation
+
+window.addEventListener("hashchange", route);
+
+function route() {
+  if (!me) return;
+  const target = location.hash.slice(1);
+  if (target === "admin") openAdmin();
+  else if (target) { if (current?.runId !== target) openRun(target); }
+  else openHome();
+}
+
+function showView(name) {
+  for (const v of ["home", "run", "admin"]) $(v).hidden = v !== name;
+  $("drawer").hidden = true;
+  window.scrollTo(0, 0);
+}
+
+// ---- Choix du modèle et des données : défaut du serveur, puis dernier choix de ce navigateur
+
+const stored = {
+  get(key) { try { return localStorage.getItem(`diagagent.${key}`); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(`diagagent.${key}`, value); } catch { /* stockage indisponible */ } },
+};
+let profiles = [];   // [{ profile, roles, ok, detail }] une fois /api/status reçu
+
+async function loadChoices() {
+  const [models, sources] = await Promise.all([api("/api/models"), api("/api/sources")]);
+  profiles = models.profiles.map((p) => ({ profile: p }));
+  fillSelect("ask-models", models.profiles.map((p) => ({ value: p, label: p, available: true })),
+             stored.get("models"), models.default);
+  fillSelect("ask-sources", sources.choices, stored.get("sources"), sources.default);
+  renderHint();
+}
+
+// Une option indisponible reste visible, grisée, avec la raison.
+function fillSelect(id, choices, wanted, fallback) {
+  const usable = (v) => choices.some((c) => c.value === v && c.available);
+  const value = usable(wanted) ? wanted : usable(fallback) ? fallback : choices.find((c) => c.available)?.value;
+  $(id).innerHTML = choices.map((c) => `<option value="${esc(c.value)}"${c.value === value ? " selected" : ""}
+    ${c.available ? "" : "disabled"} title="${esc(c.reason || "")}">${esc(c.label)}${c.available ? "" : " — indisponible"}</option>`).join("");
+}
+
+function renderHint() {
+  const p = profiles.find((x) => x.profile === $("ask-models").value);
+  const roles = p?.roles ? Object.entries(p.roles).map(([r, m]) => `${r} ${m}`).join(" · ") : "";
+  const src = $("ask-sources").selectedOptions[0]?.title;
+  $("ask-hint").textContent = [roles, p && p.ok === false ? `⚠ ${p.detail}` : "", src].filter(Boolean).join(" — ");
+}
+
+for (const id of ["ask-models", "ask-sources"]) {
+  $(id).addEventListener("change", () => { stored.set(id.slice(4), $(id).value); renderHint(); });
+}
+
+// ---- Page d'accueil
+
+let homeTimer = null;
+let runsShown = 15;
+
+async function openHome() {
+  closeStream(); current = null;
+  showView("home");
+  loadStatus();
+  await Promise.all([loadRuns(), loadStats()]);
+  clearInterval(homeTimer);
+  // Rafraîchit la liste tant que l'accueil est affiché (investigations en cours, nouvelles investigations).
+  homeTimer = setInterval(() => { if (!$("home").hidden) loadRuns(); else clearInterval(homeTimer); }, 5000);
+}
+
+async function loadStatus(refresh = false) {
+  try {
+    const s = await api(`/api/status${refresh ? "?refresh=true" : ""}`);
+    profiles = s.models;
+    const chosen = $("ask-models").value;
+    fillSelect("ask-models", s.models.map((m) => ({ value: m.profile, label: m.profile, available: m.ok, reason: m.detail })),
+               chosen || stored.get("models"), s.default_models);
+    renderHint();
+    $("status").innerHTML = s.models.map((m) => statusItem(m.ok, `Modèles ${m.profile}${m.default ? " (défaut)" : ""}`,
+        `${Object.values(m.roles).filter((v, i, a) => a.indexOf(v) === i).join(", ")} · ${m.detail}`)).join("")
+      + s.sources.map((x) => statusItem(x.ok, x.name, x.detail, x.configured === false)).join("");
+    $("alerts-box").hidden = !s.alerts.length;
+    $("alerts").innerHTML = s.alerts.map((a) => `<li>
+        <span class="sev ${esc(a.severity)}">${esc(a.severity || "?")}</span>
+        <span><strong>${esc(a.alertname)}</strong> ${a.host ? "· " + esc(a.host) : ""}
+          <span class="muted">${esc(a.summary || "")} · depuis ${esc(fmtDate(a.starts_at))}</span></span>
+        ${can("ask") ? `<button class="link investigate" data-alert="${esc(JSON.stringify(a))}">Investiguer</button>` : ""}
+      </li>`).join("");
+  } catch (err) {
+    $("status").innerHTML = `<li class="error">${esc(err.message)}</li>`;
+  }
+}
+
+function statusItem(ok, name, detail, off = false) {
+  return `<li><span class="dot ${off ? "" : ok ? "completed" : "failed"}"></span><strong>${esc(name)}</strong>
+    <span class="muted">${esc(detail)}</span></li>`;
+}
+
+$("status-refresh").addEventListener("click", () => loadStatus(true));
+
+// « Investiguer » préremplit la question et choisit les données maison.
+$("alerts").addEventListener("click", (e) => {
+  const btn = e.target.closest("button.investigate");
+  if (!btn) return;
+  const a = JSON.parse(btn.dataset.alert);
+  $("ask-form").question.value = `Analyse l'alerte ${a.alertname}${a.host ? " sur " + a.host : ""}`
+    + `${a.summary ? " (" + a.summary + ")" : ""} : cause probable et actions possibles.`;
+  if ([...$("ask-sources").options].some((o) => o.value === "maison" && !o.disabled)) $("ask-sources").value = "maison";
+  renderHint();
+  $("ask-form").question.focus();
+  window.scrollTo(0, 0);
+});
+
+const fmtDuration = (s) => (s === null || s === undefined ? "" : s < 60 ? `${Math.round(s)} s`
+  : s < 3600 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, "0")}` : `${(s / 3600).toFixed(1)} h`);
+
+async function loadStats() {
+  const days = $("stats-days").value, withEval = $("stats-eval").checked;
+  const { activity: a, evals } = await api(`/api/home?days=${days}&include_eval=${withEval}`);
+  const t = a.today;
+  const byModel = Object.entries(t.by_model).map(([m, n]) => `${esc(m)} ${n}`).join(" · ");
+  $("today").innerHTML = `
+    <div><strong>${t.runs}</strong><span>investigation(s)</span></div>
+    <div><strong>${pct(t.success_rate)}</strong><span>terminées avec succès</span></div>
+    <div><strong>${fmtTokens(t.tokens)}</strong><span>tokens</span></div>
+    <div><strong>${fmtDuration(t.avg_duration_s) || "–"}</strong><span>durée moyenne</span></div>
+    ${byModel ? `<p class="muted">${byModel}</p>` : ""}
+    ${withEval ? "" : '<p class="muted">hors évaluations</p>'}`;
+  $("evals").innerHTML = evals.length ? `<table><thead><tr><th>Modèles</th><th>Réussis</th><th>Durée</th><th>Tokens</th><th>Date</th></tr></thead>
+    <tbody>${evals.map((e) => `<tr title="${esc(e.cases_file)} · ${esc(e.file)}"><td>${esc(e.label)}</td>
+      <td>${e.passed}/${e.cases}${e.repeat > 1 ? ` <span class="muted">(×${e.repeat})</span>` : ""}</td>
+      <td>${fmtDuration(e.duration_s)}</td><td>${fmtTokens(e.tokens)}</td><td>${esc(fmtDate(e.date))}</td></tr>`).join("")}</tbody></table>`
+    : '<p class="muted">Aucun rapport. Lancer <code>diagagent --models &lt;profil&gt; eval</code>.</p>';
+  const p = a.period;
+  $("stats-summary").textContent = `${p.runs} investigation(s) terminée(s) · ${pct(p.success_rate)} avec succès · `
+    + `${fmtTokens(p.tokens)} tokens${withEval ? "" : " · hors évaluations"}`;
+  // Réussite = terminée « completed » ; partiel = partielle, arrêtée ou précision demandée ; échec = « failed ».
+  const statusCells = (s) => `<td>${(s.partial || 0) + (s.stopped || 0) + (s.needs_clarification || 0)}</td><td>${s.failed || 0}</td>`;
+  const head = (first, extra = "") => `<thead><tr><th>${first}</th><th>Total</th><th>Réussite</th>
+    <th title="partielles, arrêtées ou en attente de précision">Part.</th><th title="échecs">Éch.</th>${extra}</tr></thead>`;
+  const empty = '<p class="muted">Aucune investigation sur la période.</p>';
+  const name = (n) => (n === "?" ? '<span class="muted">sans catégorie</span>' : esc(n));
+  $("stats-categories").innerHTML = a.categories.length ? `<table>${head("Catégorie", "<th>Durée</th>")}<tbody>
+    ${a.categories.map((c) => `<tr><td>${name(c.name)}</td><td>${c.runs}</td><td>${rateBar(c.success_rate)}</td>${statusCells(c.statuses)}
+      <td>${fmtDuration(c.avg_duration_s)}</td></tr>`).join("")}</tbody></table>` : empty;
+  $("stats-agents").innerHTML = a.agents.length ? `<table>${head("Agent")}<tbody>
+    ${a.agents.map((c) => `<tr><td>${esc(c.name)}</td><td>${c.runs}</td><td>${rateBar(c.success_rate)}</td>${statusCells(c.statuses)}</tr>`).join("")}
+    </tbody></table>` : empty;
+  $("stats-models").innerHTML = a.models.length ? `<table>${head("Modèles", "<th>Durée</th><th>Tokens</th>")}<tbody>
+    ${a.models.map((c) => `<tr><td>${esc(c.name)}</td><td>${c.runs}</td><td>${rateBar(c.success_rate)}</td>${statusCells(c.statuses)}
+      <td>${fmtDuration(c.avg_duration_s)}</td><td>${fmtTokens(c.tokens)}</td></tr>`).join("")}</tbody></table>` : empty;
+}
+
+function rateBar(rate) {
+  if (rate === null || rate === undefined) return "–";
+  const cls = rate >= 0.8 ? "" : rate >= 0.5 ? " hi" : " max";
+  return `<span class="rate"><span class="gauge${cls}"><div style="width:${Math.round(rate * 100)}%"></div></span>${pct(rate)}</span>`;
+}
+
+$("stats-days").addEventListener("change", loadStats);
+$("stats-eval").addEventListener("change", loadStats);
 
 $("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -101,28 +251,44 @@ $("logout").addEventListener("click", async () => {
 // ---- Investigations
 
 async function loadRuns() {
-  runsCache = await api("/api/runs");
+  runsCache = await api("/api/runs?limit=300");
   renderRuns();
 }
 
-function renderRuns() {
-  const filter = $("runs-filter").value;
-  const runs = runsCache.filter((r) => !filter || r.category === filter);
-  $("runs").innerHTML = runs.map((r) => `
-    <li data-id="${esc(r.run_id)}" class="${current?.runId === r.run_id ? "active" : ""}">
+function runItem(r) {
+  const elapsed = r.status === "running" ? (Date.now() - Date.parse(r.started_at)) / 1000 : r.duration_s;
+  return `<li data-id="${esc(r.run_id)}">
       <span class="q">${esc(r.question)}</span>
       <span class="meta"><span class="dot ${esc(r.status)}"></span>${esc(fmtDate(r.started_at))}
         ${r.category ? `<span class="tag">${esc(r.category)}</span>` : ""}
-        ${me.permissions.includes("view_all") ? "· " + esc(r.user) : ""}</span>
-    </li>`).join("") || '<li class="muted">Aucune investigation</li>';
+        ${r.label && r.label !== "?" ? `<span class="tag model">${esc(r.label)}</span>` : ""}
+        ${elapsed !== null && elapsed !== undefined ? `· ${fmtDuration(elapsed)}` : ""}
+        ${r.tokens ? `· ${fmtTokens(r.tokens)} tokens` : ""}
+        ${can("view_all") ? "· " + esc(r.user) : ""}</span>
+    </li>`;
+}
+
+function renderRuns() {
+  const live = runsCache.filter((r) => r.status === "running");
+  $("live-box").hidden = !live.length;
+  $("live").innerHTML = live.map(runItem).join("");
+  const filter = $("runs-filter").value, search = $("runs-search").value.trim().toLowerCase();
+  const runs = runsCache.filter((r) => r.status !== "running" && (!filter || r.category === filter)
+    && (!search || r.question.toLowerCase().includes(search)));
+  $("runs").innerHTML = runs.slice(0, runsShown).map(runItem).join("") || '<li class="muted">Aucune investigation</li>';
+  $("runs-more").hidden = runs.length <= runsShown;
 }
 
 $("runs-filter").addEventListener("change", renderRuns);
+$("runs-search").addEventListener("input", renderRuns);
+$("runs-more").addEventListener("click", () => { runsShown += 30; renderRuns(); });
 
-$("runs").addEventListener("click", (e) => {
-  const li = e.target.closest("li[data-id]");
-  if (li) openRun(li.dataset.id);
-});
+for (const id of ["runs", "live"]) {
+  $(id).addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-id]");
+    if (li) location.hash = li.dataset.id;
+  });
+}
 
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -138,8 +304,7 @@ $("ask-form").addEventListener("submit", async (e) => {
 
 async function startRun(body) {
   const { run_id } = await api("/api/runs", { method: "POST", body: JSON.stringify(body) });
-  await loadRuns();
-  openRun(run_id);
+  location.hash = run_id;
 }
 
 function fmtDate(iso) {
@@ -148,21 +313,23 @@ function fmtDate(iso) {
 
 async function openRun(runId) {
   closeStream();
-  location.hash = runId;
-  const data = await api(`/api/runs/${runId}`);
+  current = { runId };  // évite une seconde ouverture pendant le chargement (hashchange)
+  let data;
+  try { data = await api(`/api/runs/${runId}`); } catch (err) { alert(err.message); location.hash = ""; return; }
   current = { runId, agents: {}, order: [], firstTs: null, lastTs: null, ended: false,
               canStop: data.can_stop, status: data.manifest.status, modelsProfile: data.manifest.models_profile,
               sources: data.manifest.sources ? data.manifest.sources.join(",") : null };
-  $("empty").hidden = true; $("admin").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
+  showView("run");
   $("run-question").textContent = data.manifest.question;
   // L'heure de référence fixe la période des recherches (« depuis hier soir », 24 h par défaut) : on l'affiche
   // quand elle diffère du lancement, par exemple sur le scénario de démonstration.
   const ref = data.manifest.reference_time, started = data.manifest.started_at;
   const shifted = ref && Math.abs(Date.parse(ref) - Date.parse(started)) > 60_000;
+  const sourcesLabel = (data.manifest.sources || []).map((s) => (s === "demo" ? "démo" : s)).join(" + ");
   $("run-meta").textContent = `${fmtDate(started)} · ${data.manifest.user} · ${runId}`
+    + (sourcesLabel ? ` · données ${sourcesLabel}` : "")
     + (shifted ? ` · heure de référence ${fmtDate(ref)}` : "");
   renderSummary(data);
-  document.querySelectorAll("#runs li").forEach((li) => li.classList.toggle("active", li.dataset.id === runId));
   const source = new EventSource(`/api/runs/${runId}/events`);
   current.source = source;
   source.addEventListener("agent", (msg) => { apply(JSON.parse(msg.data)); scheduleRender(); });
@@ -170,7 +337,7 @@ async function openRun(runId) {
     closeStream();
     current.ended = true;
     renderSummary(await api(`/api/runs/${runId}`));
-    render(); loadRuns();
+    render();
   });
   clock = setInterval(render, 1000);
 }
@@ -233,9 +400,8 @@ $("feedback-form").addEventListener("submit", async (e) => {
 const pct = (x) => (x === null || x === undefined ? "–" : `${Math.round(x * 100)} %`);
 
 async function openAdmin() {
-  closeStream(); current = null; location.hash = "";
-  $("empty").hidden = true; $("run").hidden = true; $("drawer").hidden = true; $("admin").hidden = false;
-  document.querySelectorAll("#runs li").forEach((li) => li.classList.remove("active"));
+  closeStream(); current = null;
+  showView("admin");
   $("review-box").hidden = !can("review");
   if (can("review")) {
     const actions = (await api("/api/actions")).filter((a) => a.status === "proposed");
@@ -306,7 +472,6 @@ $("proposals").addEventListener("click", async (e) => {
   } catch (err) { alert(err.message); }
 });
 
-$("open-admin").addEventListener("click", openAdmin);
 
 // ---- Catégorie de la demande : affichée, corrigeable, relançable
 
@@ -389,7 +554,7 @@ function renderActions(actions, ended) {
 
 document.addEventListener("click", async (e) => {
   const link = e.target.closest(".run-link");
-  if (link) { openRun(link.dataset.run); return; }
+  if (link) { location.hash = link.dataset.run; return; }
   const btn = e.target.closest(".decide-action button[data-accept]");
   if (!btn) return;
   const box = btn.closest(".decide-action");
