@@ -82,6 +82,8 @@ class OpenAIChatProvider:
         usage = Usage(
             input_tokens=getattr(raw.usage, "prompt_tokens", 0) or 0,
             output_tokens=getattr(raw.usage, "completion_tokens", 0) or 0,
+            reasoning_tokens=getattr(getattr(raw.usage, "completion_tokens_details", None),
+                                     "reasoning_tokens", 0) or 0,
         )
         stop = _STOP_REASONS.get(choice.finish_reason or "", "end")
         if calls:

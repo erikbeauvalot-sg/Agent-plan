@@ -33,7 +33,8 @@ class Budget:
 class AgentResult:
     status: str  # completed | partial | stopped | failed
     answer: str
-    usage: dict[str, int] = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+    usage: dict[str, int] = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0,
+                                                                   "reasoning_tokens": 0})
     tool_calls: int = 0
 
 
@@ -114,6 +115,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             break
         result.usage["input_tokens"] += response.usage.input_tokens
         result.usage["output_tokens"] += response.usage.output_tokens
+        result.usage["reasoning_tokens"] += response.usage.reasoning_tokens
         messages.append(Message("assistant", response.text, response.tool_calls, native=response.native))
 
         if response.stop_reason == "refusal":

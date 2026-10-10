@@ -15,7 +15,7 @@ import yaml
 
 from . import catalog, knowledge, learning, playbooks
 from .evaluation import find_run, replay_run, run_eval
-from .orchestrator import Investigation, ProviderFactory, usage_by_agent, usage_total
+from .orchestrator import Investigation, ProviderFactory, tokens, usage_by_agent, usage_total
 from .llm import LLMRequest, Message, make_provider
 from .runlog import RunLog
 from .tools import ToolHub
@@ -113,7 +113,7 @@ def check_model() -> None:
 def print_eval(report: dict[str, Any]) -> bool:
     for r in report["results"]:
         mark = "OK  " if r["passed"] else "ÉCHEC"
-        print(f"{mark} {r['id']:<22} {r['duration_s']:>6} s  {sum(r['usage'].values()):>7} tokens  {r['run_id']}")
+        print(f"{mark} {r['id']:<22} {r['duration_s']:>6} s  {tokens(r['usage']):>7} tokens  {r['run_id']}")
         for c in r["checks"]:
             if not c["ok"]:
                 print(f"       ✗ {c['check']}" + (f" ({c['detail']})" if "detail" in c else ""))

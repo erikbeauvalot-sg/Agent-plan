@@ -495,12 +495,18 @@ def usage_by_agent(log_dir: Path) -> dict[str, dict[str, Any]]:
             agent = "classifier"
         else:
             continue
-        row = out.setdefault(agent, {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": None})
+        row = out.setdefault(agent, {"input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0,
+                                    "calls": 0, "model": None})
         row["calls"] += 1
         row["model"] = e["data"].get("model") or row["model"]
-        for k in ("input_tokens", "output_tokens"):
+        for k in ("input_tokens", "output_tokens", "reasoning_tokens"):
             row[k] += e["data"]["usage"].get(k) or 0
     return out
+
+
+def tokens(usage: dict[str, int]) -> int:
+    """Tokens facturés : entrée et sortie ; le raisonnement est déjà compté dans la sortie."""
+    return (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
 
 
 def usage_total(lead: AgentResult, subagents: dict[str, SubAgent], log_dir: Path) -> dict[str, int]:
@@ -508,4 +514,4 @@ def usage_total(lead: AgentResult, subagents: dict[str, SubAgent], log_dir: Path
     rows = usage_by_agent(log_dir).values()
     if not rows:
         return dict(lead.usage)
-    return {k: sum(r[k] for r in rows) for k in ("input_tokens", "output_tokens")}
+    return {k: sum(r[k] for r in rows) for k in ("input_tokens", "output_tokens", "reasoning_tokens")}

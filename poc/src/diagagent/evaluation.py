@@ -20,7 +20,7 @@ import yaml
 
 from . import catalog
 from .llm.replay import ReplayProvider
-from .orchestrator import ProviderFactory
+from .orchestrator import ProviderFactory, tokens
 
 
 def _events(run_dir: Path) -> list[dict[str, Any]]:
@@ -91,7 +91,7 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
             _set_env(k, v)
         catalog.load_catalog.cache_clear()
     summary = {"cases": len(results), "passed": sum(r["passed"] for r in results),
-               "tokens": sum(sum(r["usage"].values()) for r in results)}
+               "tokens": sum(tokens(r["usage"]) for r in results)}
     if repeat > 1:
         rates: dict[str, list[bool]] = {}
         for r in results:

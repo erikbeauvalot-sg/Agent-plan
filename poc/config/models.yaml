@@ -1,11 +1,14 @@
 # Choix du modèle par rôle d'agent : changer de fournisseur = changer ces lignes.
 # Un rôle de sous-agent absent (host, logs, metrics, events, changes, generic) prend "subagent".
 roles:
-  lead:     {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
-  subagent: {provider: azure, deployment: gpt-5.6-luna, reasoning: medium}
+  # lead:     {provider: azure, deployment: gpt-5.6-luna, reasoning: high}
+  # subagent: {provider: azure, deployment: gpt-5.6-luna, reasoning: medium}
   # Alternative locale, par exemple Ollama :
-  # lead:     {provider: local, model: qwen3:14b}
-  # subagent: {provider: local, model: qwen3:14b}
+  lead:     {provider: local, model: gpt-oss:20b}
+  subagent: {provider: local, model: gpt-oss:20b}
+  # OpenAI, modèles sans raisonnement (bien moins de tokens que gpt-5.4-mini/nano) :
+  # lead:     {provider: openai, model: gpt-4.1-mini}
+  # subagent: {provider: openai, model: gpt-4.1-nano}
   # Claude, pour le POC à la maison uniquement (jamais avec des données de production) :
   # lead:     {provider: claude, model: claude-opus-5-5, reasoning: high}
   # subagent: {provider: claude, model: claude-opus-5-5, reasoning: medium}
@@ -19,6 +22,12 @@ providers:
   local:
     adapter: openai_compatible
     base_url: http://localhost:11434/v1     # Ollama ; vLLM : http://localhost:8000/v1
+  openai:
+    adapter: openai_compatible
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    supports_reasoning: false               # gpt-4.1 refuse reasoning_effort
+    context_tokens: 128000
   claude:
     adapter: anthropic                      # clé lue dans ANTHROPIC_API_KEY (ou profil `ant auth login`)
     max_tokens: 16000                       # plancher par réponse, réflexion comprise
