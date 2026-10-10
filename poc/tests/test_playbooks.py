@@ -152,3 +152,47 @@ def test_models_and_tokens_are_recorded_per_role_and_agent(tmp_path, monkeypatch
         "classifier": {"input_tokens": 100, "output_tokens": 10, "reasoning_tokens": 0, "calls": 1, "model": "nano-1"},
         "lead": {"input_tokens": 1000, "output_tokens": 50, "reasoning_tokens": 0, "calls": 1, "model": "mini-1"}}
     assert m["usage"] == {"input_tokens": 1100, "output_tokens": 60, "reasoning_tokens": 0}
+
+
+def test_identifiers_written_in_the_request_complete_missing_entities():
+    c = playbooks.Classification("analyse-evenement", "medium", missing=["ticket"])
+    assert playbooks.complete_entities(c, "Analyse l'alerte SwapUsageHigh sur xdocker",
+                                       {"SwapUsage", "SwapUsageHigh", "HostDown"}) == ["ticket"]
+    assert c.entities == {"ticket": "SwapUsageHigh"} and c.missing == []
+
+    c = playbooks.Classification("analyse-evenement", "medium", missing=["ticket"])
+    assert playbooks.complete_entities(c, "Analyse INC0098765 (alerte HostDown)", {"HostDown"}) == ["ticket"]
+    assert c.entities == {"ticket": "INC0098765"}
+
+    # Un nom inclus dans un autre mot, ou une alerte inconnue, ne complète rien.
+    c = playbooks.Classification("analyse-evenement", "medium", missing=["ticket"])
+    assert playbooks.complete_entities(c, "Analyse l'alerte HostDownX", {"HostDown"}) == []
+    assert c.missing == ["ticket"]
+    c = playbooks.Classification("indisponibilite", "high", missing=["service"])
+    assert playbooks.complete_entities(c, "Mon site ne fonctionne pas, voir CHG0034567", {"HostDown"}) == []
+
+
+def test_named_alert_skips_the_precision_question(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    monkeypatch.setattr("diagagent.connectors.alertmanager.alert_names", lambda: {"SwapUsageHigh"})
+    lead = ScriptedProvider([answer("## Synthèse\nFaux positif.")])
+    clf = classifier(category="analyse-evenement", confidence="medium", missing=["ticket"],
+                     entities={"host": "xdocker"})
+    log, status, _ = asyncio.run(cli.ask("Analyse l'alerte SwapUsageHigh sur xdocker",
+                                         providers=with_classifier(lead, clf)))
+    assert status == "completed" and len(lead.requests) == 1
+    category = json.loads((log.dir / "manifest.json").read_text())["category"]
+    assert category["mode"] == "playbook" and category["entities"] == {"host": "xdocker", "ticket": "SwapUsageHigh"}
+    assert "ticket = SwapUsageHigh" in lead.requests[0].system
+
+
+def test_request_naming_a_known_alert_is_an_event_analysis():
+    books = playbooks.load_playbooks()
+    c = playbooks.Classification(playbooks.FALLBACK, "low", entities={"service": "xdocker"})
+    c = playbooks.alert_fallback(c, "Pourquoi SwapUsageHigh sur xdocker ?", {"SwapUsageHigh"}, books)
+    assert (c.category, c.confidence) == ("analyse-evenement", "low")
+    assert c.entities == {"service": "xdocker", "ticket": "SwapUsageHigh"}
+    assert playbooks.decide(c, books).mode == "playbook"
+    # Une autre catégorie choisie par le classifieur est gardée.
+    c = playbooks.Classification("tendance", "high")
+    assert playbooks.alert_fallback(c, "SwapUsageHigh ce mois-ci", {"SwapUsageHigh"}, books) is c
