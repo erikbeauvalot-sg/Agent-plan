@@ -52,8 +52,10 @@ def _summarize(points: list[tuple[datetime, float]], start: datetime, step: int)
     for t, v in points:
         buckets.setdefault(int((t - start).total_seconds() // (step * 60)), []).append(v)
     values = [v for _, v in points]
+    # La série moyennée lisse les pics courts : max_at date le maximum mesuré.
+    peak_at, peak = max(points, key=lambda p: p[1])
     return {
-        "summary": {"min": round(min(values), 2), "max": round(max(values), 2),
+        "summary": {"min": round(min(values), 2), "max": round(peak, 2), "max_at": peak_at.isoformat(),
                     "mean": round(mean(values), 2), "points": len(points)},
         "breaks": _breaks(points),
         "series": [{"ts": (start + timedelta(minutes=i * step)).isoformat(), "value": round(mean(vs), 2)}

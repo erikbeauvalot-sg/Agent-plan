@@ -138,8 +138,18 @@ def test_query_metric_builds_promql_and_detects_break(home_monitoring):
     data = _call("query_metric", {"host": "nas.maison", "metric": "cpu.usage"})
     assert data["source"] == "metrics-prometheus"
     assert data["summary"]["max"] == 85 and data["breaks"]
+    assert data["summary"]["max_at"] == data["breaks"][0]["at"]  # premier point à 85, après la rupture
     sent = FakeMonitoring.queries[-1]
     assert 'node_cpu_seconds_total{mode="idle",instance=~"nas\\\\.maison(:[0-9]+)?"}' in sent
+
+
+def test_every_prometheus_metric_is_described_and_valid_template():
+    card = yaml.safe_load((POC / "catalog" / "sources" / "metrics-prometheus.yaml").read_text())
+    glossary = yaml.safe_load((POC / "catalog" / "glossary.yaml").read_text())["metrics"]
+    for name, tpl in card["metrics"].items():
+        assert name in glossary, f"{name} absent du glossaire"
+        query = tpl["promql"].format(sel='instance=~"h(:[0-9]+)?"')
+        assert '{instance=~"h(:[0-9]+)?"}' in query or ',instance=~"h(:[0-9]+)?"}' in query, name
 
 
 def test_alerts_silences_and_history(home_monitoring):
