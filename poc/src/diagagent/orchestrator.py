@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -80,14 +81,26 @@ ACTION_SCHEMA: dict[str, Any] = {
 }
 
 
+def _choice(value: Any, allowed: tuple[str, ...]) -> Any:
+    """Valeur autorisée écrite avec une autre casse ou sans accents (« Faible », « remediation »)."""
+    if not isinstance(value, str):
+        return value
+    plain = unicodedata.normalize("NFKD", value.strip().lower()).encode("ascii", "ignore").decode()
+    return next((a for a in allowed
+                 if unicodedata.normalize("NFKD", a).encode("ascii", "ignore").decode() == plain), value)
+
+
 def validate_action(action: dict[str, Any]) -> dict[str, Any]:
     missing = [k for k in ACTION_SCHEMA["required"] if action.get(k) in (None, "", [])]
     if missing:
         raise LocalToolError(f"Champs manquants : {', '.join(missing)}")
+    action = {**action, "type": _choice(action["type"], ACTION_TYPES), "risk": _choice(action["risk"], RISKS)}
     if action["type"] not in ACTION_TYPES:
-        raise LocalToolError(f"type doit valoir : {', '.join(ACTION_TYPES)}")
+        raise LocalToolError(f"type doit valoir exactement l'une de ces valeurs : {', '.join(ACTION_TYPES)} "
+                             f"(reçu : {str(action['type'])[:60]})")
     if action["risk"] not in RISKS:
-        raise LocalToolError(f"risk doit valoir : {', '.join(RISKS)}")
+        raise LocalToolError(f"risk est un seul mot parmi : {', '.join(RISKS)} ; mets l'explication du risque "
+                             f"dans risk_explanation (reçu : {str(action['risk'])[:60]})")
     if not isinstance(action["evidence"], list):
         raise LocalToolError("evidence doit être une liste de query_ref")
     return {k: action[k] for k in ACTION_SCHEMA["properties"] if k in action}
@@ -181,6 +194,8 @@ class Investigation:
         self.lead_cancel = CancelToken()
         self.books: dict[str, dict[str, Any]] = {}
         self.category: dict[str, Any] = {}
+        self.decision: playbooks.Decision | None = None
+        self.rechecked: set[str] = set()  # motifs de relance de la réponse finale déjà utilisés
 
     # Pilotage (utilisé par l'interface web à l'étape 3)
 
@@ -215,6 +230,7 @@ class Investigation:
 
     async def run(self) -> AgentResult:
         decision, section = await self.categorize()
+        self.decision = decision
         if decision.mode == "clarify":
             return AgentResult(status="needs_clarification", answer=self._clarification_text(decision))
         provider, role_cfg = self._provider("lead")
@@ -237,6 +253,43 @@ class Investigation:
         return provider, cfg
 
     def _check_final_answer(self, text: str) -> str | None:
+        """Relance l'agent principal une fois par motif : vagues du playbook jamais lancées, puis actions
+        décrites dans la réponse sans propose_action."""
+        for motive, check in (("waves", self._missing_waves), ("actions", self._unrecorded_actions)):
+            if motive not in self.rechecked and (nudge := check(text)):
+                self.rechecked.add(motive)
+                return nudge
+        return None
+
+    def _missing_waves(self, text: str) -> str | None:
+        """Les petits modèles (gpt-oss:20b) font souvent tout eux-mêmes : les étapes du playbook qui
+        prévoient des sous-agents ne sont alors jamais lancées. Une étape compte comme lancée si un de
+        ses rôles spécialisés l'a été : generic, que le modèle lance pour tout, ne compte pas, et les
+        rôles indisponibles sont ignorés."""
+        if self.decision is None or self.category.get("mode") not in ("playbook", "combined"):
+            return None
+        if len(self.subagents) >= self.max_subagents:
+            return None
+        # Après requalify, seul le nouveau playbook compte.
+        current = self.category.get("id")
+        categories = self.decision.categories if current in self.decision.categories else [current]
+        spawned = {s.role for s in self.subagents.values()}
+        missing = []
+        for cat in categories:
+            for i, step in enumerate(self.books[cat]["steps"], 1):
+                roles = [inv["role"] for inv in step.get("parallel", [])
+                         if inv["role"] in self.roles and inv["role"] != "generic"]
+                if roles and not spawned & set(roles):
+                    missing.append(f"{i}. {step['name']} ({', '.join(dict.fromkeys(roles))})")
+        if not missing:
+            return None
+        return ("Le playbook prévoit des vagues de sous-agents que tu n'as pas lancées : "
+                + " ; ".join(missing) + ". Lance-les avec spawn_subagent, une étape à la fois (wait_subagents "
+                "entre deux), en donnant à chaque sous-agent la période, les entités et ce que tu as déjà "
+                "établi ; puis rends ta réponse finale complète. Si une étape est inutile ici, dis pourquoi "
+                "dans les Limites au lieu de la lancer.")
+
+    def _unrecorded_actions(self, text: str) -> str | None:
         """Les modèles décrivent souvent leurs actions dans la réponse sans appeler propose_action : elles
         n'arrivent alors pas dans actions.json et ne peuvent pas être revues par un Superviseur."""
         if (self.log.dir / "actions.json").exists():

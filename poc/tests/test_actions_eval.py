@@ -39,7 +39,7 @@ def test_actions_are_recorded_never_executed(tmp_path, monkeypatch):
     assert [a["id"] for a in actions] == ["A01"] and actions[0]["status"] == "proposed"
     assert actions[0]["requires_change"] is True
     bad = json.loads((log.dir / "lead" / "calls" / "0004.json").read_text())
-    assert bad["is_error"] and "risk doit valoir" in bad["output"]
+    assert bad["is_error"] and "risk est un seul mot" in bad["output"] and "risk_explanation" in bad["output"]
 
 
 def test_replay_matches_and_detects_divergence(tmp_path, monkeypatch):
@@ -142,3 +142,9 @@ def test_actions_written_in_answer_must_be_recorded(tmp_path, monkeypatch):
     # Pas de relance quand la réponse ne décrit aucune action.
     lead = ScriptedProvider([answer("## Synthèse\nok\n## Actions proposées\nAucune.\n")])
     assert asyncio.run(cli.ask("Q", providers=by_role(lead=lead)))[1] == "completed" and len(lead.requests) == 1
+
+
+def test_action_values_are_matched_without_case_or_accents():
+    from diagagent.orchestrator import validate_action
+    action = validate_action({**ACTION, "type": "Remediation", "risk": "Élevé"})
+    assert (action["type"], action["risk"]) == ("remédiation", "élevé")

@@ -16,6 +16,7 @@ from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
 MAX_EMPTY_RETRIES = 2  # réponses vides consécutives relancées avant d'abandonner
+MAX_FINAL_CHECKS = 3  # relances de la réponse finale (vagues, actions), une par motif
 MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible
 TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
                    "l'outil, ou rends ta réponse finale en Markdown.")
@@ -89,7 +90,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
     empty_retries = 0
-    final_checked = False
+    final_checks = 0
     log.write_text(agent_id, "system_prompt.md", system)
     log.event(agent_id, "agent_started", {"provider": provider.name, "model": getattr(provider, "_model", None),
                                            "tools": [t.name for t in all_tools],
@@ -138,10 +139,10 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             result.status = "failed"
             result.answer = "Le modèle a rendu des réponses vides ; voir events.jsonl."
             break
-        if not response.tool_calls and final_check and not out_of_budget and not final_checked:
-            # Contrôle de la réponse finale (une fois) : par exemple des actions décrites dans le texte sans
-            # avoir été enregistrées avec propose_action.
-            final_checked = True
+        if not response.tool_calls and final_check and not out_of_budget and final_checks < MAX_FINAL_CHECKS:
+            # Contrôle de la réponse finale : par exemple des actions décrites dans le texte sans avoir été
+            # enregistrées avec propose_action. Le contrôle ne relance pas deux fois pour le même motif.
+            final_checks += 1
             nudge = final_check(response.text)
             if nudge:
                 log.event(agent_id, "final_answer_rechecked", {"reason": nudge[:200]})

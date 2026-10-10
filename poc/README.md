@@ -136,6 +136,14 @@ En cours de route, l'agent principal peut appeler `requalify` si les faits contr
 le changement est tracé (`category_changed` dans `events.jsonl`). La catégorie, sa confiance et la
 version des playbooks appliqués sont dans `manifest.json` (clé `category`) et dans `runs/index.jsonl`.
 
+Avant d'accepter la réponse finale, l'orchestrateur la contrôle et relance l'agent principal, une fois
+par motif (événement `final_answer_rechecked`) :
+- **vagues non lancées** : une étape du playbook prévoit des sous-agents et aucun de ses rôles n'a été
+  lancé (`gpt-oss:20b` fait souvent tout lui-même, ou ne lance que `generic`). L'agent lance les
+  étapes manquantes ou dit dans les Limites pourquoi il les saute. Le rôle `generic` et les rôles
+  indisponibles ne comptent pas ; après `requalify`, c'est le nouveau playbook qui compte ;
+- **actions non enregistrées** : la réponse décrit des actions sans avoir appelé `propose_action`.
+
 ```bash
 diagagent playbooks                               # valide et liste les playbooks
 diagagent ask --category performance "…"          # impose la catégorie, sans classifieur

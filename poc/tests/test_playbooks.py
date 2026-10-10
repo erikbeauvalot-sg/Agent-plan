@@ -8,7 +8,7 @@ from diagagent.llm import LLMResponse
 from diagagent.llm.scripted import ScriptedProvider
 from diagagent.orchestrator import load_roles
 from test_agent import _load_with_runs
-from test_orchestrator import answer, call, tools
+from test_orchestrator import REPORT, answer, call, tools
 
 
 def classifier(**out):
@@ -56,7 +56,7 @@ def test_decision(out, mode, categories):
 
 def test_playbook_guides_the_lead_and_is_traced(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
-    lead = ScriptedProvider([answer("## Synthèse\nCHG0034567")])
+    lead = ScriptedProvider([answer("## Synthèse\nCHG0034567")] * 2)
     clf = classifier(category="performance", confidence="high", entities={"service": "paiement"})
     log, status, _ = asyncio.run(cli.ask("Pourquoi le service paiement est-il lent ?",
                                          providers=with_classifier(lead, clf)))
@@ -97,10 +97,14 @@ def test_lead_can_requalify_the_request(tmp_path, monkeypatch):
         tools(call("requalify", {"category": "inconnue", "reason": "x"}, "bad"),
               call("requalify", {"category": "performance", "reason": "le service répond en 4 s"}, "ok")),
         final,
+        answer("## Synthèse\nLenteur extrême, pas une panne."),
     ])
     clf = classifier(category="indisponibilite", confidence="high", entities={"service": "paiement"})
     log, _, _ = asyncio.run(cli.ask("Paiement est en panne", providers=with_classifier(lead, clf)))
     assert "### Playbook performance" in seen["playbook"]
+    # Les vagues réclamées sont celles du nouveau playbook.
+    nudge = lead.requests[2].messages[-1].content
+    assert "1. mesure" in nudge and "deja-connu" not in nudge
     manifest = json.loads((log.dir / "manifest.json").read_text())
     assert manifest["category"]["id"] == "performance" and manifest["category"]["source"] == "requalify"
     assert manifest["category"]["history"] == [{"from": "indisponibilite", "reason": "le service répond en 4 s"}]
@@ -175,12 +179,12 @@ def test_identifiers_written_in_the_request_complete_missing_entities():
 def test_named_alert_skips_the_precision_question(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
     monkeypatch.setattr("diagagent.connectors.alertmanager.alert_names", lambda: {"SwapUsageHigh"})
-    lead = ScriptedProvider([answer("## Synthèse\nFaux positif.")])
+    lead = ScriptedProvider([answer("## Synthèse\nFaux positif.")] * 2)
     clf = classifier(category="analyse-evenement", confidence="medium", missing=["ticket"],
                      entities={"host": "xdocker"})
     log, status, _ = asyncio.run(cli.ask("Analyse l'alerte SwapUsageHigh sur xdocker",
                                          providers=with_classifier(lead, clf)))
-    assert status == "completed" and len(lead.requests) == 1
+    assert status == "completed" and len(lead.requests) == 2
     category = json.loads((log.dir / "manifest.json").read_text())["category"]
     assert category["mode"] == "playbook" and category["entities"] == {"host": "xdocker", "ticket": "SwapUsageHigh"}
     assert "ticket = SwapUsageHigh" in lead.requests[0].system
@@ -196,3 +200,45 @@ def test_request_naming_a_known_alert_is_an_event_analysis():
     # Une autre catégorie choisie par le classifieur est gardée.
     c = playbooks.Classification("tendance", "high")
     assert playbooks.alert_fallback(c, "SwapUsageHigh ce mois-ci", {"SwapUsageHigh"}, books) is c
+
+
+def test_lead_concluding_without_the_playbook_waves_is_asked_to_launch_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    lead = ScriptedProvider([
+        answer("## Synthèse\nLent."),
+        tools(call("spawn_subagent", {"role": "metrics", "entity": "srv-pay-01", "objective": "Latence",
+                                      "period": "2026-10-06T21:00Z"})),
+        tools(call("wait_subagents", {})),
+        answer("## Synthèse\nLent depuis 22:10."),
+    ])
+    metrics = ScriptedProvider([tools(call("submit_report", REPORT))])
+    clf = classifier(category="performance", confidence="high", entities={"service": "paiement"})
+    log, status, final = asyncio.run(cli.ask("Pourquoi paiement est lent ?",
+                                             providers=with_classifier(lead, clf, metrics=metrics)))
+    assert status == "completed" and final == "## Synthèse\nLent depuis 22:10."
+    nudge = lead.requests[1].messages[-1].content
+    assert "1. mesure (metrics, host" in nudge and "2. causes (changes, events, logs)" in nudge
+    # Une seule relance pour les vagues : la réponse suivante est acceptée même sans les étapes 2 à 4.
+    assert len(lead.requests) == 4
+
+
+def test_no_wave_reminder_for_categories_without_subagents(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    lead = ScriptedProvider([answer("## Synthèse\nÉquipe Bases de données.")])
+    clf = classifier(category="information", confidence="high", entities={"host": "db-pay-02"})
+    assert asyncio.run(cli.ask("Qui possède db-pay-02 ?", providers=with_classifier(lead, clf)))[1] == "completed"
+    assert len(lead.requests) == 1
+
+
+def test_generic_subagents_do_not_count_as_playbook_waves(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    lead = ScriptedProvider([
+        tools(call("spawn_subagent", {"role": "generic", "entity": "srv-pay-01", "objective": "Tout collecter",
+                                      "period": "2026-10-06T21:00Z"})),
+        tools(call("wait_subagents", {})),
+        answer("## Synthèse\nLent."), answer("## Synthèse\nLent."),
+    ])
+    generic = ScriptedProvider([tools(call("submit_report", REPORT))])
+    clf = classifier(category="performance", confidence="high", entities={"service": "paiement"})
+    asyncio.run(cli.ask("Pourquoi paiement est lent ?", providers=with_classifier(lead, clf, generic=generic)))
+    assert "1. mesure (metrics, host" in lead.requests[3].messages[-1].content
