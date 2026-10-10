@@ -256,8 +256,9 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         # Sans cette note, « 0 dans la période par défaut » se lisait « n'existe pas » (un ticket cherché
         # par son numéro, ouvert plus de 24 h avant l'heure de référence).
         result["outside_time_range"] = {"total": len(outside), "first": outside[0], "last": outside[-1]}
-        result["note"] = result.get("note", "") + (f" Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
-                          f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")).strip()
+        note = (f"Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
+                f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")
+        result["note"] = f"{result['note']} {note}" if result.get("note") else note
     return result
 
 
