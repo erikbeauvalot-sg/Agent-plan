@@ -11,13 +11,14 @@ import json
 import os
 import re
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -192,6 +193,28 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         audit(user, "login", source=source)
         set_cookie(response, sessions.issue(user.id))
         return user.public()
+
+    @app.post("/login")
+    async def login_form(request: Request) -> Response:
+        """Connexion par un vrai envoi de formulaire puis redirection : la touche Entrée marche partout et les
+        gestionnaires de mots de passe reconnaissent la connexion (proposition d'enregistrement immédiate,
+        remplissage automatique ensuite). En cas d'échec, retour au formulaire avec ?echec=1."""
+        origin = request.headers.get("origin")
+        if origin and origin != "null" and urllib.parse.urlsplit(origin).netloc != request.headers.get("host"):
+            raise HTTPException(403, "Origine refusée")
+        form = urllib.parse.parse_qs((await request.body()).decode("utf-8"))
+        field = lambda name: (form.get(name) or [""])[0]  # noqa: E731
+        target = field("next")
+        anchor = f"#{target}" if target == "admin" or RUN_ID.match(target) else ""
+        user = users.authenticate(field("login"), field("password"))
+        source = request.client.host if request.client else None
+        if user is None:
+            audit(None, "login_failed", {"login": field("login")}, source)
+            return RedirectResponse(f"/?echec=1{anchor}", status_code=303)
+        audit(user, "login", source=source)
+        response = RedirectResponse(f"/{anchor}", status_code=303)
+        set_cookie(response, sessions.issue(user.id))
+        return response
 
     @app.post("/api/logout")
     def logout(response: Response, user: User = Depends(current_user)) -> dict[str, str]:
