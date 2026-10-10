@@ -9,7 +9,8 @@
 </head>
 <body>
   <section id="login" class="login" hidden>
-    <form id="login-form" class="card login-card">
+    <form id="login-form" class="card login-card" method="post" action="/login">
+      <input type="hidden" name="next">
       <h1>Agent de diagnostic</h1>
       <label>Identifiant <input name="login" autocomplete="username" required></label>
       <label>Mot de passe <input name="password" type="password" autocomplete="current-password" required></label>

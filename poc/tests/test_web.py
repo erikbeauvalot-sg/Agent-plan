@@ -61,6 +61,23 @@ def wait_status(c, run_id, timeout=30):
     raise AssertionError("investigation non terminée")
 
 
+def test_login_form_post_redirects(env):
+    app, _ = env
+    c = client(app)
+    form = {"login": "alice", "password": PWD, "next": "20261010T065057Z-2996"}
+    ok = c.post("/login", data=form, follow_redirects=False)
+    assert ok.status_code == 303 and ok.headers["location"] == "/#20261010T065057Z-2996"
+    assert c.get("/api/me").json()["login"] == "alice"
+    # Une page visée invalide est ignorée ; un échec revient au formulaire sans session.
+    other = client(app)
+    bad = other.post("/login", data={"login": "alice", "password": "mauvais", "next": "javascript:x"}, follow_redirects=False)
+    assert bad.status_code == 303 and bad.headers["location"] == "/?echec=1"
+    assert other.get("/api/me").status_code == 401
+    # Un formulaire envoyé depuis un autre site est refusé.
+    assert client(app).post("/login", data=form, headers={"Origin": "https://ailleurs.example"},
+                            follow_redirects=False).status_code == 403
+
+
 def test_login_roles_and_csrf(env):
     app, _ = env
     c = client(app)

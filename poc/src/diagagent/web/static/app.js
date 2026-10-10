@@ -232,20 +232,23 @@ function rateBar(rate) {
 $("stats-days").addEventListener("change", loadStats);
 $("stats-eval").addEventListener("change", loadStats);
 
-$("login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  $("login-error").hidden = true;
-  try {
-    await api("/api/login", { method: "POST", body: JSON.stringify({ login: f.get("login"), password: f.get("password") }) });
-    e.target.reset();
-    boot();
-  } catch (err) { $("login-error").textContent = err.message; $("login-error").hidden = false; }
+// La connexion est un vrai envoi de formulaire (POST /login puis redirection) : Entrée fonctionne partout et
+// le gestionnaire de mots de passe reconnaît la connexion. On garde seulement la page visée (#run_id, #admin).
+$("login-form").addEventListener("submit", (e) => {
+  e.target.next.value = location.hash.slice(1);
 });
+
+// Retour d'un échec de connexion : message, puis adresse nettoyée (la page visée reste dans le #).
+if (new URLSearchParams(location.search).has("echec")) {
+  $("login-error").textContent = "Identifiant ou mot de passe incorrect (compte verrouillé après 5 échecs)";
+  $("login-error").hidden = false;
+  history.replaceState(null, "", "/" + location.hash);
+}
 
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});
-  closeStream(); showLogin();
+  closeStream();
+  location.replace("/");  // page rechargée : formulaire de connexion vide, aucun état de la session précédente
 });
 
 // ---- Investigations
