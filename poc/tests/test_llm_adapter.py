@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
-from diagagent.llm import LLMRequest, Message, ToolCall, ToolSpec
+import pytest
+
+from diagagent.llm import LLMRequest, Message, ToolCall, ToolSpec, select_profile
 from diagagent.llm.openai_chat import OpenAIChatProvider
 
 
@@ -43,3 +45,14 @@ def test_pivot_request_and_response_translation():
     assert resp.tool_calls[0].arguments == {"id_or_hostname": "srv-pay-01"}
     assert resp.usage.input_tokens == 120
     assert resp.usage.output_tokens == 15 and resp.usage.reasoning_tokens == 9
+
+
+def test_select_profile():
+    local, remote = {"lead": {"provider": "local", "model": "a"}}, {"lead": {"provider": "openai", "model": "b"}}
+    cfg = {"default": "ollama", "profiles": {"ollama": local, "openai": remote}, "providers": {}}
+    assert select_profile(cfg) == ("ollama", {**cfg, "roles": local})
+    assert select_profile(cfg, "openai")[1]["roles"] == remote
+    legacy = {"roles": local, "providers": {}}
+    assert select_profile(legacy) == ("default", legacy)
+    with pytest.raises(ValueError, match="inconnu"):
+        select_profile(cfg, "azure")

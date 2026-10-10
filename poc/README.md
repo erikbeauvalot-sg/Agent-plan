@@ -36,41 +36,34 @@ diagagent tools             # démarre les 4 serveurs MCP et liste leurs outils
 
 ## Brancher le modèle
 
-**Azure OpenAI (défaut, `config/models.yaml`)**
+`config/models.yaml` déclare des **profils** (un modèle par rôle d'agent) et le profil par défaut
+(`default: ollama`). Le profil se choisit à chaque investigation, sans toucher au fichier :
+
+```bash
+diagagent --models openai ask "…"     # ou eval, check ; DIAGAGENT_MODELS=openai fait de même
+```
+
+Dans l'interface web, un sélecteur sous la question propose les profils ; une relance (catégorie
+corrigée, précision) garde le profil de l'investigation d'origine. Le profil est noté dans le manifest
+(`models_profile`) et dans les résultats d'éval.
+
+**Modèle local (profil `ollama`, défaut)** : Ollama sur `localhost:11434` avec `gpt-oss:20b` (ou vLLM,
+en changeant `base_url`).
+
+**Azure OpenAI (profil `azure`)**
 
 ```bash
 export AZURE_OPENAI_ENDPOINT=https://<ressource>.openai.azure.com
 az login                    # authentification Entra ID (DefaultAzureCredential)
-diagagent check             # un appel court pour vérifier l'accès au déploiement gpt-5.6-luna
+diagagent --models azure check   # un appel court pour vérifier l'accès au déploiement gpt-5.6-luna
 ```
 
-Le nom du déploiement se règle dans `config/models.yaml` (`deployment`). Pour une clé d'API à la place
+Le nom du déploiement se règle dans le profil (`deployment`). Pour une clé d'API à la place
 d'Entra ID : `auth: api_key` et la variable `AZURE_OPENAI_API_KEY`.
 
-**Modèle local** : décommenter la ligne `provider: local` de `config/models.yaml` (Ollama ou vLLM).
-
-**OpenAI (POC à la maison)**
-
-Avec `OPENAI_API_KEY` dans `poc/.env`, ajouter le fournisseur dans `config/models.yaml` et l'utiliser
-pour les rôles voulus (aucun modèle n'est gratuit sur l'API OpenAI ; les modèles `mini` et `nano`
-coûtent peu) :
-
-```yaml
-roles:
-  lead:       {provider: openai, model: gpt-5.4-mini}
-  subagent:   {provider: openai, model: gpt-5.4-mini}
-  classifier: {provider: openai, model: gpt-5.4-nano}
-providers:
-  openai:
-    adapter: openai_compatible
-    base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
-    supports_reasoning: true
-    context_tokens: 128000
-```
-
-Ne pas indiquer `reasoning` pour ces modèles : l'API Chat Completions refuse `reasoning_effort` avec
-des appels d'outils.
+**OpenAI (profil `openai`, POC à la maison)** : avec `OPENAI_API_KEY` dans `poc/.env`. Le profil utilise
+`gpt-4.1-mini` (agent principal) et `gpt-4.1-nano` (sous-agents, classifieur) : sans raisonnement, ils
+consomment bien moins de tokens que `gpt-5.4-mini`/`nano`. Ne pas indiquer `reasoning` pour ces modèles.
 
 **Claude (POC à la maison)**
 
@@ -86,8 +79,8 @@ La clé peut aussi aller dans `poc/.env` (`ANTHROPIC_API_KEY=sk-ant-...`), ignor
 `diagagent` charge ce fichier au démarrage sans écraser une variable déjà exportée. PROMETHEUS_URL
 et ALERTMANAGER_URL peuvent y figurer aussi.
 
-Dans `config/models.yaml`, remplacer les deux lignes `lead` et `subagent` par les lignes Claude
-commentées (`provider: claude, model: claude-opus-5-5`), puis lancer `diagagent check`.
+Dans `config/models.yaml`, décommenter le profil `claude` (`provider: claude, model: claude-opus-5-5`),
+puis lancer `diagagent --models claude check`.
 `reasoning` règle l'effort de Claude (`low`, `medium`, `high`) ; la réflexion adaptative reste active.
 Le fournisseur `claude` active aussi le cache de prompt (l'historique déjà envoyé est relu à moindre coût)
 et `fallbacks: default`, qui relance sur un modèle de repli une requête refusée par un filtre de sûreté.
@@ -142,7 +135,7 @@ diagagent playbooks                               # valide et liste les playbook
 diagagent ask --category performance "…"          # impose la catégorie, sans classifieur
 ```
 
-Le classifieur utilise le rôle `classifier` de `config/models.yaml` ; absent, il prend le modèle de
+Le classifieur utilise le rôle `classifier` du profil de modèles ; absent, il prend le modèle de
 `subagent`. Dans l'interface, la catégorie s'affiche sous la question ; l'auteur ou un administrateur
 peut la corriger, ou relancer avec une autre catégorie. Chaque correction est ajoutée à
 `runs/feedback/categories.jsonl`, qui servira à l'apprentissage (étape 7). L'historique se filtre par
@@ -207,7 +200,7 @@ Pour un diagnostic, l'agent principal écrit `plan.md`, lance un sous-agent par 
 (`spawn_subagent`), en parallèle, puis attend leurs rapports (`wait_subagents`). Chaque rôle est décrit
 dans `agents/<rôle>.yaml` : prompt, serveurs MCP autorisés, budget. Un rôle sans source disponible
 n'est pas proposé (en mode maison, `logs` et `changes` disparaissent faute d'ELK). Le modèle des
-sous-agents se règle par la clé `subagent` de `config/models.yaml`, ou par rôle.
+sous-agents se règle par la clé `subagent` du profil de modèles, ou par rôle.
 
 ## Interface web
 
@@ -285,8 +278,8 @@ diagagent replay 20261008T061159Z-5f31           # rejoue une investigation sans
 mentions attendues ou interdites, nombre de sous-agents, actions proposées, erreurs d'outil. Le résumé
 donne aussi la justesse de catégorisation. Le rapport va dans `eval/results/`.
 `eval/cases.yaml` porte sur le scénario de démonstration ; `eval/cases-maison.example.yaml` sert de
-modèle pour des questions sur tes propres sources. Changer de modèle dans `config/models.yaml` puis
-relancer `eval` permet de comparer les modèles sur les mêmes questions. Avec un modèle local, les résultats varient
+modèle pour des questions sur tes propres sources. `diagagent --models <profil> eval` compare les
+modèles sur les mêmes questions ; le rapport donne la durée totale et le profil utilisé. Avec un modèle local, les résultats varient
 d'un passage à l'autre (le même code a donné 7 puis 4 cas réussis sur 9 avec `gpt-oss:20b`) : comparer
 avec `--repeat` plutôt que sur un seul passage.
 
