@@ -13,6 +13,28 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 6. Catégorisation et playbooks | Sept playbooks `playbooks/<categorie>.yaml` ; classifieur (appel au modèle séparé, sortie structurée) ; décision : playbook appliqué, deux playbooks combinés, question de précision, `autre` ; playbook injecté dans le prompt de l'agent principal ; outil `requalify` ; catégorie, confiance et version du playbook dans `manifest.json` et `index.jsonl` ; catégorie affichée et corrigeable dans l'interface, filtre de l'historique ; contrôle `category` dans `diagagent eval` | Fait (PR #9) |
 | 7. Base de cas et apprentissage | Retours sur les diagnostics (utile, partiel, faux) ; base `knowledge/cases/` et `knowledge/index.jsonl` ; demandes proches données au classifieur et cas « déjà vu » à l'agent principal ; rôle Superviseur ; `diagagent learn` écrit des propositions dans `playbooks/proposals/`, rejouées sur le jeu d'évaluation ; validation dans l'interface ; catégories `draft` en observation ; indicateurs par catégorie | Fait (PR #10, fusionnée dans `main` par la PR #12) |
 | 8. Rôles complets et revue des actions | Rôles Lecteur et Auditeur, matrice complète du document ; partage d'une investigation ; détail des agents réservé aux rôles autorisés ; arrêt immédiat pour Superviseur et Administrateur ; validation ou rejet des actions proposées par un Superviseur ; écran Administration : actions à valider, coûts en tokens, journal d'accès | Fait (PR #11, fusionnée dans `main` par la PR #12) |
+| 9. Qualité des diagnostics | Chaîne de dépendances dans les playbooks (la cause est souvent sur la dépendance) ; relances limitées aux ratés consécutifs ; étapes du playbook lancées en vagues successives ; identifiants cités dans les rapports ; `diagagent eval --repeat` | Fait (PR #13, #14) |
+| 10. Modèles et coûts | Modèle et tokens par rôle et par agent, tokens de raisonnement ; profils de modèles (`ollama` par défaut, `openai`, `azure`) choisis par requête, en ligne de commande ou dans l'interface | Fait (PR #15, #16, #17) |
+| 11. Données maison | Jeux de sources `demo` et `maison` (Prometheus et Alertmanager d'Erik) choisis par investigation ; page d'accueil en tableau de bord ; connexion par formulaire | Fait (PR #18, #19) |
+| 12. Diagnostic système | Swap, pression mémoire (PSI) et OOM dans les métriques, heure du pic (`max_at`) ; source SSH en lecture seule (`mcp-system`, sonde fixe `remote/diagagent-probe`) ; historique par conteneur (cAdvisor) et mises à jour de conteneurs comme changements | Fait (PR #20, #21, #24) |
+| 13. Remédiation | Quatre pistes examinées après la cause : impact réel, problème connu, réglage de l'application, réglage du système ; règle d'alerte lue dans Prometheus (`alert_rule`) ; recherche web (`mcp-web`, DuckDuckGo ou SearXNG, garde-fous sur la requête et l'adresse) ; actions dédoublonnées, règle PromQL testée avant d'être proposée | Fait (PR #22, #24) |
+| CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
+
+## Reste à faire
+
+- **Critères de sortie** : le document d'architecture demande 20 questions simples justes et une cause
+  correcte sur une majorité de 20 incidents passés ; `eval/cases.yaml` ne compte que 9 cas, tous sur
+  la démo. Agrandir le jeu, ajouter des cas maison, mesurer avec `--repeat`.
+- **Classifieur** : reconnaître une alerte nommée dans la question (par exemple `SwapUsageHigh`) parmi
+  les alertes en cours, au lieu de demander une précision.
+- **Vagues de sous-agents** : `gpt-oss:20b` fait souvent tout lui-même ; l'orchestrateur pourrait lancer
+  les étapes du playbook sans attendre que le modèle le décide.
+- **Contrôles des actions dans le code** : limite mémoire jamais sous le pic mesuré, pas d'alerte qui
+  existe déjà.
+- **Industrialisation** (étape 4 du document d'architecture) : connecteur `mcp-elk` réel et Druid,
+  branchement Azure OpenAI GPT-5.6 Luna et comparaison de modèles sur le jeu d'évaluation, annuaire
+  d'entreprise (OIDC), quotas et coûts Azure, archivage. Elle attend les réponses aux points ouverts du
+  document d'architecture et un accès à ELK et à Azure.
 
 ## Critères de sortie
 
@@ -45,3 +67,10 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-09 : PR #8 et #9 fusionnées dans `main` ; les PR #10 et #11, fusionnées dans leurs branches
   de base, arrivent dans `main` par la PR #12, avec le signalement des documents hors période et la
   recherche texte qui ignore les champs masqués.
+- 2026-10-10 : PR #13 et #14 fusionnées (qualité des diagnostics, tirée des traces ratées avec `gpt-oss:20b`).
+- 2026-10-10 : PR #15 à #17 fusionnées (modèles, tokens, profils ; Ollama par défaut).
+- 2026-10-10 : PR #18 et #19 fusionnées (données maison, page d'accueil, connexion).
+- 2026-10-10 : PR #20 à #22 fusionnées, à partir de l'alerte SwapUsageHigh sur xdocker (swap, SSH,
+  remédiation et recherche web).
+- 2026-10-10 : PR #23 fusionnée : les PR suivantes se mergent seules après les tests ; PR #24
+  fusionnée (conteneurs).
