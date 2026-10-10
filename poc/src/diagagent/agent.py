@@ -79,6 +79,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
                     reasoning: str | None = None, max_tokens: int = 4000,
                     cancel: CancelToken | None = None, local_tools: dict[str, LocalTool] | None = None,
                     final_tools: tuple[str, ...] = (), parent_id: str | None = None,
+                    final_check: Callable[[str], str | None] | None = None,
                     budget_message: str = "Budget d'appels d'outils atteint : rends maintenant ta réponse "
                                           "finale avec ce que tu as, en indiquant ce qui manque.") -> AgentResult:
     cancel = cancel or CancelToken()
@@ -87,6 +88,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
     empty_retries = 0
+    final_checked = False
     log.write_text(agent_id, "system_prompt.md", system)
     log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools],
                                            "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
@@ -133,6 +135,15 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             result.status = "failed"
             result.answer = "Le modèle a rendu des réponses vides ; voir events.jsonl."
             break
+        if not response.tool_calls and final_check and not out_of_budget and not final_checked:
+            # Contrôle de la réponse finale (une fois) : par exemple des actions décrites dans le texte sans
+            # avoir été enregistrées avec propose_action.
+            final_checked = True
+            nudge = final_check(response.text)
+            if nudge:
+                log.event(agent_id, "final_answer_rechecked", {"reason": nudge[:200]})
+                messages.append(Message("user", nudge))
+                continue
         if not response.tool_calls:
             result.answer = response.text
             if out_of_budget:

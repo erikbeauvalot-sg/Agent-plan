@@ -162,6 +162,23 @@ def _check_filters(source_id: str, filters: dict[str, Any] | None) -> None:
                          f"pas d'opérateur. Pour exclure des valeurs, liste celles que tu acceptes.{hint}")
 
 
+def _unknown_values(source_id: str, filters: dict[str, Any] | None) -> dict[str, dict[str, list[str]]]:
+    """Valeurs de filtre absentes de la source, pour les champs à peu de valeurs (états, priorités…) :
+    {"state": {"absentes": [...], "présentes": [...]}}. Un état deviné (« Ouvert ») ne trouvait rien, sans erreur."""
+    out = {}
+    for field, value in (filters or {}).items():
+        present = {str(v) for d in rows(source_id) if (v := field_value(d, field)) is not None
+                   and not isinstance(v, (dict, list))}
+        if not present or len(present) > 20:
+            continue
+        wanted = value if isinstance(value, list) else [value]
+        lowered = {p.lower() for p in present}
+        missing = [str(w) for w in wanted if str(w).lower() not in lowered]
+        if missing:
+            out[field] = {"absentes": missing, "présentes": sorted(present)}
+    return out
+
+
 def _check_fields(source_id: str, fields: list[str]) -> None:
     """Refuse un champ absent de la source : un filtre sur un champ inconnu renverrait 0 résultat
     sans erreur, et le modèle conclurait à tort qu'il n'y a rien (ex. affected_ci.hostname sur changes)."""
@@ -229,13 +246,18 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         "truncated": len(hits) > size,
         "hits": [_clean(d, exclude) for d in hits[:size]],
     }
+    unknown = _unknown_values(source_id, filters)
+    if unknown:
+        result["unknown_values"] = unknown
+        result["note"] = " ".join(f"Valeur(s) {', '.join(v['absentes'])} absente(s) du champ {f}, qui contient : "
+                                  f"{', '.join(v['présentes'])}." for f, v in unknown.items())
     outside = sorted(t for d in matching if (t := field_value(d, time_field))) if time_field and not hits else []
     if outside:
         # Sans cette note, « 0 dans la période par défaut » se lisait « n'existe pas » (un ticket cherché
         # par son numéro, ouvert plus de 24 h avant l'heure de référence).
         result["outside_time_range"] = {"total": len(outside), "first": outside[0], "last": outside[-1]}
-        result["note"] = (f"Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
-                          f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")
+        result["note"] = result.get("note", "") + (f" Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
+                          f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")).strip()
     return result
 
 

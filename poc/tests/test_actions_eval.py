@@ -108,3 +108,17 @@ cases:
     report = asyncio.run(run_eval(cases, providers=providers, out_dir=tmp_path / "results", repeat=3))
     assert report["summary"]["pass_rate"] == {"alterne": "2/3"} and report["summary"]["cases"] == 3
     assert [r["attempt"] for r in report["results"]] == [1, 2, 3]
+
+
+def test_actions_written_in_answer_must_be_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    text = "## Synthèse\nCHG0034567.\n## Actions proposées\n1) Revenir à max_connections = 500\n## Limites\naucune"
+    lead = ScriptedProvider([answer(text), tools(call("propose_action", ACTION)), answer(text)])
+    log, status, final = asyncio.run(cli.ask("Pourquoi ?", providers=by_role(lead=lead)))
+    assert status == "completed" and final == text
+    assert "aucune n'a été enregistrée" in lead.requests[1].messages[-1].content
+    assert json.loads((log.dir / "actions.json").read_text())[0]["id"] == "A01"
+
+    # Pas de relance quand la réponse ne décrit aucune action.
+    lead = ScriptedProvider([answer("## Synthèse\nok\n## Actions proposées\nAucune.\n")])
+    assert asyncio.run(cli.ask("Q", providers=by_role(lead=lead)))[1] == "completed" and len(lead.requests) == 1
