@@ -103,6 +103,19 @@ def test_private_or_local_pages_are_refused(engine, url):
     assert res.is_error and "URL refusée" in res.content
 
 
+def test_dns_rebinding_is_refused_at_connection(engine, monkeypatch):
+    # Le nom répond une adresse publique au contrôle, puis celle du faux serveur local à la connexion.
+    port = int(engine.rsplit(":", 1)[1])
+    answers = iter(["93.184.216.34", "127.0.0.1"])
+
+    def fake_getaddrinfo(host, *_args, **_kwargs):
+        return [(2, 1, 6, "", (next(answers), port))]
+    monkeypatch.setattr(web.socket, "getaddrinfo", fake_getaddrinfo)
+    with pytest.raises(ValueError, match="adresse privée ou locale"):
+        web.fetch_page(f"http://rebind.example:{port}/")
+    assert FakeEngine.seen == []
+
+
 def test_web_off_without_variable():
     assert "web" not in catalog.load_catalog()
 

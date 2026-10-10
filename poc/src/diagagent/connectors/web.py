@@ -7,11 +7,13 @@ et une page n'est lue que sur une adresse publique, redirections comprises (pas 
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
 import re
 import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -118,13 +120,43 @@ def check_public_url(url: str) -> None:
     parts = urllib.parse.urlparse(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError(f"URL refusée : {url} (http ou https seulement)")
+    public_address(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
+
+
+def public_address(host: str, port: int) -> tuple[str, int]:
+    """Résout host une seule fois ; refuse si une des adresses n'est pas publique. La connexion se fait
+    ensuite sur l'adresse rendue : un DNS qui changerait de réponse entre-temps (rebinding) est sans effet."""
     try:
-        addresses = {info[4][0] for info in socket.getaddrinfo(parts.hostname, parts.port or 443)}
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise ValueError(f"{parts.hostname} ne se résout pas") from e
-    for address in addresses:
+        raise ValueError(f"{host} ne se résout pas") from e
+    for info in infos:
+        address = info[4][0]
         if not ipaddress.ip_address(address.split("%")[0]).is_global:
-            raise ValueError(f"URL refusée : {parts.hostname} est une adresse privée ou locale ({address})")
+            raise ValueError(f"URL refusée : {host} est une adresse privée ou locale ({address})")
+    return infos[0][4][0], port
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def connect(self) -> None:
+        self.sock = socket.create_connection(public_address(self.host, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self) -> None:
+        sock = socket.create_connection(public_address(self.host, self.port), self.timeout)
+        # Certificat et SNI vérifiés pour le nom demandé, pas pour l'adresse.
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_PinnedHTTPSConnection, req, context=ssl.create_default_context())
 
 
 class _PublicRedirects(urllib.request.HTTPRedirectHandler):
@@ -135,7 +167,10 @@ class _PublicRedirects(urllib.request.HTTPRedirectHandler):
 
 def fetch_page(url: str) -> dict[str, Any]:
     check_public_url(url)
-    opener = urllib.request.build_opener(_PublicRedirects())
+    # Chaque saut (redirections comprises) se connecte à une adresse vérifiée ; pas de proxy de
+    # l'environnement, qui ferait la résolution à notre place.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _PinnedHTTPHandler(),
+                                         _PinnedHTTPSHandler(), _PublicRedirects())
     body, ctype = _open(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), opener)
     if "html" in ctype or not ctype:
         title, text = page_text(body)
