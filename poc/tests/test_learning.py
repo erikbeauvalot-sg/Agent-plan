@@ -26,7 +26,7 @@ def books_dir(tmp_path, monkeypatch):
 
 def run(tmp_path, question, category, lead_text="## Synthèse\nmax_connections réduit par CHG0034567 [lead/calls/0001.json]",
         **clf):
-    lead = ScriptedProvider([answer(lead_text)])
+    lead = ScriptedProvider([answer(lead_text)] * 2)  # relance des vagues du playbook, puis même réponse
     log, status, _ = asyncio.run(cli.ask(question, providers=with_classifier(
         lead, classifier(category=category, confidence="high", **clf))))
     return log, lead
@@ -70,7 +70,7 @@ def test_confirmed_requests_are_given_to_the_classifier(tmp_path, monkeypatch):
     log, _ = run(tmp_path, "Le stockage NAS-02 rame", "information")
     correct(tmp_path, log, "performance")
     clf = classifier(category="performance", confidence="high")
-    asyncio.run(cli.ask("Le stockage NAS-03 rame", providers=with_classifier(ScriptedProvider([answer("ok")]), clf)))
+    asyncio.run(cli.ask("Le stockage NAS-03 rame", providers=with_classifier(ScriptedProvider([answer("ok")] * 2), clf)))
     assert "« Le stockage NAS-02 rame » → performance" in clf.requests[0].system
 
 
