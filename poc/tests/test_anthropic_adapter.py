@@ -137,11 +137,16 @@ def test_investigation_runs_through_the_claude_adapter(tmp_path, monkeypatch):
 def test_dotenv_is_loaded_without_overriding(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("# clés du POC\nANTHROPIC_API_KEY='sk-ant-test'\n"
                                    "export PROMETHEUS_URL=http://192.168.1.15:9090\nDIAGAGENT_DEMO=1\n")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("PROMETHEUS_URL", raising=False)
-    monkeypatch.setenv("DIAGAGENT_DEMO", "0")
-    cli.load_dotenv(tmp_path / ".env")
     import os
-    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-test"
-    assert os.environ["PROMETHEUS_URL"] == "http://192.168.1.15:9090"
-    assert os.environ["DIAGAGENT_DEMO"] == "0"
+    from unittest import mock
+
+    # patch.dict restaure tout l'environnement : delenv ne retire pas une variable absente au départ,
+    # et PROMETHEUS_URL fuirait dans les tests suivants.
+    with mock.patch.dict(os.environ):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ.pop("PROMETHEUS_URL", None)
+        os.environ["DIAGAGENT_DEMO"] = "0"
+        cli.load_dotenv(tmp_path / ".env")
+        assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-test"
+        assert os.environ["PROMETHEUS_URL"] == "http://192.168.1.15:9090"
+        assert os.environ["DIAGAGENT_DEMO"] == "0"

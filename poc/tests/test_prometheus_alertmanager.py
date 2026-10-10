@@ -77,7 +77,7 @@ def home_monitoring(monkeypatch):
     url = f"http://127.0.0.1:{server.server_port}"
     monkeypatch.setenv("PROMETHEUS_URL", url)
     monkeypatch.setenv("ALERTMANAGER_URL", url)
-    monkeypatch.setenv("DIAGAGENT_DEMO", "0")
+    monkeypatch.setenv("DIAGAGENT_SOURCES", "maison")
     catalog.load_catalog.cache_clear()
     FakeMonitoring.queries = []
     yield
@@ -106,6 +106,25 @@ def test_home_mode_exposes_only_real_sources(home_monitoring):
     names = _run(lambda hub: asyncio.sleep(0, result=set(hub.specs)))
     assert {"list_alerts", "alert_history", "promql", "list_hosts"} <= names
     assert "search" not in names and "get_ci" not in names
+
+
+def test_demo_and_home_sources_together(home_monitoring, monkeypatch):
+    monkeypatch.setenv("DIAGAGENT_SOURCES", "demo,maison")
+    assert {"metrics-demo", "cmdb", "metrics-prometheus", "alerts-alertmanager"} <= set(catalog.load_catalog())
+    hosts = _call("list_hosts", {})
+    assert {"host": "srv-pay-01"} in hosts["metrics-demo"]
+    assert any(h["host"] == "nas.maison" for h in hosts["metrics-prometheus"])
+    names = _run(lambda hub: asyncio.sleep(0, result=set(hub.specs)))
+    assert {"search", "get_ci", "list_alerts", "promql"} <= names
+
+
+def test_demo_only_ignores_configured_prometheus(home_monitoring, monkeypatch):
+    # Banc de régression : les sources réelles restent coupées même si leurs variables sont définies.
+    monkeypatch.setenv("DIAGAGENT_SOURCES", "demo")
+    assert "metrics-prometheus" not in catalog.load_catalog()
+    with catalog.using_sources("maison"):
+        assert set(catalog.load_catalog()) == {"metrics-prometheus", "alerts-alertmanager"}
+    assert catalog.configured_sources() == ["demo", "maison"]
 
 
 def test_hosts_and_metrics_from_prometheus(home_monitoring):

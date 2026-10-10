@@ -1,6 +1,7 @@
 # Serveurs MCP lancés par l'orchestrateur (sous-processus stdio, lecture seule).
-# demo: true      -> désactivé par DIAGAGENT_DEMO=0
-# requires_env    -> lancé seulement si ces variables sont définies
+# demo: true      -> jeu « demo » (données factices)
+# requires_env    -> jeu « maison » (sources réelles), lancé seulement si ces variables sont définies
+# Les autres serveurs sont communs. Jeux actifs : --sources / DIAGAGENT_SOURCES (défaut : les deux).
 mcp_servers:
   mcp-catalog: {module: diagagent.mcp_servers.catalog_server}
   mcp-elk:     {module: diagagent.mcp_servers.elk_demo_server, demo: true}

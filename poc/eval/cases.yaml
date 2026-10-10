@@ -10,7 +10,7 @@
 #   category          catégorie (ou liste de catégories acceptées) rendue par le classifieur
 defaults:
   now: "2026-10-07T06:00:00Z"
-  demo: true
+  sources: demo        # banc reproductible : jamais les sources réelles, même configurées
 
 cases:
   - id: diag-paiement

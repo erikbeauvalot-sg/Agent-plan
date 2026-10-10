@@ -10,7 +10,9 @@ import asyncio
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
@@ -19,7 +21,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from diagagent import catalog, knowledge, learning, playbooks
+from diagagent import catalog, dashboard, knowledge, learning, playbooks
 from diagagent.llm import model_profiles
 from diagagent.orchestrator import Investigation, ProviderFactory
 from diagagent.runlog import RunLog, _append, _dump, _ts
@@ -50,7 +52,7 @@ class RunManager:
     live: dict[str, LiveRun] = field(default_factory=dict)
 
     async def start(self, question: str, user: User, category: str | None = None,
-                    models: str | None = None) -> str:
+                    models: str | None = None, sources: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -66,7 +68,7 @@ class RunManager:
         async def go() -> None:
             try:
                 await ask(question, providers=self.providers(models), user=user.login, on_started=on_started,
-                          category=category)
+                          category=category, sources=sources)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
                     started.set_exception(e)
@@ -90,6 +92,7 @@ class AskBody(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     category: str | None = None
     models: str | None = None  # profil de config/models.yaml ; défaut : celui du fichier
+    sources: str | None = None  # demo, maison ou demo,maison ; défaut : DIAGAGENT_SOURCES, sinon les deux
 
 
 class CategoryBody(BaseModel):
@@ -208,12 +211,32 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
             raise HTTPException(400, f"Catégorie inconnue : {body.category}")
         if body.models and body.models not in model_choices()["profiles"]:
             raise HTTPException(400, f"Profil de modèles inconnu : {body.models}")
+        if body.sources and body.sources not in [c["value"] for c in source_choices()["choices"] if c["available"]]:
+            raise HTTPException(400, f"Jeu de sources inconnu ou non configuré : {body.sources}")
         try:
-            run_id = await manager.start(body.question.strip(), user, body.category, body.models)
+            run_id = await manager.start(body.question.strip(), user, body.category, body.models, body.sources)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
-        audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models})
+        audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models,
+                            "sources": body.sources})
         return {"run_id": run_id}
+
+    def source_choices() -> dict[str, Any]:
+        """Les trois choix sont toujours listés ; ceux qui demandent une source réelle sont indisponibles
+        tant que PROMETHEUS_URL ou ALERTMANAGER_URL n'est pas définie. Défaut : DIAGAGENT_SOURCES."""
+        home = "maison" in catalog.configured_sources()
+        reason = None if home else "aucune source réelle configurée (PROMETHEUS_URL, ALERTMANAGER_URL)"
+        choices = [{"value": "demo,maison", "label": "démo + maison", "available": home, "reason": reason},
+                   {"value": "demo", "label": "démo", "available": True, "reason": None},
+                   {"value": "maison", "label": "maison", "available": home, "reason": reason}]
+        wanted = ",".join(sorted(catalog.active_sources()))
+        default = wanted if any(c["value"] == wanted and c["available"] for c in choices) else "demo"
+        return {"choices": choices, "default": default}
+
+    @app.get("/api/sources")
+    def sources(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Jeux de sources proposés au lancement d'une investigation."""
+        return source_choices()
 
     def model_choices() -> dict[str, Any]:
         from diagagent.cli import _load
@@ -223,8 +246,44 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     @app.get("/api/models")
     def models(user: User = Depends(current_user)) -> dict[str, Any]:
-        """Profils de modèles proposés au lancement d'une investigation."""
+        """Profils de modèles proposés au lancement d'une investigation (leur état : /api/status)."""
         return model_choices()
+
+    status_cache: dict[str, Any] = {}
+
+    @app.get("/api/status")
+    async def status(refresh: bool = False, user: User = Depends(current_user)) -> dict[str, Any]:
+        """État des profils de modèles et des sources, alertes en cours. Gardé 15 s : les vérifications
+        interrogent Ollama, Prometheus et Alertmanager."""
+        from diagagent.cli import _load
+
+        now = time.monotonic()
+        if refresh or not status_cache or now - status_cache["at"] > 15:
+            models_cfg = _load("models.yaml")
+            models_state, sources_state = await asyncio.gather(
+                asyncio.to_thread(dashboard.models_status, models_cfg), asyncio.to_thread(dashboard.sources_status))
+            status_cache.update(at=now, data={"models": models_state, **sources_state,
+                                              "default_models": model_choices()["default"]})
+        return status_cache["data"]
+
+    @app.get("/api/home")
+    def home(days: int = 7, include_eval: bool = False, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Activité du jour et statistiques de la période sur les investigations visibles par l'utilisateur,
+        derniers résultats d'éval par profil de modèles."""
+        days = max(1, min(days, 90))
+
+        def manifest_of(row: dict[str, Any]) -> dict[str, Any]:
+            return read_json(runs_dir() / row["path"] / "manifest.json") or {}
+
+        def manifest_of_run(run_id: str) -> dict[str, Any] | None:
+            try:
+                return read_json(run_path(run_id) / "manifest.json")
+            except HTTPException:
+                return None
+        # Heure réelle, pas l'heure de référence figée (serve --now) : les investigations sont datées réellement.
+        now = datetime.now(timezone.utc)
+        return {"activity": dashboard.activity(visible_runs(user), manifest_of, now, days, include_eval),
+                "evals": dashboard.last_evals(catalog.home() / "eval" / "results", manifest_of_run)}
 
     @app.get("/api/categories")
     def categories(user: User = Depends(current_user)) -> list[dict[str, Any]]:
@@ -303,19 +362,31 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         return p
 
     @app.get("/api/runs")
-    def list_runs(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+    def list_runs(limit: int = 100, user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        """Investigations visibles, les plus récentes d'abord, avec modèles, durée et tokens."""
+        rows = visible_runs(user)[:max(1, min(limit, 1000))]
+        out = []
+        for r in rows:
+            if r["status"] != "running":
+                r = dashboard.enrich(r, lambda row: read_json(runs_dir() / row["path"] / "manifest.json") or {})
+            out.append({**r, "label": dashboard.label(r), "duration_s": dashboard._duration(r),
+                        "tokens": dashboard._tokens(r)})
+        return out
+
+    def visible_runs(user: User) -> list[dict[str, Any]]:
         index = runs_dir() / "index.jsonl"
         done = [json.loads(line) for line in index.read_text(encoding="utf-8").splitlines()] if index.exists() else []
         finished = {r["run_id"] for r in done}
         running = [{"run_id": rid, "question": r.log.manifest["question"], "user": r.user,
                     "started_at": r.log.manifest["started_at"], "status": "running",
-                    "category": (r.log.manifest.get("category") or {}).get("id")}
+                    "category": (r.log.manifest.get("category") or {}).get("id"),
+                    "models_profile": r.log.manifest.get("models_profile"), "sources": r.log.manifest.get("sources")}
                    for rid, r in manager.live.items() if rid not in finished]
         shared = set()
         if not user.can("view_all"):  # les investigations partagées se lisent dans leur manifest
             shared = {r["run_id"] for r in done if (read_json(runs_dir() / r["path"] / "manifest.json") or {}).get("shared")}
         rows = [r for r in running + done if can_view(user, {**r, "shared": r["run_id"] in shared})]
-        return sorted(rows, key=lambda r: r["started_at"], reverse=True)[:100]
+        return sorted(rows, key=lambda r: r["started_at"], reverse=True)
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str, user: User = Depends(current_user)) -> dict[str, Any]:

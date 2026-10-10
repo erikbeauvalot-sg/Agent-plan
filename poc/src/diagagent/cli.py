@@ -44,10 +44,18 @@ def default_providers(profile: str | None = None) -> ProviderFactory:
 
 async def ask(question: str, providers: ProviderFactory | None = None, user: str | None = None,
               on_started: Callable[[RunLog, Investigation], None] | None = None,
-              category: str | None = None) -> tuple[RunLog, str, str]:
+              category: str | None = None, sources: str | list[str] | None = None) -> tuple[RunLog, str, str]:
     """Une investigation complète. on_started est appelé dès que l'investigation est pilotable
     (utilisé par la passerelle web pour l'arrêt). category impose la catégorie et saute le classifieur
-    (correction de l'utilisateur, rejeu)."""
+    (correction de l'utilisateur, rejeu). sources choisit les jeux de sources (demo, maison) ; défaut :
+    DIAGAGENT_SOURCES, sinon les deux."""
+    with catalog.using_sources(sources):
+        return await _ask(question, providers, user, on_started, category)
+
+
+async def _ask(question: str, providers: ProviderFactory | None, user: str | None,
+               on_started: Callable[[RunLog, Investigation], None] | None,
+               category: str | None) -> tuple[RunLog, str, str]:
     poc = _load("poc.yaml")
     providers = providers or default_providers()
     lead, lead_cfg = providers("lead")
@@ -55,6 +63,7 @@ async def ask(question: str, providers: ProviderFactory | None = None, user: str
                  {"models": {"lead": {"provider": lead.name,
                                       "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
                   "models_profile": getattr(providers, "profile", None),
+                  "sources": sorted(catalog.active_sources()),
                   "reference_time": catalog.now().isoformat()})
     async with ToolHub(poc["mcp_servers"]) as hub:
         investigation = Investigation(question, hub, log, providers, poc, category=category)
@@ -195,6 +204,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--now", help="Heure de référence ISO 8601 (rejouer un scénario)")
     parser.add_argument("--models", metavar="PROFIL",
                         help="Profil de modèles de config/models.yaml (ollama, openai…) ; défaut : celui du fichier")
+    parser.add_argument("--sources", metavar="JEUX",
+                        help="Jeux de sources : demo, maison ou demo,maison (défaut : les deux)")
     sub =parser.add_subparsers(dest="cmd", required=True)
     p_ask = sub.add_parser("ask", help="Poser une question à l'agent principal")
     p_ask.add_argument("question")
@@ -238,6 +249,8 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["DIAGAGENT_NOW"] = args.now
     if args.models:
         os.environ["DIAGAGENT_MODELS"] = args.models
+    if args.sources:
+        os.environ["DIAGAGENT_SOURCES"] = ",".join(sorted(catalog.parse_sources(args.sources)))
     load_dotenv(catalog.home() / ".env")
 
     if args.cmd == "tools":

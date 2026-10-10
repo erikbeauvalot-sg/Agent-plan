@@ -215,12 +215,23 @@ Les recherches sans période portent sur les 24 h qui précèdent l'**heure de r
 `--now`, le serveur utilise l'heure réelle : les données de démonstration (nuit du 6 octobre 2026) sont
 alors hors période, et l'agent doit élargir lui-même ses recherches. Pour jouer le scénario comme
 `diagagent eval`, lancer le serveur avec `--now 2026-10-07T06:00:00Z` ; l'heure figée s'affiche dans la
-barre latérale, et l'heure de référence de chaque investigation sous sa question.
+barre du haut, et l'heure de référence de chaque investigation sous sa question.
+
+- **Accueil** : la question avec le choix du **modèle** (profils de `config/models.yaml`) et des
+  **données** (démo, maison ou les deux). Une option indisponible reste visible, grisée, avec la raison ;
+  le navigateur retient le dernier choix, sinon le défaut du serveur (`DIAGAGENT_MODELS`,
+  `DIAGAGENT_SOURCES` dans `.env`). Puis : investigations en cours et dernières investigations
+  (recherche, filtre par catégorie, modèle, durée, tokens), **état** des modèles et des sources
+  (Ollama interrogé, clés présentes, cibles Prometheus up, alertes ; aucun appel payant), chiffres du
+  jour, dernier résultat d'éval par modèle, alertes Alertmanager en cours (« Investiguer » préremplit la
+  question), et **statistiques** sur 1, 7 ou 30 jours : réussite par catégorie, par agent (principal et
+  sous-agents par rôle) et par modèle, évaluations exclues sauf demande. Le détail d'une investigation
+  s'ouvre au clic (`#<run_id>`, partageable) ; « ← Accueil » y revient.
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.
 
-- **Conversation** : on pose la question à gauche ; la réponse s'affiche à la fin, chaque preuve
+- **Conversation** : on pose la question sur l'accueil ; la réponse s'affiche à la fin, chaque preuve
   `[…/calls/NNNN.json]` est cliquable.
 - **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec la jauge de
   budget et les signaux (bloqué depuis 120 s, boucle, 3 erreurs d'outil, budget à 80 %, erreur modèle).
@@ -289,17 +300,29 @@ catégorie d'origine est imposée : le classifieur n'est pas rejoué.
 
 ## Brancher Prometheus et Alertmanager
 
-Deux variables suffisent ; les sources de démonstration se coupent avec `DIAGAGENT_DEMO=0` pour que
-l'agent ne mélange pas données factices et réelles :
+Deux variables suffisent, de préférence dans `poc/.env` :
 
 ```bash
-export PROMETHEUS_URL=http://192.168.1.15:9090
-export ALERTMANAGER_URL=http://192.168.1.15:9093
-export DIAGAGENT_DEMO=0
-diagagent tools             # doit lister list_hosts, promql, list_alerts, alert_history…
-diagagent ask "Quelles machines sont suivies et lesquelles ont une alerte en cours ?"
-diagagent ask "Pourquoi le NAS était-il lent cette nuit ?"
+PROMETHEUS_URL=http://192.168.1.15:9090
+ALERTMANAGER_URL=http://192.168.1.15:9093
 ```
+
+Les sources forment deux jeux : `demo` (données factices de `demo_data/`) et `maison` (Prometheus,
+Alertmanager, actives seulement si leur variable est définie). Par défaut les deux sont actifs ; le
+choix se fait par investigation, sans toucher à `.env` :
+
+```bash
+diagagent tools                                  # doit lister list_hosts, promql, list_alerts, alert_history…
+diagagent ask "Pourquoi le NAS était-il lent cette nuit ?"           # démo + maison
+diagagent --sources maison ask "Quelles machines sont suivies ?"     # seulement les sources réelles
+diagagent --sources demo ask "…"                                     # seulement la démo
+```
+
+Dans l'interface web, le sélecteur « Données » (affiché dès qu'une source réelle est configurée)
+propose les trois choix ; le manifest note les jeux utilisés (`sources`). Les tests `pytest` et le
+banc `eval/cases.yaml` (`sources: demo`) n'utilisent que la démo, même si `PROMETHEUS_URL` est
+définie : ils restent reproductibles. Les données de démo sont datées autour du 7 octobre 2026
+(`--now`) : en mode mixte à l'heure réelle, elles sortent de la fenêtre par défaut de 24 h.
 
 Sans `--now`, l'heure de référence est l'heure réelle. Ce que l'agent obtient :
 

@@ -13,7 +13,7 @@ TIMEOUT_S = 15
 
 
 def get_json(base_url: str, path: str, params: dict[str, Any] | None = None,
-             bearer_token_env: str | None = None) -> Any:
+             bearer_token_env: str | None = None, timeout: float = TIMEOUT_S) -> Any:
     url = base_url.rstrip("/") + path
     if params:
         url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}, doseq=True)
@@ -22,7 +22,7 @@ def get_json(base_url: str, path: str, params: dict[str, Any] | None = None,
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:500]
