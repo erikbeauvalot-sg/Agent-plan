@@ -9,6 +9,7 @@ une sortie structurée. La décision (playbook appliqué, deux playbooks combin�
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
@@ -141,7 +142,8 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
         raise PlaybookError("pas d'objet JSON dans la réponse du classifieur")
     data = json.loads(match.group(0))
     active = {k for k, b in books.items() if b["status"] == "active"}
-    category, alternative, draft_match = data.get("category"), data.get("alternative"), None
+    category, alternative = _known(data.get("category"), books), _known(data.get("alternative"), books)
+    draft_match = None
     if category in books and category not in active:
         draft_match = category
         category = alternative if alternative in active else FALLBACK
@@ -157,6 +159,15 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     return Classification(category, confidence, alternative, entities, missing,
                           [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
                           draft_match=draft_match)
+
+
+def _known(value: Any, books: dict[str, dict[str, Any]]) -> Any:
+    """Rapproche un identifiant presque exact (« analysis-evenement ») de la catégorie existante : une
+    coquille du modèle ne doit pas envoyer la demande dans `autre`."""
+    if not isinstance(value, str) or value in books:
+        return value
+    close = difflib.get_close_matches(value.strip().lower(), list(books), n=1, cutoff=0.85)
+    return close[0] if close else value
 
 
 def classify(provider: LLMProvider, question: str, books: dict[str, dict[str, Any]],

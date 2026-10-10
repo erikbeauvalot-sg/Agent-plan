@@ -85,3 +85,26 @@ cases:
     failed = [c["check"] for c in report["results"][1]["checks"] if not c["ok"]]
     assert failed == ["mentionne « INC0098765 »", "ne mentionne pas « INC0097012 »"]
     assert (tmp_path / "results").glob("*.json")
+
+
+def test_eval_repeat_reports_pass_rate(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    cases = tmp_path / "cases.yaml"
+    cases.write_text("""
+defaults: {now: "2026-10-07T06:00:00Z"}
+cases:
+  - id: alterne
+    question: "Qui possède db-pay-02 ?"
+    must_mention: ["Bases de données"]
+""")
+    lead = ScriptedProvider([answer(t) for t in ("C'est l'équipe Bases de données.", "Je ne sais pas.",
+                                                 "Équipe Bases de données")])
+
+    def providers(role):
+        if role != "lead":
+            raise KeyError(role)  # pas de classifieur : catégorie autre
+        return lead, {}
+
+    report = asyncio.run(run_eval(cases, providers=providers, out_dir=tmp_path / "results", repeat=3))
+    assert report["summary"]["pass_rate"] == {"alterne": "2/3"} and report["summary"]["cases"] == 3
+    assert [r["attempt"] for r in report["results"]] == [1, 2, 3]

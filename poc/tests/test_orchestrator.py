@@ -1,12 +1,14 @@
 import asyncio
 import json
 
+import pytest
 import yaml
 
 from conftest import POC
 from diagagent import cli
 from diagagent.llm import LLMResponse, ToolCall
 from diagagent.llm.scripted import ScriptedProvider
+from diagagent.agent import LocalToolError
 from diagagent.orchestrator import Investigation
 from diagagent.runlog import RunLog
 from diagagent.tools import ToolHub
@@ -157,3 +159,17 @@ def test_roles_without_sources_are_hidden(tmp_path):
     # Démo sans ALERTMANAGER_URL : events garde la source events d'ELK ; tous les rôles sont là.
     assert roles == {"host", "logs", "metrics", "events", "changes", "generic"}
     assert "- logs : Erreurs et anomalies" in prompt
+
+
+def test_report_evidence_is_normalized():
+    from diagagent.orchestrator import validate_report
+
+    report = validate_report({"status": "completed", "summary": "ok", "findings": [
+        {"fact": "a", "evidence": "subagents/T01-x/calls/0001.json", "confidence": "high"},
+        {"fact": "b", "evidence": [{"query_ref": "[subagents/T01-x/calls/0002.json]"}, "lead/calls/0001.json"],
+         "confidence": "low"}]})
+    assert [f["evidence"] for f in report["findings"]] == [
+        ["subagents/T01-x/calls/0001.json"], ["subagents/T01-x/calls/0002.json", "lead/calls/0001.json"]]
+    with pytest.raises(LocalToolError):
+        validate_report({"status": "completed", "summary": "ok",
+                         "findings": [{"fact": "a", "evidence": [{}], "confidence": "high"}]})

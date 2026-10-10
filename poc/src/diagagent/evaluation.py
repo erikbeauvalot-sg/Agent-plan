@@ -61,7 +61,9 @@ def check_case(case: dict[str, Any], status: str, answer: str, run_dir: Path) ->
 
 
 async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
-                   only: list[str] | None = None, out_dir: Path | None = None) -> dict[str, Any]:
+                   only: list[str] | None = None, out_dir: Path | None = None, repeat: int = 1) -> dict[str, Any]:
+    """repeat > 1 joue chaque cas plusieurs fois : avec un modèle local, un seul passage ne dit pas grand-chose
+    (le même code a donné 7 puis 4 cas réussis sur 9). Le résumé donne alors un taux de réussite par cas."""
     from .cli import ask
 
     spec = yaml.safe_load(cases_path.read_text(encoding="utf-8"))
@@ -76,19 +78,26 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
             _set_env("DIAGAGENT_NOW", case.get("now"))
             _set_env("DIAGAGENT_DEMO", None if case.get("demo", True) else "0")
             catalog.load_catalog.cache_clear()
-            started = time.monotonic()
-            log, status, answer = await ask(case["question"], providers=providers, user="eval")
-            checks = check_case(case, status, answer, log.dir)
-            results.append({"id": case["id"], "question": case["question"], "run_id": log.run_id,
-                            "passed": all(c["ok"] for c in checks), "checks": checks,
-                            "duration_s": round(time.monotonic() - started, 1),
-                            "usage": log.manifest.get("usage", {})})
+            for attempt in range(1, max(1, repeat) + 1):
+                started = time.monotonic()
+                log, status, answer = await ask(case["question"], providers=providers, user="eval")
+                checks = check_case(case, status, answer, log.dir)
+                results.append({"id": case["id"], "attempt": attempt, "question": case["question"],
+                                "run_id": log.run_id, "passed": all(c["ok"] for c in checks), "checks": checks,
+                                "duration_s": round(time.monotonic() - started, 1),
+                                "usage": log.manifest.get("usage", {})})
     finally:
         for k, v in saved.items():
             _set_env(k, v)
         catalog.load_catalog.cache_clear()
     summary = {"cases": len(results), "passed": sum(r["passed"] for r in results),
                "tokens": sum(sum(r["usage"].values()) for r in results)}
+    if repeat > 1:
+        rates: dict[str, list[bool]] = {}
+        for r in results:
+            rates.setdefault(r["id"], []).append(r["passed"])
+        summary["repeat"] = repeat
+        summary["pass_rate"] = {k: f"{sum(v)}/{len(v)}" for k, v in rates.items()}
     category_checks = [c for r in results for c in r["checks"] if c.get("kind") == "category"]
     if category_checks:
         summary["categories"] = {"cases": len(category_checks), "correct": sum(c["ok"] for c in category_checks)}

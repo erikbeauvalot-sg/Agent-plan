@@ -117,6 +117,10 @@ def print_eval(report: dict[str, Any]) -> bool:
             if not c["ok"]:
                 print(f"       ✗ {c['check']}" + (f" ({c['detail']})" if "detail" in c else ""))
     s = report["summary"]
+    if "pass_rate" in s:
+        print("\nTaux de réussite par cas (" + str(s["repeat"]) + " passages) :")
+        for case_id, rate in s["pass_rate"].items():
+            print(f"  {case_id:<22} {rate}")
     categories = (f" · catégorie juste {s['categories']['correct']}/{s['categories']['cases']}"
                   if "categories" in s else "")
     print(f"\n{s['passed']}/{s['cases']} cas réussis{categories} · {s['tokens']} tokens · rapport : {report['path']}")
@@ -206,6 +210,7 @@ def main(argv: list[str] | None = None) -> None:
     p_eval = sub.add_parser("eval", help="Jouer un jeu d'évaluation avec le modèle configuré")
     p_eval.add_argument("--cases", default="eval/cases.yaml")
     p_eval.add_argument("--only", action="append", help="Identifiant de cas (répétable)")
+    p_eval.add_argument("--repeat", type=int, default=1, help="Jouer chaque cas N fois (taux de réussite par cas)")
     p_replay = sub.add_parser("replay", help="Rejouer une investigation sans appeler le modèle")
     p_replay.add_argument("run_id")
     p_serve = sub.add_parser("serve", help="Lancer l'interface web")
@@ -228,7 +233,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "check":
         check_model()
     elif args.cmd == "eval":
-        sys.exit(0 if print_eval(asyncio.run(run_eval(catalog.home() / args.cases, only=args.only))) else 1)
+        sys.exit(0 if print_eval(asyncio.run(run_eval(catalog.home() / args.cases, only=args.only, repeat=args.repeat))) else 1)
     elif args.cmd == "replay":
         sys.exit(0 if print_replay(asyncio.run(replay_run(args.run_id))) else 1)
     elif args.cmd == "serve":

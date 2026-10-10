@@ -15,6 +15,12 @@ from .runlog import RunLog
 from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
+MAX_EMPTY_RETRIES = 2
+MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible  # réponses vides relancées avant d'abandonner
+TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
+                   "l'outil, ou rends ta réponse finale en Markdown.")
+EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
+               "prévu, ou rends ta réponse finale.")
 
 
 @dataclass
@@ -80,6 +86,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     all_tools = tools + [t.spec for t in local_tools.values()]
     messages = [Message("user", user_message)]
     result = AgentResult(status="completed", answer="")
+    empty_retries = 0
     log.write_text(agent_id, "system_prompt.md", system)
     log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools],
                                            "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
@@ -109,6 +116,22 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         if response.stop_reason == "refusal":
             result.status = "failed"
             result.answer = "Le modèle a refusé de répondre (filtre de contenu)."
+            break
+        text_call = not response.tool_calls and _looks_like_tool_call(response.text, offered)
+        if not response.tool_calls and (not response.text.strip() or text_call):
+            # gpt-oss s'arrête parfois après avoir raisonné, sans texte ni appel d'outil, ou écrit l'appel
+            # d'outil dans son texte : ni l'un ni l'autre ne doit passer pour une réponse finale.
+            log.event(agent_id, "empty_response", {"retry": empty_retries + 1, "tool_call_as_text": text_call})
+            if empty_retries < MAX_EMPTY_RETRIES and not cancel.cancelled:
+                empty_retries += 1
+                if not response.text.strip():
+                    # Un message assistant vide renvoyé tel quel fait refuser toute la conversation par Ollama
+                    # (« invalid message content type: <nil> ») : on ne le garde pas dans l'historique.
+                    messages.pop()
+                messages.append(Message("user", TEXT_CALL_NUDGE if text_call else EMPTY_NUDGE))
+                continue
+            result.status = "failed"
+            result.answer = "Le modèle a rendu des réponses vides ; voir events.jsonl."
             break
         if not response.tool_calls:
             result.answer = response.text
@@ -157,6 +180,12 @@ async def _complete(agent_id: str, provider: LLMProvider, request: LLMRequest,
             response = await asyncio.to_thread(provider.complete, request)
         except LLMError as e:
             log.event(agent_id, "llm_call_ended", {"error": e.kind, "message": str(e)[:500]})
+            if MALFORMED_TOOL_CALL in str(e):
+                # Le serveur n'a pas pu lire l'appel d'outil produit par le modèle : renvoyer la même requête
+                # redonne souvent le même charabia. On rend une réponse vide, que la boucle relance avec une
+                # consigne (comme une réponse vide du modèle).
+                return LLMResponse(text="", tool_calls=[], stop_reason="end",
+                                   provider_raw={"malformed_tool_call": str(e)[:500]})
             if e.kind == "retryable" and attempt < 2:
                 await asyncio.sleep(2 ** (attempt + 1))
                 continue
@@ -198,6 +227,24 @@ async def _call_tool(agent_id: str, call: Any, ref: str, hub: ToolHub, log: RunL
         content = content[:MAX_TOOL_RESULT_CHARS] + f"\n[… résultat tronqué, complet dans {ref}]"
     prefix = "ERREUR D'OUTIL : " if is_error else ""
     return f"[query_ref: {ref}]\n{prefix}{content}", not is_error
+
+
+def _looks_like_tool_call(text: str, tools: list[ToolSpec]) -> bool:
+    """Le texte n'est qu'un objet JSON qui contient les paramètres obligatoires d'un des outils offerts."""
+    stripped = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return False
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    for t in tools:
+        required = set((t.parameters or {}).get("required", []))
+        if required and required <= set(data):
+            return True
+    return False
 
 
 def _maybe_json(text: str) -> Any:
