@@ -4,8 +4,12 @@ on:
   push:
     branches: [main]
     paths: ["poc/**", ".github/workflows/poc.yml"]
+  # Toutes les PR passent les tests, même sans changement dans poc/ : le merge automatique en dépend.
   pull_request:
-    paths: ["poc/**", ".github/workflows/poc.yml"]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
 
 jobs:
   tests:
@@ -20,3 +24,22 @@ jobs:
           python-version: "3.12"
       - run: pip install -e '.[dev,claude]'
       - run: python -m pytest -q
+
+  # Merge automatique dès que les tests passent : PR vers main, ouverte depuis ce dépôt, hors brouillon.
+  # Pour retenir une PR (relecture, travail en cours), l'ouvrir ou la repasser en brouillon (draft).
+  merge:
+    needs: tests
+    if: >-
+      github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - run: gh pr merge "$PR" --repo "$REPO" --merge --delete-branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
