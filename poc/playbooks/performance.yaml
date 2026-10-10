@@ -1,5 +1,5 @@
 id: performance
-version: 2
+version: 3
 status: active
 description: >
   Un composant ou un service répond, mais lentement : temps de réponse élevés, stockage ou base lents.
@@ -33,10 +33,13 @@ steps:
   - name: confirmation
     parallel:
       - {role: metrics, objective: "métriques des dépendances suspectes (connexions, saturation) vs veille"}
+  - name: remediation
+    parallel:
+      - {role: web, objective: "le goulot est-il un problème connu du logiciel et de la version en cause ? réglages recommandés de l'application et du système"}
 stop_when:
   - "le goulot et le début de la dégradation sont établis, et une cause est confirmée par deux sources indépendantes"
   - "rien de nouveau après une vague d'investigations"
 requalify:
   indisponibilite: "le service ne répond plus du tout ou renvoie des erreurs à tous les utilisateurs"
-output: [synthese, goulot, chronologie, cause_probable, actions]
+output: [synthese, goulot, chronologie, cause_probable, pistes_remediation, actions]
 owner: équipe exploitation applicative

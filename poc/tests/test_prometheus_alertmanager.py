@@ -27,7 +27,13 @@ class FakeMonitoring(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()}
-        if url.path.startswith("/api/v1/"):
+        if url.path == "/api/v1/rules":
+            body = {"status": "success", "data": {"groups": [{"name": "homelab", "file": "/etc/prometheus/rules.yml",
+                    "rules": [{"name": "DiskAlmostFull", "query": "disk_used_pct > 90", "duration": 600,
+                               "labels": {"severity": "warning"}, "annotations": {"summary": "Disque plein"},
+                               "state": "firing", "alerts": [{"labels": NODE, "state": "firing"}]},
+                              {"name": "Other", "query": "up == 0", "duration": 0, "alerts": []}]}]}}
+        elif url.path.startswith("/api/v1/"):
             FakeMonitoring.queries.append(q["query"])
             body = {"status": "success", "data": self.prometheus(url.path, q)}
         elif url.path == "/api/v2/alerts":
@@ -158,6 +164,12 @@ def test_alerts_silences_and_history(home_monitoring):
     assert [s["id"] for s in _call("list_silences", {})["silences"]] == ["s1"]
     history = _call("alert_history", {"host": "nas.maison"})
     assert len(history["alerts"][0]["intervals"]) == 1
+
+
+def test_alert_rule_shows_expression_threshold_and_firing_hosts(home_monitoring):
+    rule = _call("alert_rule", {"alertname": "DiskAlmostFull"})["rules"][0]
+    assert rule["expr"] == "disk_used_pct > 90" and rule["for_s"] == 600
+    assert rule["firing_now"] == ["nas.maison"] and rule["file"] == "/etc/prometheus/rules.yml"
 
 
 def test_resolve_entity_finds_monitored_host_without_cmdb(home_monitoring):

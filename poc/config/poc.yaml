@@ -9,9 +9,10 @@ mcp_servers:
   mcp-metrics: {module: diagagent.mcp_servers.metrics_server}
   mcp-alerts:  {module: diagagent.mcp_servers.alerts_server, requires_env: [ALERTMANAGER_URL]}
   mcp-system:  {module: diagagent.mcp_servers.system_server, requires_env: [SSH_HOSTS]}
+  mcp-web:     {module: diagagent.mcp_servers.web_server, requires_env: [WEB_SEARCH]}
 
 budgets:
-  lead: {max_tool_calls: 25, max_turns: 30}   # budgets des sous-agents : agents/<rôle>.yaml
+  lead: {max_tool_calls: 32, max_turns: 38}   # budgets des sous-agents : agents/<rôle>.yaml
 
 orchestration:
   max_parallel: 6       # sous-agents simultanés

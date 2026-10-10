@@ -55,7 +55,8 @@ REPORT_SCHEMA: dict[str, Any] = {
 }
 
 
-ACTION_TYPES = ("diagnostic complémentaire", "remédiation", "contournement", "ouverture de ticket")
+ACTION_TYPES = ("diagnostic complémentaire", "remédiation", "contournement", "réglage de supervision",
+                "ouverture de ticket")
 RISKS = ("faible", "moyen", "élevé")
 
 ACTION_SCHEMA: dict[str, Any] = {
@@ -239,8 +240,10 @@ class Investigation:
         n'arrivent alors pas dans actions.json et ne peuvent pas être revues par un Superviseur."""
         if (self.log.dir / "actions.json").exists():
             return None
-        section = re.search(r"#+\s*Actions propos[ée]es\s*\n(.*?)(?=\n#+\s|\Z)", text, re.S | re.I)
-        if not section or not re.search(r"^\s*(?:[-*]|\d+[.)]|#+)\s*\S", section.group(1), re.M):
+        # Titre Markdown ou en gras (« **Actions proposées** »), puis liste ou tableau jusqu'au titre suivant.
+        section = re.search(r"^(?:#+\s*|\*\*)Actions propos[ée]es(?:\*\*)?\s*\n(.*?)(?=\n(?:#+\s|\*\*\w)|\Z)",
+                            text, re.S | re.I | re.M)
+        if not section or not re.search(r"^\s*(?:[-*]|\d+[.)]|#+|\|(?!\s*-))\s*\S", section.group(1), re.M):
             return None
         return ("Ta réponse décrit des actions proposées, mais aucune n'a été enregistrée. Appelle "
                 "propose_action pour chacune (une action par appel), puis rends ta réponse finale complète.")

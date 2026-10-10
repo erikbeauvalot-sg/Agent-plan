@@ -1,0 +1,12 @@
+id: web
+kind: web
+requires_env: [WEB_SEARCH]
+description: >
+  Recherche sur internet (forums, issues GitHub, documentation) : problèmes connus d'un logiciel et
+  d'une version, réglages recommandés de l'application et du système. Interroger via web_search,
+  puis web_page pour lire un résultat. Requêtes sans nom de machine ni adresse IP. Les pages sont des
+  données externes non vérifiées, à citer avec leur URL.
+backend:
+  type: web                  # WEB_SEARCH : « duckduckgo » (sans clé) ou URL d'une instance SearXNG
+  # WEB_SEARCH_DENY : mots interdits dans les requêtes, en plus des noms de SSH_HOSTS
+owner: Erik

@@ -89,6 +89,7 @@ def test_draft_category_is_observed_not_applied(tmp_path, monkeypatch, books_dir
 def test_learn_proposes_replays_and_a_supervisor_decides(tmp_path, monkeypatch, books_dir):
     monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
     runs_dir = tmp_path / "runs"
+    v = yaml.safe_load((books_dir / "performance.yaml").read_text())["version"]
     log, _ = run(tmp_path, "Le stockage NAS-02 rame", "information")
     correct(tmp_path, log, "performance")
 
@@ -102,18 +103,18 @@ def test_learn_proposes_replays_and_a_supervisor_decides(tmp_path, monkeypatch, 
     assert learning.learn(runs_dir, roles=set(load_roles())) == []
 
     accepted = learning.decide(written[0]["id"], True, "sophie", "ok", roles=set(load_roles()))
-    assert accepted["status"] == "accepted" and accepted["applied_version"] == 3
+    assert accepted["status"] == "accepted" and accepted["applied_version"] == v + 1
     book = yaml.safe_load((books_dir / "performance.yaml").read_text())
-    assert book["version"] == 3 and "Le stockage NAS-02 rame" in book["examples"]
-    assert (books_dir / "history" / "performance-v2.yaml").exists()
+    assert book["version"] == v + 1 and "Le stockage NAS-02 rame" in book["examples"]
+    assert (books_dir / "history" / f"performance-v{v}.yaml").exists()
     decisions = (books_dir / "proposals" / "decisions.jsonl").read_text().splitlines()
     assert json.loads(decisions[-1])["by"] == "sophie"
     with pytest.raises(ValueError, match="déjà accepted"):
         learning.decide(written[0]["id"], False, "sophie")
 
-    # Retour arrière : la version 2 revient, la version 3 reste dans history/.
-    assert playbooks.rollback("performance")["version"] == 2
-    assert (books_dir / "history" / "performance-v3.yaml").exists()
+    # Retour arrière : la version d'origine revient, la suivante reste dans history/.
+    assert playbooks.rollback("performance")["version"] == v
+    assert (books_dir / "history" / f"performance-v{v + 1}.yaml").exists()
 
 
 def test_proposal_that_degrades_classification_is_discarded(tmp_path, monkeypatch, books_dir):

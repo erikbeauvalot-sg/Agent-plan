@@ -106,6 +106,10 @@ def sources_status() -> dict[str, Any]:
         hosts = sorted(SshProbe(ssh_card).hosts)
         items.append({"set": "maison", "name": "SSH", "ok": bool(hosts), "configured": True,
                       "detail": f"{len(hosts)} machine(s) : {', '.join(hosts)}"})
+    engine = os.environ.get("WEB_SEARCH", "").strip()
+    items.append({"set": "maison", "name": "Recherche web", "ok": bool(engine), "configured": bool(engine),
+                  "detail": ("SearXNG" if engine.startswith("http") else engine) if engine
+                  else "non configuré (WEB_SEARCH)"})
     alerts.sort(key=lambda a: (a.get("severity") != "critical", a.get("starts_at") or ""))
     return {"sources": items, "alerts": [{k: a.get(k) for k in ("alertname", "host", "severity", "starts_at", "summary")}
                                          for a in alerts[:10]]}

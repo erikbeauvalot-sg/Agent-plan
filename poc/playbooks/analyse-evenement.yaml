@@ -1,5 +1,5 @@
 id: analyse-evenement
-version: 3
+version: 4
 status: active
 description: >
   Analyse d'un ticket d'incident ou d'une alerte existant : ce qui s'est passé, dans quel ordre, et
@@ -13,6 +13,10 @@ required_entities:
 hypotheses:
   - id: change-recent
     signal: "change terminé sur un CI touché ou une de ses dépendances peu avant l'heure de début"
+  - id: alerte-sans-impact
+    signal: "l'alerte mesure un niveau (swap, remplissage) sans impact mesuré : ni pression mémoire, ni erreur, ni lenteur"
+  - id: probleme-connu
+    signal: "comportement documenté du logiciel et de sa version (forum, issue), avec un réglage connu"
   - id: deja-vu
     signal: "incident passé similaire sur les mêmes CI, avec une cause connue"
 steps:
@@ -29,8 +33,12 @@ steps:
       - {role: metrics, objective: "ruptures de métriques sur les CI touchés et leurs dépendances autour de l'heure de début"}
       - {role: system,  objective: "état en direct des CI touchés : processus et conteneurs qui occupent la RAM et le swap, OOM récents"}
       - {role: generic, objective: "incidents similaires passés sur les mêmes CI", sources: [incidents]}
+  - name: remediation
+    parallel:
+      - {role: web,    objective: "le symptôme est-il un problème connu du logiciel et de la version en cause ? cause selon les sources, réglages recommandés de l'application et du système"}
+      - {role: events, objective: "règle de l'alerte (expression, seuil, durée), fréquence de déclenchement et impact réel : l'alerte mérite-t-elle d'être remontée telle quelle ?"}
 stop_when:
-  - "la chronologie est établie et une cause probable est étayée"
+  - "la chronologie est établie, une cause probable est étayée et les pistes de remédiation sont examinées"
 requalify: {}
-output: [synthese, chronologie, cause_probable, cas_similaires, actions]
+output: [synthese, chronologie, cause_probable, cas_similaires, pistes_remediation, actions]
 owner: équipe exploitation applicative

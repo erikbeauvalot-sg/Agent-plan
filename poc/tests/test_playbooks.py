@@ -64,11 +64,12 @@ def test_playbook_guides_the_lead_and_is_traced(tmp_path, monkeypatch):
     # Le classifieur voit les catégories et leurs exemples ; l'agent principal reçoit le playbook.
     assert "## indisponibilite" in clf.requests[0].system and "Le stockage est lent" in clf.requests[0].system
     system = lead.requests[0].system
-    assert "### Playbook performance (version 2)" in system and "[changes]" in system
+    version = playbooks.load_playbooks()["performance"]["version"]
+    assert f"### Playbook performance (version {version})" in system and "[changes]" in system
     assert "Entités repérées : service = paiement" in system
     manifest = json.loads((log.dir / "manifest.json").read_text())
     assert manifest["category"] == {"id": "performance", "confidence": "high", "source": "classifier",
-                                    "mode": "playbook", "playbooks": {"performance": 2},
+                                    "mode": "playbook", "playbooks": {"performance": version},
                                     "entities": {"service": "paiement"}}
     index = json.loads((tmp_path / "runs" / "index.jsonl").read_text().splitlines()[-1])
     assert index["category"] == "performance"

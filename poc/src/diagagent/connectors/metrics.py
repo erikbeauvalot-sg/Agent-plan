@@ -52,7 +52,7 @@ class PrometheusMetrics:
         self.token_env = card["backend"].get("bearer_token_env")
         self.host_label = card["backend"].get("host_label", "instance")
 
-    def _get(self, path: str, params: dict[str, Any]) -> Any:
+    def get(self, path: str, params: dict[str, Any]) -> Any:
         data = get_json(self.url, path, params, self.token_env)
         if data.get("status") != "success":
             raise ValueError(f"Prometheus : {data.get('errorType')} {data.get('error')}")
@@ -64,10 +64,10 @@ class PrometheusMetrics:
         return f'{self.host_label}=~"{escaped}(:[0-9]+)?"'
 
     def instant(self, promql: str) -> list[dict[str, Any]]:
-        return self._get("/api/v1/query", {"query": promql, "time": catalog.now().timestamp()})["result"]
+        return self.get("/api/v1/query", {"query": promql, "time": catalog.now().timestamp()})["result"]
 
     def range(self, promql: str, start: datetime, end: datetime, step_s: int) -> list[dict[str, Any]]:
-        data = self._get("/api/v1/query_range", {"query": promql, "start": start.timestamp(),
+        data = self.get("/api/v1/query_range", {"query": promql, "start": start.timestamp(),
                                                  "end": end.timestamp(), "step": step_s})
         return data["result"]
 

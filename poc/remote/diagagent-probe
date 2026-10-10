@@ -24,7 +24,7 @@ case $probe in
     echo "### ps"; ps -eo pid=,user:32=,rss=,etimes=,args= | cut -c1-400
     echo "### swap"; grep -H '^VmSwap:' /proc/[0-9]*/status 2>/dev/null
     echo "### cgroup"; grep -H '^0::' /proc/[0-9]*/cgroup 2>/dev/null
-    echo "### docker"; docker ps --no-trunc --format '{{.ID}} {{.Names}}' 2>/dev/null
+    echo "### docker"; docker ps -q --no-trunc 2>/dev/null | xargs -r docker inspect --format '{{.Id}} {{.Name}} {{.Config.Image}} {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null
     ;;
   containers)
     echo "### cgroups"
@@ -34,7 +34,7 @@ case $probe in
       id=$(basename "$d" .scope); id=${id#docker-}
       echo "$id $(cat "$d/memory.current") $(cat "$d/memory.swap.current" 2>/dev/null || echo -) $(cat "$d/memory.peak" 2>/dev/null || echo -) $(cat "$d/memory.max" 2>/dev/null || echo -)"
     done
-    echo "### docker"; docker ps --no-trunc --format '{{.ID}} {{.Names}}' 2>/dev/null
+    echo "### docker"; docker ps -q --no-trunc 2>/dev/null | xargs -r docker inspect --format '{{.Id}} {{.Name}} {{.Config.Image}} {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null
     ;;
   oom)
     echo "### oom"

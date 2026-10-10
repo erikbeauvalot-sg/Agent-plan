@@ -70,6 +70,28 @@ def alert_history(host: str | None = None, alertname: str | None = None, time_fr
             "total": len(out), "alerts": out[:100]}
 
 
+@read_only_tool(server)
+def alert_rule(alertname: str) -> dict[str, Any]:
+    """Règle Prometheus d'une alerte : expression, seuil, durée (for), sévérité, fichier de règles.
+    Sert à juger si l'alerte mesure un vrai impact ou un simple niveau, et à proposer un réglage.
+    """
+    prom = metrics_mod.prometheus()
+    if prom is None:
+        raise ValueError("Règles indisponibles : aucune source Prometheus configurée (PROMETHEUS_URL)")
+    found = []
+    for group in prom.get("/api/v1/rules", {"type": "alert"})["groups"]:
+        for rule in group["rules"]:
+            if rule.get("name") == alertname:
+                found.append({"expr": rule.get("query"), "for_s": rule.get("duration"),
+                              "labels": rule.get("labels", {}), "annotations": rule.get("annotations", {}),
+                              "state": rule.get("state"), "group": group.get("name"), "file": group.get("file"),
+                              "firing_now": [metrics_mod.host_of(a.get("labels", {}))
+                                             for a in rule.get("alerts", []) if a.get("state") == "firing"]})
+    if not found:
+        raise ValueError(f"Aucune règle d'alerte nommée {alertname} dans Prometheus")
+    return {"source": prom.source_id, "alertname": alertname, "rules": found}
+
+
 def _intervals(points: list[Any], step: int) -> list[dict[str, str]]:
     """Regroupe les points consécutifs (écart <= 2 pas) en intervalles de déclenchement."""
     intervals: list[dict[str, Any]] = []

@@ -8,3 +8,7 @@ system: |
   (avec leurs intervalles), et les silences qui pourraient masquer un symptôme. Tu dates le premier
   symptôme visible. Selon les sources, les alertes sont dans Alertmanager (list_alerts, alert_history)
   ou dans la source events (search).
+  Pour une alerte Prometheus, lis sa règle avec alert_rule (expression, seuil, durée) et dis ce qu'elle
+  mesure vraiment : un impact (service lent, erreurs, mémoire qui manque maintenant) ou un simple
+  niveau (taux de remplissage). Précise depuis quand elle est active et si elle se déclenche souvent
+  (alert_history) : une alerte permanente sans impact est un candidat au réglage.

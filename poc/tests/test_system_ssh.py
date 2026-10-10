@@ -45,13 +45,13 @@ full avg10=0.00 avg60=0.01 avg300=0.00 total=45
 /proc/812/cgroup:0::/system.slice/docker-{CID}.scope
 /proc/950/cgroup:0::/system.slice/docker-{"b" * 64}.scope
 ### docker
-{CID} nextcloud-app
+{CID} /nextcloud-app nextcloud:latest 30.0.1
 """,
     "containers": f"""### cgroups
 {CID} 1073741824 104857600 1610612736 max
 {"b" * 64} 209715200 314572800 - 536870912
 ### docker
-{CID} nextcloud-app
+{CID} /nextcloud-app nextcloud:latest 30.0.1
 """,
     "oom": """### oom
 2026-10-06T03:17:02+0200 xdocker kernel: Out of memory: Killed process 4242 (php-fpm)
@@ -121,7 +121,8 @@ def test_top_processes_by_swap_with_containers(fake_ssh):
 
 def test_container_memory_and_oom(fake_ssh):
     containers = _ok("container_memory", {"host": "xdocker"})["containers"]
-    assert containers[0] == {"container": "nextcloud-app", "id": "a" * 12, "mem_mb": 1024.0,
+    assert containers[0] == {"container": "nextcloud-app", "id": "a" * 12, "image": "nextcloud:latest",
+                             "version": "30.0.1", "mem_mb": 1024.0,
                              "swap_mb": 100.0, "peak_mb": 1536.0, "limit_mb": None}
     assert containers[1]["peak_mb"] is None and containers[1]["limit_mb"] == 512.0
     events = _ok("oom_events", {"host": "xdocker"})
