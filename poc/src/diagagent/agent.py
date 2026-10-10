@@ -15,8 +15,8 @@ from .runlog import RunLog
 from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
-MAX_EMPTY_RETRIES = 2
-MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible  # réponses vides relancées avant d'abandonner
+MAX_EMPTY_RETRIES = 2  # réponses vides consécutives relancées avant d'abandonner
+MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible
 TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
                    "l'outil, ou rends ta réponse finale en Markdown.")
 EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
@@ -141,6 +141,8 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         if cancel.cancelled:
             result.status = "stopped"
             break
+        # La limite de relances porte sur les ratés consécutifs : un raté isolé, rattrapé, ne compte plus.
+        empty_retries = 0
         refs = [log.reserve_call(agent_id) for _ in response.tool_calls]
         results = await asyncio.gather(*(_call_tool(agent_id, c, ref, hub, log, local_tools)
                                          for c, ref in zip(response.tool_calls, refs)))
