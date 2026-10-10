@@ -67,6 +67,7 @@ async function boot() {
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
   $("cat-select").innerHTML = options;
+  $("ask-category").innerHTML = '<option value="">automatique</option>' + options;
   await loadChoices();
   route();
 }
@@ -299,11 +300,48 @@ $("ask-form").addEventListener("submit", async (e) => {
   btn.disabled = true; $("ask-error").hidden = true;
   try {
     await startRun({ question: form.question.value, models: form.models.value || null,
-                     sources: form.sources.value || null });
+                     sources: form.sources.value || null, category: form.category.value || null,
+                     rerun_of: rerunOf });
     form.question.value = "";
+    clearRerun();
   } catch (err) { $("ask-error").textContent = err.message; $("ask-error").hidden = false; }
   finally { btn.disabled = false; }
 });
+
+// « Relancer… » : nouvelle demande préremplie avec la question et les choix de l'investigation d'origine
+// (modèle, données, catégorie imposée ou corrigée), lancée seulement quand l'utilisateur valide.
+let rerunOf = null;
+
+function prepareRerun(manifest) {
+  const form = $("ask-form"), c = manifest.category || {};
+  form.question.value = manifest.question;
+  const pick = (id, value) => {
+    const ok = [...$(id).options].some((o) => o.value === value && !o.disabled);
+    if (ok) $(id).value = value;
+    return ok || !value;
+  };
+  const kept = [pick("ask-models", manifest.models_profile || ""),
+                pick("ask-sources", (manifest.sources || []).join(",")),
+                pick("ask-category", c.correction?.category || (["user", "requalify"].includes(c.source) ? c.id : ""))];
+  rerunOf = manifest.run_id;
+  $("ask-rerun-link").textContent = manifest.run_id;
+  $("ask-rerun-link").href = `#${manifest.run_id}`;
+  $("ask-rerun").hidden = false;
+  $("ask-error").hidden = kept.every(Boolean);
+  $("ask-error").textContent = "Un choix d'origine n'est plus disponible : l'option par défaut est sélectionnée.";
+  renderHint();
+  location.hash = "";
+  form.question.focus();
+  window.scrollTo(0, 0);
+}
+
+function clearRerun() {
+  rerunOf = null;
+  $("ask-rerun").hidden = true;
+  $("ask-category").value = "";
+}
+
+$("ask-rerun-cancel").addEventListener("click", () => { clearRerun(); $("ask-form").question.value = ""; });
 
 async function startRun(body) {
   const { run_id } = await api("/api/runs", { method: "POST", body: JSON.stringify(body) });
@@ -332,6 +370,12 @@ async function openRun(runId) {
   $("run-meta").textContent = `${fmtDate(started)} · ${data.manifest.user} · ${runId}`
     + (sourcesLabel ? ` · données ${sourcesLabel}` : "")
     + (shifted ? ` · heure de référence ${fmtDate(ref)}` : "");
+  if (data.manifest.rerun_of) {
+    const link = document.createElement("a");
+    link.href = `#${data.manifest.rerun_of}`;
+    link.textContent = data.manifest.rerun_of;
+    $("run-meta").append(" · relance de ", link);
+  }
   renderSummary(data);
   const source = new EventSource(`/api/runs/${runId}/events`);
   current.source = source;
@@ -365,6 +409,8 @@ function renderSummary(data) {
   $("run-status").textContent = statusLabel(data.manifest.status);
   $("run-status").className = `pill ${data.manifest.status}`;
   $("stop-run").hidden = !data.can_stop;
+  $("rerun-run").hidden = !me.permissions.includes("ask");
+  $("rerun-run").onclick = () => prepareRerun(data.manifest);
   $("answer").innerHTML = data.analysis ? md(data.analysis) : "L'analyse s'affichera ici à la fin de l'investigation.";
   $("answer").classList.toggle("muted", !data.analysis);
   renderActions(data.actions || [], ENDED.includes(data.manifest.status));
@@ -515,7 +561,7 @@ $("cat-rerun").addEventListener("click", async () => {
   try {
     await api(`/api/runs/${current.runId}/category`, { method: "POST", body: JSON.stringify({ category }) });
     await startRun({ question: $("run-question").textContent, category, models: current.modelsProfile,
-                     sources: current.sources });
+                     sources: current.sources, rerun_of: current.runId });
   } catch (err) { alert(err.message); }
 });
 $("precision-form").addEventListener("submit", async (e) => {
@@ -524,7 +570,7 @@ $("precision-form").addEventListener("submit", async (e) => {
   try {
     // La relance garde les modèles et les sources de l'investigation d'origine.
     await startRun({ question: `${$("run-question").textContent}\nPrécision : ${precision}`,
-                     models: current.modelsProfile, sources: current.sources });
+                     models: current.modelsProfile, sources: current.sources, rerun_of: current.runId });
     e.target.reset();
   } catch (err) { alert(err.message); }
 });

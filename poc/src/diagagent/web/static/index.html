@@ -33,10 +33,15 @@
     <main id="main" class="main">
       <div id="home">
         <form id="ask-form" class="card ask">
+          <p id="ask-rerun" class="rerun-note" hidden>
+            Relance de <a id="ask-rerun-link"></a> : modifie la question ou les options, puis lance.
+            <button type="button" id="ask-rerun-cancel" class="link">Annuler la relance</button>
+          </p>
           <textarea name="question" rows="3" placeholder="Pose une question sur la production…" required></textarea>
           <div class="ask-row">
             <label>Modèle <select name="models" id="ask-models"></select></label>
             <label>Données <select name="sources" id="ask-sources"></select></label>
+            <label>Catégorie <select name="category" id="ask-category"></select></label>
             <button type="submit" class="primary">Lancer l'investigation</button>
           </div>
           <p id="ask-hint" class="muted hint"></p>
@@ -125,6 +130,7 @@
             <span id="run-shared" class="pill" hidden>partagée</span>
             <span id="run-status" class="pill"></span>
             <button id="share-run" hidden></button>
+            <button id="rerun-run" hidden title="Nouvelle demande préremplie, à lancer après avoir changé les options">Relancer…</button>
             <button id="stop-run" class="danger" hidden>Arrêter l'investigation</button>
           </div>
         </header>

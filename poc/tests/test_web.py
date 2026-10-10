@@ -330,3 +330,21 @@ def test_role_matrix_sharing_action_review_costs_and_access_log(env, tmp_path):
     assert sophie.get("/api/access-log").status_code == 403
     log = audrey.get("/api/access-log").json()
     assert {"share", "action_decision"} <= {e["action"] for e in log}
+
+
+def test_rerun_keeps_a_link_to_the_original_run(env):
+    app, script = env
+    alice = client(app, "alice")
+    script["lead"] = ScriptedProvider([answer("## Synthèse\nok"), answer("## Synthèse\nok")])
+    first = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H).json()["run_id"]
+    wait_status(alice, first)
+    # Relance avec d'autres options : nouvelle investigation, liée à l'originale.
+    second = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "category": "information",
+                                           "models": "openai", "rerun_of": first}, headers=H).json()["run_id"]
+    manifest = wait_status(alice, second)["manifest"]
+    assert second != first and manifest["rerun_of"] == first
+    assert manifest["models_profile"] == "openai" and manifest["category"]["source"] == "user"
+    assert "rerun_of" not in wait_status(alice, first)["manifest"]
+    for bad in ("20990101T000000Z-0000", "../../etc"):
+        assert alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "rerun_of": bad},
+                          headers=H).status_code == 400

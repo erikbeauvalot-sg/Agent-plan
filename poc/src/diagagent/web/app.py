@@ -53,7 +53,7 @@ class RunManager:
     live: dict[str, LiveRun] = field(default_factory=dict)
 
     async def start(self, question: str, user: User, category: str | None = None,
-                    models: str | None = None, sources: str | None = None) -> str:
+                    models: str | None = None, sources: str | None = None, rerun_of: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -69,7 +69,7 @@ class RunManager:
         async def go() -> None:
             try:
                 await ask(question, providers=self.providers(models), user=user.login, on_started=on_started,
-                          category=category, sources=sources)
+                          category=category, sources=sources, rerun_of=rerun_of)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
                     started.set_exception(e)
@@ -94,6 +94,7 @@ class AskBody(BaseModel):
     category: str | None = None
     models: str | None = None  # profil de config/models.yaml ; défaut : celui du fichier
     sources: str | None = None  # demo, maison ou demo,maison ; défaut : DIAGAGENT_SOURCES, sinon les deux
+    rerun_of: str | None = None  # investigation relancée, que l'utilisateur peut voir
 
 
 class CategoryBody(BaseModel):
@@ -236,12 +237,18 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
             raise HTTPException(400, f"Profil de modèles inconnu : {body.models}")
         if body.sources and body.sources not in [c["value"] for c in source_choices()["choices"] if c["available"]]:
             raise HTTPException(400, f"Jeu de sources inconnu ou non configuré : {body.sources}")
+        if body.rerun_of:
+            try:
+                load_run(user, body.rerun_of)
+            except HTTPException:
+                raise HTTPException(400, f"Investigation d'origine inconnue : {body.rerun_of}") from None
         try:
-            run_id = await manager.start(body.question.strip(), user, body.category, body.models, body.sources)
+            run_id = await manager.start(body.question.strip(), user, body.category, body.models, body.sources,
+                                         body.rerun_of)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
         audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models,
-                            "sources": body.sources})
+                            "sources": body.sources, **({"rerun_of": body.rerun_of} if body.rerun_of else {})})
         return {"run_id": run_id}
 
     def source_choices() -> dict[str, Any]:
