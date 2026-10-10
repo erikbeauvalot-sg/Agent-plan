@@ -233,7 +233,7 @@ async function openAdmin() {
   if (can("view_costs")) {
     const c = await api("/api/costs");
     $("costs").innerHTML = `<p class="muted">Total : ${c.total.runs} investigation(s) · ${c.total.input_tokens} tokens en entrée ·
-      ${c.total.output_tokens} en sortie</p><table><thead><tr><th>Jour</th><th>Utilisateur</th><th>Modèle</th><th>Investigations</th>
+      ${c.total.output_tokens} en sortie${reasoningNote(c.total.reasoning_tokens)}</p><table><thead><tr><th>Jour</th><th>Utilisateur</th><th>Modèle</th><th>Investigations</th>
       <th>Tokens entrée</th><th>Tokens sortie</th></tr></thead><tbody>${c.rows.map((r) => `<tr><td>${esc(r.day)}</td><td>${esc(r.user)}</td>
       <td>${esc(r.model)}</td><td>${r.runs}</td><td>${r.input_tokens}</td><td>${r.output_tokens}</td></tr>`).join("")}</tbody></table>`;
   }
@@ -452,8 +452,12 @@ function apply(e) {
 function addUsage(target, usage) {
   target.tokensIn = (target.tokensIn || 0) + (usage.input_tokens || 0);
   target.tokensOut = (target.tokensOut || 0) + (usage.output_tokens || 0);
+  target.tokensReasoning = (target.tokensReasoning || 0) + (usage.reasoning_tokens || 0);
   target.tokens = target.tokensIn + target.tokensOut;
 }
+
+// Le raisonnement est inclus dans la sortie : on le précise seulement quand le fournisseur le compte.
+const reasoningNote = (n) => (n ? `, dont ${n.toLocaleString("fr-FR")} de raisonnement` : "");
 
 const fmtTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)} k` : String(n || 0));
 
@@ -467,11 +471,13 @@ function renderLlm() {
   const agents = Object.values(current.agents);
   const live = [...agents, current.classifier || {}];
   const tin = live.reduce((s, a) => s + (a.tokensIn || 0), 0), tout = live.reduce((s, a) => s + (a.tokensOut || 0), 0);
-  const usage = current.ended && current.usage ? current.usage : { input_tokens: tin, output_tokens: tout };
+  const treas = live.reduce((s, a) => s + (a.tokensReasoning || 0), 0);
+  const usage = current.ended && current.usage ? current.usage
+    : { input_tokens: tin, output_tokens: tout, reasoning_tokens: treas };
   const total = (usage.input_tokens || 0) + (usage.output_tokens || 0);
   $("run-llm").textContent = (roles.length ? `LLM : ${roles.join(" · ")} — ` : "")
     + `${total.toLocaleString("fr-FR")} tokens (${(usage.input_tokens || 0).toLocaleString("fr-FR")} en entrée, `
-    + `${(usage.output_tokens || 0).toLocaleString("fr-FR")} en sortie)`;
+    + `${(usage.output_tokens || 0).toLocaleString("fr-FR")} en sortie${reasoningNote(usage.reasoning_tokens)})`;
 }
 
 function signals(a, now) {
@@ -571,7 +577,7 @@ async function openAgent(agentId, focusRef) {
   const report = d.report ? `<section><h2>Rapport</h2><pre>${esc(JSON.stringify(d.report, null, 2))}</pre></section>` : "";
   const prompt = d.prompt || d.system_prompt;
   const usage = a ? `<p class="muted">${a.llm ? esc(a.llm) + " · " : ""}${(a.tokensIn || 0).toLocaleString("fr-FR")} tokens en entrée,
-    ${(a.tokensOut || 0).toLocaleString("fr-FR")} en sortie</p>` : "";
+    ${(a.tokensOut || 0).toLocaleString("fr-FR")} en sortie${reasoningNote(a.tokensReasoning)}</p>` : "";
   $("d-body").innerHTML = `
     ${usage}
     ${prompt ? `<section><h2>${d.prompt ? "Prompt reçu" : "Prompt système"}</h2><div class="md">${md(prompt)}</div></section>` : ""}

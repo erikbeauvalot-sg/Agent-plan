@@ -15,7 +15,8 @@ class FakeCompletions:
         raw = SimpleNamespace(
             choices=[SimpleNamespace(finish_reason="tool_calls",
                                      message=SimpleNamespace(content=None, tool_calls=[call]))],
-            usage=SimpleNamespace(prompt_tokens=120, completion_tokens=15), model="gpt-5.6-luna", id="req-1",
+            usage=SimpleNamespace(prompt_tokens=120, completion_tokens=15,
+                                  completion_tokens_details=SimpleNamespace(reasoning_tokens=9)), model="gpt-5.6-luna", id="req-1",
             model_dump=lambda mode: {"id": "req-1"})
         return raw
 
@@ -41,3 +42,4 @@ def test_pivot_request_and_response_translation():
     assert resp.stop_reason == "tool_call"
     assert resp.tool_calls[0].arguments == {"id_or_hostname": "srv-pay-01"}
     assert resp.usage.input_tokens == 120
+    assert resp.usage.output_tokens == 15 and resp.usage.reasoning_tokens == 9

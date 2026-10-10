@@ -148,6 +148,6 @@ def test_models_and_tokens_are_recorded_per_role_and_agent(tmp_path, monkeypatch
     assert m["models"]["lead"] == {"provider": "scripted", "model": "mini"}
     assert m["models"]["classifier"] == {"provider": "scripted", "model": "nano"}
     assert m["usage_by_agent"] == {
-        "classifier": {"input_tokens": 100, "output_tokens": 10, "calls": 1, "model": "nano-1"},
-        "lead": {"input_tokens": 1000, "output_tokens": 50, "calls": 1, "model": "mini-1"}}
-    assert m["usage"] == {"input_tokens": 1100, "output_tokens": 60}
+        "classifier": {"input_tokens": 100, "output_tokens": 10, "reasoning_tokens": 0, "calls": 1, "model": "nano-1"},
+        "lead": {"input_tokens": 1000, "output_tokens": 50, "reasoning_tokens": 0, "calls": 1, "model": "mini-1"}}
+    assert m["usage"] == {"input_tokens": 1100, "output_tokens": 60, "reasoning_tokens": 0}

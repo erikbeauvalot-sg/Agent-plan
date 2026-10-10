@@ -448,12 +448,12 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
             lead = (manifest.get("models") or {}).get("lead") or {}
             key = (r["started_at"][:10], r.get("user") or "?", f"{lead.get('provider', '?')}/{lead.get('model', '?')}")
             row = rows.setdefault(key, {"day": key[0], "user": key[1], "model": key[2], "runs": 0,
-                                        "input_tokens": 0, "output_tokens": 0})
+                                        "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0})
             row["runs"] += 1
-            for k in ("input_tokens", "output_tokens"):
+            for k in ("input_tokens", "output_tokens", "reasoning_tokens"):
                 row[k] += (r.get("usage") or {}).get(k, 0)
         out = sorted(rows.values(), key=lambda x: (x["day"], x["user"]), reverse=True)
-        return {"rows": out, "total": {k: sum(x[k] for x in out) for k in ("runs", "input_tokens", "output_tokens")}}
+        return {"rows": out, "total": {k: sum(x[k] for x in out) for k in ("runs", "input_tokens", "output_tokens", "reasoning_tokens")}}
 
     @app.get("/api/access-log")
     def access_log(limit: int = 200, user: User = Depends(current_user)) -> list[dict[str, Any]]:

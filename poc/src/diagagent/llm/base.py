@@ -47,6 +47,7 @@ class LLMRequest:
 class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
+    reasoning_tokens: int = 0  # part de output_tokens consacrée au raisonnement, quand le fournisseur la donne
 
 
 @dataclass
