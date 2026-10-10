@@ -16,6 +16,11 @@ metrics:
   cpu.usage: {promql: '100 * (1 - avg(rate(node_cpu_seconds_total{{mode="idle",{sel}}}[5m])))'}
   load.1m: {promql: 'max(node_load1{{{sel}}})'}
   mem.used_pct: {promql: '100 * (1 - sum(node_memory_MemAvailable_bytes{{{sel}}}) / sum(node_memory_MemTotal_bytes{{{sel}}}))'}
+  mem.pressure_pct: {promql: 'max(100 * rate(node_pressure_memory_waiting_seconds_total{{{sel}}}[5m]))'}
+  mem.oom_kills: {promql: 'sum(increase(node_vmstat_oom_kill{{{sel}}}[5m]))'}
+  swap.used_pct: {promql: '100 * (1 - sum(node_memory_SwapFree_bytes{{{sel}}}) / sum(node_memory_SwapTotal_bytes{{{sel}}} > 0))'}
+  swap.in_pages_s: {promql: 'sum(rate(node_vmstat_pswpin{{{sel}}}[5m]))'}
+  swap.out_pages_s: {promql: 'sum(rate(node_vmstat_pswpout{{{sel}}}[5m]))'}
   disk.used_pct: {promql: 'max(100 * (1 - node_filesystem_avail_bytes{{fstype!~"tmpfs|overlay|squashfs",{sel}}} / node_filesystem_size_bytes{{fstype!~"tmpfs|overlay|squashfs",{sel}}}))'}
   disk.io_util_pct: {promql: 'max(100 * rate(node_disk_io_time_seconds_total{{{sel}}}[5m]))'}
   net.rx_bytes_s: {promql: 'sum(rate(node_network_receive_bytes_total{{device!="lo",{sel}}}[5m]))'}
