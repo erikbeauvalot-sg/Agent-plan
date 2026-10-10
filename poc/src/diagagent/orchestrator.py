@@ -220,7 +220,7 @@ class Investigation:
             agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
             user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
             budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
-            local_tools=self._lead_tools())
+            local_tools=self._lead_tools(), final_check=self._check_final_answer)
         await self._close_pending()
         return result
 
@@ -233,6 +233,17 @@ class Investigation:
                             "model": cfg.get("model") or cfg.get("deployment") or getattr(provider, "_model", None)}
             self.log.update_manifest(models=models)
         return provider, cfg
+
+    def _check_final_answer(self, text: str) -> str | None:
+        """Les modèles décrivent souvent leurs actions dans la réponse sans appeler propose_action : elles
+        n'arrivent alors pas dans actions.json et ne peuvent pas être revues par un Superviseur."""
+        if (self.log.dir / "actions.json").exists():
+            return None
+        section = re.search(r"#+\s*Actions propos[ée]es\s*\n(.*?)(?=\n#+\s|\Z)", text, re.S | re.I)
+        if not section or not re.search(r"^\s*(?:[-*]|\d+[.)]|#+)\s*\S", section.group(1), re.M):
+            return None
+        return ("Ta réponse décrit des actions proposées, mais aucune n'a été enregistrée. Appelle "
+                "propose_action pour chacune (une action par appel), puis rends ta réponse finale complète.")
 
     def lead_system_prompt(self, playbook: str = "") -> str:
         template = (catalog.home() / "prompts" / "lead.md").read_text(encoding="utf-8")

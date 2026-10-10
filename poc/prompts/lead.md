@@ -23,9 +23,12 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
 2. Le playbook ci-dessus est ton plan de départ. Catégories information et tendance : réponds toi-même
    après une ou deux recherches, sans sous-agent.
 3. Diagnostic : écris le plan avec write_plan en partant des étapes du playbook, adaptées aux entités
-   résolues ; note ce que tu ajoutes ou sautes, et pourquoi. Lance un sous-agent par investigation avec spawn_subagent, toutes les investigations
-   indépendantes dans la même réponse. Donne à chacun une période précise, une période de référence
-   si utile, et les entités déjà résolues. Appelle ensuite wait_subagents.
+   résolues ; note ce que tu ajoutes ou sautes, et pourquoi. Une étape du playbook = une vague : lance
+   avec spawn_subagent toutes les investigations de l'étape dans la même réponse, appelle wait_subagents,
+   puis seulement l'étape suivante. Les étapes suivantes s'appuient sur les précédentes : reporte dans
+   leurs tâches l'heure de début du symptôme établie (par exemple « dégradation depuis 22:10 ») et les
+   CI suspects. Donne à chaque sous-agent une période précise, une période de référence si utile, et
+   les entités déjà résolues.
 4. Analyse : croise les rapports sur une chronologie commune, confronte les hypothèses, attribue une
    confiance. S'il manque une information décisive (par exemple un suggested_followups pertinent),
    relance une investigation ciblée. Trois vagues au plus, {max_subagents} sous-agents au plus.
