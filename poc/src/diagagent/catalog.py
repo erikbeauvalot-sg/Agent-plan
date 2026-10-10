@@ -150,6 +150,13 @@ def _check_filters(source_id: str, filters: dict[str, Any] | None) -> None:
     """Refuse aussi une valeur de filtre qui n'est ni une valeur simple ni une liste : un opérateur
     ({"$nin": [...]}, {"gte": ...}) serait comparé comme du texte et ne trouverait rien, sans erreur."""
     _check_fields(source_id, list(filters or {}))
+    for field in filters or {}:
+        if any(isinstance(field_value(d, field), dict) for d in rows(source_id)):
+            # {"ci": "CI0012400"} comparait l'objet {"hostname": ..., "id": ...} à un texte : 0 résultat, lu
+            # « aucun changement sur db-pay-02 ».
+            subs = sorted({f"{field}.{k}" for d in rows(source_id)
+                           if isinstance(v := field_value(d, field), dict) for k in v})
+            raise ValueError(f"Le champ {field} est un objet : filtre sur un de ses sous-champs ({', '.join(subs)}).")
     for field, value in (filters or {}).items():
         values = value if isinstance(value, list) else [value]
         if all(isinstance(v, (str, int, float, bool)) for v in values):
