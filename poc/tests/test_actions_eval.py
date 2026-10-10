@@ -81,7 +81,9 @@ cases:
 
     report = asyncio.run(run_eval(cases, providers=lambda role: (ScriptedProvider([lead]), {}),
                                   out_dir=tmp_path / "results"))
-    assert report["summary"] == {"cases": 2, "passed": 1, "tokens": 0}
+    summary = report["summary"]
+    assert summary.pop("duration_s") >= 0
+    assert summary == {"cases": 2, "passed": 1, "tokens": 0, "models_profile": None}
     failed = [c["check"] for c in report["results"][1]["checks"] if not c["ok"]]
     assert failed == ["mentionne « INC0098765 »", "ne mentionne pas « INC0097012 »"]
     assert (tmp_path / "results").glob("*.json")

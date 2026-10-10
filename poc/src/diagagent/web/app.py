@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from diagagent import catalog, knowledge, learning, playbooks
+from diagagent.llm import model_profiles
 from diagagent.orchestrator import Investigation, ProviderFactory
 from diagagent.runlog import RunLog, _append, _dump, _ts
 
@@ -45,10 +46,11 @@ class LiveRun:
 @dataclass
 class RunManager:
     """Investigations en cours dans ce processus (pour l'arrêt) ; les terminées se relisent sur disque."""
-    providers: Callable[[], ProviderFactory]
+    providers: Callable[[str | None], ProviderFactory]
     live: dict[str, LiveRun] = field(default_factory=dict)
 
-    async def start(self, question: str, user: User, category: str | None = None) -> str:
+    async def start(self, question: str, user: User, category: str | None = None,
+                    models: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -63,7 +65,7 @@ class RunManager:
 
         async def go() -> None:
             try:
-                await ask(question, providers=self.providers(), user=user.login, on_started=on_started,
+                await ask(question, providers=self.providers(models), user=user.login, on_started=on_started,
                           category=category)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
@@ -87,6 +89,7 @@ class LoginBody(BaseModel):
 class AskBody(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     category: str | None = None
+    models: str | None = None  # profil de config/models.yaml ; défaut : celui du fichier
 
 
 class CategoryBody(BaseModel):
@@ -134,7 +137,7 @@ def read_text(path: Path) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
-def create_app(providers: Callable[[], ProviderFactory] | None = None, users: AuthProvider | None = None,
+def create_app(providers: Callable[[str | None], ProviderFactory] | None = None, users: AuthProvider | None = None,
                sessions: Sessions | None = None, secure_cookie: bool = False) -> FastAPI:
     if providers is None:
         from diagagent.cli import default_providers
@@ -203,12 +206,25 @@ def create_app(providers: Callable[[], ProviderFactory] | None = None, users: Au
         require(user, "ask")
         if body.category and body.category not in playbooks.load_playbooks():
             raise HTTPException(400, f"Catégorie inconnue : {body.category}")
+        if body.models and body.models not in model_choices()["profiles"]:
+            raise HTTPException(400, f"Profil de modèles inconnu : {body.models}")
         try:
-            run_id = await manager.start(body.question.strip(), user, body.category)
+            run_id = await manager.start(body.question.strip(), user, body.category, body.models)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
-        audit(user, "ask", {"run_id": run_id, "category": body.category})
+        audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models})
         return {"run_id": run_id}
+
+    def model_choices() -> dict[str, Any]:
+        from diagagent.cli import _load
+
+        names, default = model_profiles(_load("models.yaml"))
+        return {"profiles": names, "default": os.environ.get("DIAGAGENT_MODELS") or default}
+
+    @app.get("/api/models")
+    def models(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Profils de modèles proposés au lancement d'une investigation."""
+        return model_choices()
 
     @app.get("/api/categories")
     def categories(user: User = Depends(current_user)) -> list[dict[str, Any]]:

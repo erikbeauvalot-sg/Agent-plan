@@ -67,6 +67,11 @@ async function boot() {
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
   $("cat-select").innerHTML = options;
+  // Profil de modèles choisi à chaque investigation ; le sélecteur n'apparaît que s'il y a le choix.
+  const models = await api("/api/models");
+  $("ask-models").innerHTML = models.profiles.map((p) =>
+    `<option value="${esc(p)}"${p === models.default ? " selected" : ""}>Modèles : ${esc(p)}</option>`).join("");
+  $("ask-models").hidden = models.profiles.length < 2;
   await loadRuns();
   const fromHash = location.hash.slice(1);
   if (fromHash) openRun(fromHash);
@@ -119,8 +124,8 @@ $("ask-form").addEventListener("submit", async (e) => {
   const form = e.target, btn = form.querySelector("button");
   btn.disabled = true; $("ask-error").hidden = true;
   try {
-    await startRun({ question: form.question.value });
-    form.reset();
+    await startRun({ question: form.question.value, models: form.models.value || null });
+    form.question.value = "";
   } catch (err) { $("ask-error").textContent = err.message; $("ask-error").hidden = false; }
   finally { btn.disabled = false; }
 });
@@ -140,7 +145,7 @@ async function openRun(runId) {
   location.hash = runId;
   const data = await api(`/api/runs/${runId}`);
   current = { runId, agents: {}, order: [], firstTs: null, lastTs: null, ended: false,
-              canStop: data.can_stop, status: data.manifest.status };
+              canStop: data.can_stop, status: data.manifest.status, modelsProfile: data.manifest.models_profile };
   $("empty").hidden = true; $("admin").hidden = true; $("run").hidden = false; $("drawer").hidden = true;
   $("run-question").textContent = data.manifest.question;
   // L'heure de référence fixe la période des recherches (« depuis hier soir », 24 h par défaut) : on l'affiche
@@ -334,14 +339,16 @@ $("cat-rerun").addEventListener("click", async () => {
   const category = $("cat-select").value;
   try {
     await api(`/api/runs/${current.runId}/category`, { method: "POST", body: JSON.stringify({ category }) });
-    await startRun({ question: $("run-question").textContent, category });
+    await startRun({ question: $("run-question").textContent, category, models: current.modelsProfile });
   } catch (err) { alert(err.message); }
 });
 $("precision-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const precision = e.target.precision.value.trim();
   try {
-    await startRun({ question: `${$("run-question").textContent}\nPrécision : ${precision}` });
+    // La relance garde les modèles de l'investigation d'origine.
+    await startRun({ question: `${$("run-question").textContent}\nPrécision : ${precision}`,
+                     models: current.modelsProfile });
     e.target.reset();
   } catch (err) { alert(err.message); }
 });

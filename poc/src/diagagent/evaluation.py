@@ -85,13 +85,16 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
                 results.append({"id": case["id"], "attempt": attempt, "question": case["question"],
                                 "run_id": log.run_id, "passed": all(c["ok"] for c in checks), "checks": checks,
                                 "duration_s": round(time.monotonic() - started, 1),
-                                "usage": log.manifest.get("usage", {})})
+                                "usage": log.manifest.get("usage", {}),
+                                "models_profile": log.manifest.get("models_profile")})
     finally:
         for k, v in saved.items():
             _set_env(k, v)
         catalog.load_catalog.cache_clear()
     summary = {"cases": len(results), "passed": sum(r["passed"] for r in results),
-               "tokens": sum(tokens(r["usage"]) for r in results)}
+               "tokens": sum(tokens(r["usage"]) for r in results),
+               "duration_s": round(sum(r["duration_s"] for r in results), 1),
+               "models_profile": next((r["models_profile"] for r in results), None)}
     if repeat > 1:
         rates: dict[str, list[bool]] = {}
         for r in results:

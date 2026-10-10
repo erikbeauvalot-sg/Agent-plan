@@ -16,7 +16,7 @@ import yaml
 from . import catalog, knowledge, learning, playbooks
 from .evaluation import find_run, replay_run, run_eval
 from .orchestrator import Investigation, ProviderFactory, tokens, usage_by_agent, usage_total
-from .llm import LLMRequest, Message, make_provider
+from .llm import LLMRequest, Message, make_provider, select_profile
 from .runlog import RunLog
 from .tools import ToolHub
 
@@ -25,14 +25,20 @@ def _load(name: str) -> dict:
     return yaml.safe_load((catalog.home() / "config" / name).read_text(encoding="utf-8"))
 
 
-def default_providers() -> ProviderFactory:
-    models = _load("models.yaml")
+def _models(profile: str | None = None) -> tuple[str, dict]:
+    """Configuration du profil de modèles demandé, sinon de DIAGAGENT_MODELS, sinon du profil par défaut."""
+    return select_profile(_load("models.yaml"), profile or os.environ.get("DIAGAGENT_MODELS") or None)
+
+
+def default_providers(profile: str | None = None) -> ProviderFactory:
+    name, models = _models(profile)
     cache: dict[str, Any] = {}
 
     def providers(role: str):
         if role not in cache:
             cache[role] = make_provider(models, role)
         return cache[role]
+    providers.profile = name  # type: ignore[attr-defined]
     return providers
 
 
@@ -48,6 +54,7 @@ async def ask(question: str, providers: ProviderFactory | None = None, user: str
     log = RunLog(catalog.runs_dir(poc), question, user or getpass.getuser(),
                  {"models": {"lead": {"provider": lead.name,
                                       "model": lead_cfg.get("deployment") or lead_cfg.get("model")}},
+                  "models_profile": getattr(providers, "profile", None),
                   "reference_time": catalog.now().isoformat()})
     async with ToolHub(poc["mcp_servers"]) as hub:
         investigation = Investigation(question, hub, log, providers, poc, category=category)
@@ -80,7 +87,7 @@ def list_playbooks() -> None:
 def run_learn(days: int, model: bool = True, replay: bool = True) -> None:
     from .orchestrator import load_roles
 
-    models = _load("models.yaml")
+    models = _models()[1]
     drafter = make_provider(models, "learner")[0] if model else None
     classifier = make_provider(models, "classifier")[0] if replay else None
     written = learning.learn(catalog.runs_dir(_load("poc.yaml")), days, drafter, classifier, set(load_roles()), log=print)
@@ -104,7 +111,7 @@ def manage_proposals(action: str, proposal_id: str | None, by: str | None, comme
 
 
 def check_model() -> None:
-    provider, role_cfg = make_provider(_load("models.yaml"), "lead")
+    provider, role_cfg = make_provider(_models()[1], "lead")
     resp = provider.complete(LLMRequest(system="Réponds en un mot.", messages=[Message("user", "Bonjour ?")],
                                         max_tokens=200))
     print(f"OK : {provider.name} / {resp.model}, arrêt={resp.stop_reason}, réponse={resp.text!r}")
@@ -186,7 +193,9 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="diagagent", description="POC de l'agent de diagnostic")
     parser.add_argument("--home", help="Racine du POC (catalog/, config/, runs/) ; défaut : dossier courant")
     parser.add_argument("--now", help="Heure de référence ISO 8601 (rejouer un scénario)")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    parser.add_argument("--models", metavar="PROFIL",
+                        help="Profil de modèles de config/models.yaml (ollama, openai…) ; défaut : celui du fichier")
+    sub =parser.add_subparsers(dest="cmd", required=True)
     p_ask = sub.add_parser("ask", help="Poser une question à l'agent principal")
     p_ask.add_argument("question")
     p_ask.add_argument("--category", help="Imposer la catégorie (sans classifieur)")
@@ -227,6 +236,8 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["DIAGAGENT_HOME"] = str(Path(args.home).resolve())
     if args.now:
         os.environ["DIAGAGENT_NOW"] = args.now
+    if args.models:
+        os.environ["DIAGAGENT_MODELS"] = args.models
     load_dotenv(catalog.home() / ".env")
 
     if args.cmd == "tools":

@@ -31,8 +31,14 @@ def env(tmp_path, monkeypatch):
     store.add("alice", PWD, ["operateur"])
     store.add("bob", PWD, ["operateur"])
     store.add("admin", PWD, ["administrateur"])
-    script = {}
-    app = create_app(providers=lambda: (lambda role: (script[role], {})), users=store, sessions=Sessions(b"k" * 32))
+    script = {"_profiles": []}  # profils de modèles demandés, dans l'ordre des lancements
+
+    def providers(profile=None):
+        script["_profiles"].append(profile)
+        factory = lambda role: (script[role], {})  # noqa: E731
+        factory.profile = profile or "ollama"
+        return factory
+    app = create_app(providers=providers, users=store, sessions=Sessions(b"k" * 32))
     monkeypatch.setenv("DIAGAGENT_AUDIT_DIR", str(tmp_path / "audit"))
     return app, script
 
@@ -111,6 +117,22 @@ def test_ask_stream_and_visibility(env):
     assert bob.get(f"/api/runs/{run_id}").status_code == 404
     assert bob.get("/api/runs").json() == []
     assert admin.get(f"/api/runs/{run_id}").status_code == 200
+
+
+def test_models_profile_chosen_per_request(env):
+    app, script = env
+    alice = client(app, "alice")
+    choices = alice.get("/api/models").json()
+    assert choices["default"] == "ollama" and {"ollama", "openai"} <= set(choices["profiles"])
+    assert alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "models": "inconnu"},
+                      headers=H).status_code == 400
+
+    script["lead"] = ScriptedProvider([answer("## Synthèse\nok"), answer("## Synthèse\nok")])
+    first = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "models": "openai"}, headers=H)
+    assert wait_status(alice, first.json()["run_id"])["manifest"]["models_profile"] == "openai"
+    second = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H)
+    assert wait_status(alice, second.json()["run_id"])["manifest"]["models_profile"] == "ollama"
+    assert script["_profiles"] == ["openai", None]
 
 
 def test_stop_subagent_from_the_interface(env):
