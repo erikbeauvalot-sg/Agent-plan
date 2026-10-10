@@ -55,7 +55,8 @@ REPORT_SCHEMA: dict[str, Any] = {
 }
 
 
-ACTION_TYPES = ("diagnostic complémentaire", "remédiation", "contournement", "ouverture de ticket")
+ACTION_TYPES = ("diagnostic complémentaire", "remédiation", "contournement", "réglage de supervision",
+                "ouverture de ticket")
 RISKS = ("faible", "moyen", "élevé")
 
 ACTION_SCHEMA: dict[str, Any] = {

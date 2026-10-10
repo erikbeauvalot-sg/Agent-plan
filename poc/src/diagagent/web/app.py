@@ -246,9 +246,9 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     def source_choices() -> dict[str, Any]:
         """Les trois choix sont toujours listés ; ceux qui demandent une source réelle sont indisponibles
-        tant que PROMETHEUS_URL, ALERTMANAGER_URL ou SSH_HOSTS n'est pas définie. Défaut : DIAGAGENT_SOURCES."""
+        tant que PROMETHEUS_URL, ALERTMANAGER_URL, SSH_HOSTS ou WEB_SEARCH n'est pas définie. Défaut : DIAGAGENT_SOURCES."""
         home = "maison" in catalog.configured_sources()
-        reason = None if home else "aucune source réelle configurée (PROMETHEUS_URL, ALERTMANAGER_URL, SSH_HOSTS)"
+        reason = None if home else "aucune source réelle configurée (PROMETHEUS_URL, ALERTMANAGER_URL, SSH_HOSTS, WEB_SEARCH)"
         choices = [{"value": "demo,maison", "label": "démo + maison", "available": home, "reason": reason},
                    {"value": "demo", "label": "démo", "available": True, "reason": None},
                    {"value": "maison", "label": "maison", "available": home, "reason": reason}]

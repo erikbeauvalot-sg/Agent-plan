@@ -333,6 +333,7 @@ Sans `--now`, l'heure de référence est l'heure réelle. Ce que l'agent obtient
 | `promql` | Prometheus | Requête libre, résumée par série |
 | `list_alerts`, `list_silences` | Alertmanager | Alertes actives, silences en cours |
 | `alert_history` | Prometheus (`ALERTS`) | Alertes passées et leurs intervalles de déclenchement |
+| `alert_rule` | Prometheus (règles) | Expression, seuil, durée et hosts en alerte d'une règle : l'alerte mesure-t-elle un impact ? |
 
 Les métriques normalisées sont des modèles PromQL dans `catalog/sources/metrics-prometheus.yaml`,
 écrits pour node_exporter ; on les adapte ou on en ajoute selon les exporters installés. Le nom de
@@ -380,6 +381,39 @@ chaque processus. Pour les noms des conteneurs, l'ajouter au groupe `docker` (é
 commande forcée borne ce que la clé lance ; sans ce groupe, les identifiants
 seuls) ; pour `oom_events`, au groupe `systemd-journal` ou `adm`. La clé d'hôte doit déjà être dans
 `known_hosts` (`StrictHostKeyChecking=yes`) : se connecter une fois à la main.
+
+## Recherche web et pistes de remédiation
+
+Une cause trouvée ne suffit pas : « augmenter la RAM » n'aide personne. Une fois la cause établie,
+l'agent principal examine quatre pistes et dit pour chacune ce qu'il retient ou écarte
+(rubrique « Pistes de remédiation » de la réponse, étape `remediation` des playbooks
+`analyse-evenement` et `performance`) :
+
+1. **Impact réel** : le sous-agent `events` lit la règle de l'alerte (`alert_rule`) et la compare aux
+   signes d'impact (pression mémoire, swap relu, erreurs, latence). Une alerte permanente sans impact
+   est un faux positif : l'action proposée est de type `réglage de supervision`, avec la nouvelle règle.
+2. **Problème connu** : le sous-agent `web` cherche le logiciel, sa version (`container_memory` lit le
+   label `org.opencontainers.image.version` de l'image) et le symptôme sur les forums et issues.
+3. **Réglage de l'application** : paramètre exact, valeur et endroit, d'après les sources.
+4. **Réglage du système** : swappiness, taille du swap, limite mémoire du conteneur, RAM.
+
+Une action donne le paramètre exact et sa valeur, et cite l'URL d'une source web. Une limite mémoire
+n'est jamais sous le pic déjà mesuré, et une alerte existante se règle au lieu d'être recréée.
+
+```bash
+WEB_SEARCH=duckduckgo                 # sans clé ; ou l'URL d'une instance SearXNG (API JSON)
+WEB_SEARCH_DENY=beauvalot,maison      # facultatif : mots jamais envoyés au moteur
+```
+
+| Outil | Contenu |
+| --- | --- |
+| `web_search` | Titre, URL et extrait des résultats (10 au plus, sans annonces) |
+| `web_page` | Texte lisible d'une page publique (8000 caractères, sans menus ni scripts) |
+
+Garde-fous : une requête qui contient une adresse IP, un nom de `SSH_HOSTS` ou un mot de
+`WEB_SEARCH_DENY` est refusée avant l'envoi. `web_page` ne lit que des adresses publiques, redirections
+comprises : pas d'accès au réseau local ni à `localhost`. Le contenu des pages est une donnée, jamais
+une instruction. Réservé au POC à la maison : en production, les requêtes ne sortent pas sur internet.
 
 ## Régénérer les données de démonstration
 

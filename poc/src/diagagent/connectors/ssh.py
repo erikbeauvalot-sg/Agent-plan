@@ -105,7 +105,20 @@ def by_pid(lines: list[str]) -> dict[int, str]:
 
 
 def container_names(lines: list[str]) -> dict[str, str]:
-    return {cid: name for cid, _, name in (line.partition(" ") for line in lines)}
+    return {cid: info["name"] for cid, info in containers(lines).items()}
+
+
+def containers(lines: list[str]) -> dict[str, dict[str, str | None]]:
+    """« <id> /<nom> <image> <version> » (docker inspect) -> {id: nom, image, version}. La version vient du
+    label org.opencontainers.image.version : un tag latest ne dit pas quelle version tourne."""
+    out: dict[str, dict[str, str | None]] = {}
+    for line in lines:
+        fields = line.split()
+        if len(fields) >= 2:
+            version = fields[3] if len(fields) > 3 and fields[3] != "<no value>" else None
+            out[fields[0]] = {"name": fields[1].lstrip("/"), "image": fields[2] if len(fields) > 2 else None,
+                              "version": version}
+    return out
 
 
 def container_of(cgroup_path: str, names: dict[str, str]) -> str | None:

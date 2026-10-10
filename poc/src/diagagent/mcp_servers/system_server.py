@@ -95,13 +95,16 @@ def top_processes(host: str, sort_by: str = "rss", limit: int = 15) -> dict[str,
 @read_only_tool(server)
 def container_memory(host: str) -> dict[str, Any]:
     """Mémoire de chaque conteneur Docker d'après ses cgroups : utilisée maintenant, en swap, pic depuis
-    le démarrage du conteneur (peak_mb, utile pour un pic passé) et limite éventuelle."""
+    le démarrage du conteneur (peak_mb, utile pour un pic passé), limite éventuelle, image et version
+    (pour chercher les problèmes connus de cette version)."""
     head, data = _run(host, "containers")
-    names = ssh.container_names(data.get("docker", []))
+    info = ssh.containers(data.get("docker", []))
     out = []
     for line in data.get("cgroups", []):
         cid, current, swap_now, peak, limit = (line.split() + ["-"] * 5)[:5]
-        out.append({"container": names.get(cid, cid[:12]), "id": cid[:12],
+        meta = info.get(cid, {})
+        out.append({"container": meta.get("name") or cid[:12], "id": cid[:12],
+                    "image": meta.get("image"), "version": meta.get("version"),
                     "mem_mb": ssh.mb(int(current) / 1024),
                     "swap_mb": ssh.mb(int(swap_now) / 1024) if swap_now.isdigit() else None,
                     "peak_mb": ssh.mb(int(peak) / 1024) if peak.isdigit() else None,
