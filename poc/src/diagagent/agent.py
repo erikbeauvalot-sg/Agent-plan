@@ -90,7 +90,8 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
     empty_retries = 0
     final_checked = False
     log.write_text(agent_id, "system_prompt.md", system)
-    log.event(agent_id, "agent_started", {"provider": provider.name, "tools": [t.name for t in all_tools],
+    log.event(agent_id, "agent_started", {"provider": provider.name, "model": getattr(provider, "_model", None),
+                                           "tools": [t.name for t in all_tools],
                                            "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
 
     for turn in range(1, budget.max_turns + 1):
@@ -212,7 +213,7 @@ async def _complete(agent_id: str, provider: LLMProvider, request: LLMRequest,
             "provider_raw": response.provider_raw,
         })
         log.event(agent_id, "llm_call_ended", {"stop_reason": response.stop_reason, "duration_s": duration,
-                                                "usage": to_jsonable(response.usage)})
+                                                "model": response.model, "usage": to_jsonable(response.usage)})
         return response
     return None
 

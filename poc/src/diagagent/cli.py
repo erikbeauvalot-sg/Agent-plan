@@ -15,7 +15,7 @@ import yaml
 
 from . import catalog, knowledge, learning, playbooks
 from .evaluation import find_run, replay_run, run_eval
-from .orchestrator import Investigation, ProviderFactory, usage_total
+from .orchestrator import Investigation, ProviderFactory, usage_by_agent, usage_total
 from .llm import LLMRequest, Message, make_provider
 from .runlog import RunLog
 from .tools import ToolHub
@@ -57,6 +57,7 @@ async def ask(question: str, providers: ProviderFactory | None = None, user: str
     log.manifest["subagents"] = {t: {"role": s.role, "status": s.status,
                                      "report_status": (s.report or {}).get("status")}
                                  for t, s in investigation.subagents.items()}
+    log.manifest["usage_by_agent"] = usage_by_agent(log.dir)
     log.finish(result.status, result.answer, usage_total(result, investigation.subagents, log.dir))
     return log, result.status, result.answer
 
