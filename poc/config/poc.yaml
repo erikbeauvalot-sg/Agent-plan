@@ -8,6 +8,7 @@ mcp_servers:
   mcp-cmdb:    {module: diagagent.mcp_servers.cmdb_demo_server, demo: true}
   mcp-metrics: {module: diagagent.mcp_servers.metrics_server}
   mcp-alerts:  {module: diagagent.mcp_servers.alerts_server, requires_env: [ALERTMANAGER_URL]}
+  mcp-system:  {module: diagagent.mcp_servers.system_server, requires_env: [SSH_HOSTS]}
 
 budgets:
   lead: {max_tool_calls: 25, max_turns: 30}   # budgets des sous-agents : agents/<rôle>.yaml

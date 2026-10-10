@@ -1,5 +1,5 @@
 id: analyse-evenement
-version: 2
+version: 3
 status: active
 description: >
   Analyse d'un ticket d'incident ou d'une alerte existant : ce qui s'est passé, dans quel ordre, et
@@ -27,6 +27,7 @@ steps:
       - {role: changes, objective: "changes sur les CI touchés et leurs dépendances, 48 h avant l'heure de début"}
       - {role: logs,    objective: "erreurs sur les CI touchés autour de l'heure de début, et les dépendances qu'elles désignent"}
       - {role: metrics, objective: "ruptures de métriques sur les CI touchés et leurs dépendances autour de l'heure de début"}
+      - {role: system,  objective: "état en direct des CI touchés : processus et conteneurs qui occupent la RAM et le swap, OOM récents"}
       - {role: generic, objective: "incidents similaires passés sur les mêmes CI", sources: [incidents]}
 stop_when:
   - "la chronologie est établie et une cause probable est étayée"

@@ -9,7 +9,7 @@ de démonstration. Avancement : [suivi du POC](../docs/poc-suivi.md).
 | --- | --- | --- |
 | Couche LLM agnostique | `src/diagagent/llm/` | Format pivot, adaptateurs `azure_openai`, `openai_compatible` (Ollama, vLLM) et `scripted` (tests) |
 | Catalogue | `catalog/` | Une fiche YAML par source, glossaire, relations entre sources |
-| Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, en lecture seule |
+| Serveurs MCP | `src/diagagent/mcp_servers/` | `mcp-catalog`, `mcp-elk`, `mcp-cmdb`, `mcp-metrics`, `mcp-alerts`, `mcp-system` (SSH), en lecture seule |
 | Catégorisation et playbooks | `src/diagagent/playbooks.py`, `playbooks/<catégorie>.yaml` | Classifieur, décision (playbook, combinaison, précision), stratégie de collecte par catégorie |
 | Base de cas et apprentissage | `src/diagagent/knowledge.py`, `src/diagagent/learning.py` | Avis sur les diagnostics, cas confirmés, propositions d'évolution rejouées et validées par un Superviseur, indicateurs |
 | Agent principal | `src/diagagent/agent.py`, `prompts/lead.md` | Boucle d'agent, budget, jeton d'annulation |
@@ -338,6 +338,48 @@ Les métriques normalisées sont des modèles PromQL dans `catalog/sources/metri
 écrits pour node_exporter ; on les adapte ou on en ajoute selon les exporters installés. Le nom de
 host est le label `instance` sans le port (réglable par `host_label`). Un jeton facultatif se passe
 par `PROMETHEUS_TOKEN` ou `ALERTMANAGER_TOKEN`.
+
+## Interroger les machines en direct (SSH)
+
+Prometheus dit quand la mémoire a manqué, pas quel processus l'a prise. `mcp-system` se connecte aux
+machines en SSH, en lecture seule, et exécute une seule chose : le script `remote/diagagent-probe`,
+avec une sonde fixe (`memory`, `processes`, `containers`, `oom`). Le modèle ne choisit que le host,
+parmi ceux de `SSH_HOSTS` ; il n'écrit jamais de commande.
+
+```bash
+SSH_HOSTS=xdocker,pdocker            # mêmes noms que dans Prometheus ; xdocker=192.168.1.20 si besoin
+SSH_USER=diagagent                   # facultatif, sinon ~/.ssh/config
+SSH_KEY=~/.ssh/diagagent_ed25519     # facultatif
+```
+
+| Outil | Contenu |
+| --- | --- |
+| `list_ssh_hosts` | Machines joignables |
+| `host_memory` | RAM disponible, swap, pression mémoire (PSI), swappiness |
+| `top_processes` | Processus par RAM ou par swap, avec leur conteneur Docker |
+| `container_memory` | Mémoire, swap, pic depuis le démarrage (`memory.peak`) et limite de chaque conteneur |
+| `oom_events` | Messages OOM du noyau des 7 derniers jours |
+
+Les réponses décrivent l'état au moment de l'appel (`observed_at`), pas à l'heure de référence :
+le sous-agent `system` les croise avec les métriques pour un pic passé. Le rôle n'est proposé que
+si `SSH_HOSTS` est définie ; les playbooks `analyse-evenement` et `performance` l'appellent.
+
+Le script part sur l'entrée standard (`sh -s -- <sonde>`) : rien à installer, mais le compte SSH peut
+alors tout faire. Pour que la clé ne permette que ces lectures, sur chaque machine :
+
+```bash
+useradd -r -m -s /bin/sh diagagent
+install -m 755 diagagent-probe /usr/local/bin/diagagent-probe
+# ~diagagent/.ssh/authorized_keys :
+command="/usr/local/bin/diagagent-probe",restrict ssh-ed25519 AAAA... diagagent
+```
+
+La machine exécute alors son propre script, avec le dernier mot de la commande reçue comme nom de
+sonde ; toute autre demande est refusée. Le compte n'a pas besoin de root : `/proc` donne le swap de
+chaque processus. Pour les noms des conteneurs, l'ajouter au groupe `docker` (équivalent à root, mais la
+commande forcée borne ce que la clé lance ; sans ce groupe, les identifiants
+seuls) ; pour `oom_events`, au groupe `systemd-journal` ou `adm`. La clé d'hôte doit déjà être dans
+`known_hosts` (`StrictHostKeyChecking=yes`) : se connecter une fois à la main.
 
 ## Régénérer les données de démonstration
 

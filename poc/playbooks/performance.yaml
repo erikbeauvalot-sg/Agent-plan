@@ -1,5 +1,5 @@
 id: performance
-version: 1
+version: 2
 status: active
 description: >
   Un composant ou un service répond, mais lentement : temps de réponse élevés, stockage ou base lents.
@@ -24,6 +24,7 @@ steps:
     parallel:
       - {role: metrics, objective: "latence et ressources du composant comparées à la veille : début et ampleur de la dégradation"}
       - {role: host,    objective: "chaîne de dépendances du composant et ressources partagées"}
+      - {role: system,  objective: "état en direct du composant : processus et conteneurs qui consomment la mémoire, pression mémoire, OOM"}
   - name: causes
     parallel:
       - {role: changes, objective: "changes sur le composant et ses dépendances, 48 h avant le début"}
