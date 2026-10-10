@@ -21,6 +21,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 14. Classifieur | Entité oubliée par le modèle complétée depuis la demande : numéro INC ou CHG, nom d'une alerte connue (Alertmanager, règles Prometheus) ; demande `autre` qui nomme une alerte connue classée `analyse-evenement` | Fait (PR #26) |
 | 15. Vagues imposées | Réponse finale contrôlée : étapes du playbook dont aucun rôle spécialisé n'a été lancé, rappelées une fois à l'agent principal ; valeurs de `propose_action` reconnues sans casse ni accents | Fait (PR #27) |
 | 16. Relancer une demande | Bouton « Relancer… » : nouvelle demande préremplie (question, modèle, données, catégorie), lancée après modification des options ; choix de la catégorie sur l'accueil ; lien `rerun_of` vers l'investigation d'origine | Fait (PR #28) |
+| 17. Rappel précoce des vagues | Après 8 appels directs de l'agent principal sans sous-agent spécialisé (`early_wave_reminder`), rappel des étapes du playbook, une fois | Fait (PR #29) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
@@ -28,11 +29,10 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - **Critères de sortie** : le document d'architecture demande 20 questions simples justes et une cause
   correcte sur une majorité de 20 incidents passés ; `eval/cases.yaml` ne compte que 9 cas, tous sur
   la démo. Agrandir le jeu, ajouter des cas maison, mesurer avec `--repeat`.
-- **Budget de l'agent principal** : relancé à la fin, il lance les vagues manquantes, mais il a souvent déjà
-  dépensé ses appels en faisant tout lui-même ; un rappel plus tôt (après quelques appels directs) éviterait
-  de manquer la dernière vague (remédiation, sous-agent web).
-- **Contrôles des actions dans le code** : limite mémoire jamais sous le pic mesuré, pas d'alerte qui
-  existe déjà.
+- **Contrôles des faits et des actions dans le code** : l'agent affirme encore des chiffres contraires aux
+  mesures (« conteneurs au-delà de 1 Go » pour des pics de 323 et 539 Mo) et propose une limite incohérente
+  avec ce qu'il écrit. À vérifier dans le code : limite mémoire jamais sous le pic mesuré, pas d'alerte qui
+  existe déjà, règle PromQL qui rend des séries.
 - **Industrialisation** (étape 4 du document d'architecture) : connecteur `mcp-elk` réel et Druid,
   branchement Azure OpenAI GPT-5.6 Luna et comparaison de modèles sur le jeu d'évaluation, annuaire
   d'entreprise (OIDC), quotas et coûts Azure, archivage. Elle attend les réponses aux points ouverts du
@@ -79,3 +79,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-10 : PR #25 fusionnée (suivi à jour) ; PR #26 ouverte (alerte nommée reconnue par le classifieur).
 - 2026-10-10 : PR #26 fusionnée (classifieur, écriture atomique des traces) ; PR #27 ouverte (vagues du playbook rappelées à l'agent principal).
 - 2026-10-10 : PR #27 fusionnée (vagues rappelées) ; PR #28 ouverte (relancer une demande avec d'autres options).
+- 2026-10-10 : PR #28 fusionnée (relancer une demande) ; PR #29 ouverte (rappel précoce des vagues : 6 sous-agents spécialisés lancés, dont web, sur SwapUsageHigh).

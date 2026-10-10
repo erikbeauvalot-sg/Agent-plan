@@ -188,6 +188,9 @@ class Investigation:
         orch = poc_cfg.get("orchestration", {})
         self.max_subagents = orch.get("max_subagents", 12)
         self.semaphore = asyncio.Semaphore(orch.get("max_parallel", 6))
+        self.early_wave_reminder = orch.get("early_wave_reminder", 8)  # appels directs avant le rappel des vagues
+        self.direct_calls = 0
+        self.lead_local_tools: dict[str, LocalTool] = {}
         self.lead_budget = Budget(**poc_cfg.get("budgets", {}).get("lead", {}))
         self.roles = {name: r for name, r in load_roles().items() if self._role_tools(r)}
         self.subagents: dict[str, SubAgent] = {}
@@ -195,7 +198,7 @@ class Investigation:
         self.books: dict[str, dict[str, Any]] = {}
         self.category: dict[str, Any] = {}
         self.decision: playbooks.Decision | None = None
-        self.rechecked: set[str] = set()  # motifs de relance de la réponse finale déjà utilisés
+        self.rechecked: set[str] = set()  # motifs de relance déjà utilisés (une relance par motif)
 
     # Pilotage (utilisé par l'interface web à l'étape 3)
 
@@ -234,11 +237,13 @@ class Investigation:
         if decision.mode == "clarify":
             return AgentResult(status="needs_clarification", answer=self._clarification_text(decision))
         provider, role_cfg = self._provider("lead")
+        self.lead_local_tools = self._lead_tools()
         result = await run_agent(
             agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
             user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
             budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
-            local_tools=self._lead_tools(), final_check=self._check_final_answer)
+            local_tools=self.lead_local_tools, final_check=self._check_final_answer,
+            progress_check=self._check_progress)
         await self._close_pending()
         return result
 
@@ -261,15 +266,14 @@ class Investigation:
                 return nudge
         return None
 
-    def _missing_waves(self, text: str) -> str | None:
-        """Les petits modèles (gpt-oss:20b) font souvent tout eux-mêmes : les étapes du playbook qui
-        prévoient des sous-agents ne sont alors jamais lancées. Une étape compte comme lancée si un de
-        ses rôles spécialisés l'a été : generic, que le modèle lance pour tout, ne compte pas, et les
-        rôles indisponibles sont ignorés."""
+    def _missing_steps(self) -> list[str]:
+        """Étapes du playbook qui prévoient des sous-agents et dont aucun rôle n'a été lancé. Une étape
+        compte comme lancée si un de ses rôles spécialisés l'a été : generic, que le modèle lance pour
+        tout, ne compte pas, et les rôles indisponibles sont ignorés."""
         if self.decision is None or self.category.get("mode") not in ("playbook", "combined"):
-            return None
+            return []
         if len(self.subagents) >= self.max_subagents:
-            return None
+            return []
         # Après requalify, seul le nouveau playbook compte.
         current = self.category.get("id")
         categories = self.decision.categories if current in self.decision.categories else [current]
@@ -281,6 +285,12 @@ class Investigation:
                          if inv["role"] in self.roles and inv["role"] != "generic"]
                 if roles and not spawned & set(roles):
                     missing.append(f"{i}. {step['name']} ({', '.join(dict.fromkeys(roles))})")
+        return missing
+
+    def _missing_waves(self, text: str) -> str | None:
+        """Les petits modèles (gpt-oss:20b) font souvent tout eux-mêmes : les étapes du playbook qui
+        prévoient des sous-agents ne sont alors jamais lancées."""
+        missing = self._missing_steps()
         if not missing:
             return None
         return ("Le playbook prévoit des vagues de sous-agents que tu n'as pas lancées : "
@@ -288,6 +298,25 @@ class Investigation:
                 "entre deux), en donnant à chaque sous-agent la période, les entités et ce que tu as déjà "
                 "établi ; puis rends ta réponse finale complète. Si une étape est inutile ici, dis pourquoi "
                 "dans les Limites au lieu de la lancer.")
+
+    def _check_progress(self, names: list[str]) -> str | None:
+        """Rappel des vagues en cours de route, une fois : après `early_wave_reminder` appels directs aux
+        sources sans aucun sous-agent spécialisé. Rappelé seulement à la fin, l'agent principal a souvent
+        déjà épuisé son budget et manque la dernière vague (remédiation, sous-agent web)."""
+        self.direct_calls += sum(1 for n in names if n not in self.lead_local_tools)
+        if "early" in self.rechecked or self.direct_calls < self.early_wave_reminder:
+            return None
+        if any(s.role != "generic" for s in self.subagents.values()):
+            return None
+        missing = self._missing_steps()
+        if not missing:
+            return None
+        self.rechecked.add("early")
+        return (f"Tu as déjà fait {self.direct_calls} appels aux sources toi-même, sans sous-agent spécialisé, "
+                f"et ton budget est de {self.lead_budget.max_tool_calls} appels. Le playbook prévoit : "
+                + " ; ".join(missing) + ". Lance maintenant la prochaine étape avec spawn_subagent (toutes ses "
+                "investigations dans la même réponse, puis wait_subagents) en reportant ce que tu as établi ; "
+                "les sous-agents interrogent les sources à ta place.")
 
     def _unrecorded_actions(self, text: str) -> str | None:
         """Les modèles décrivent souvent leurs actions dans la réponse sans appeler propose_action : elles

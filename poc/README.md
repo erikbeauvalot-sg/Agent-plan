@@ -144,6 +144,11 @@ par motif (événement `final_answer_rechecked`) :
   indisponibles ne comptent pas ; après `requalify`, c'est le nouveau playbook qui compte ;
 - **actions non enregistrées** : la réponse décrit des actions sans avoir appelé `propose_action`.
 
+Les vagues sont aussi rappelées **en cours de route**, une fois (événement `progress_reminder`) : après
+`early_wave_reminder` appels directs aux sources (8 par défaut, `config/poc.yaml`) sans aucun sous-agent
+spécialisé. Rappelé seulement à la fin, l'agent principal a souvent déjà épuisé son budget et manque la
+dernière vague (remédiation, sous-agent web).
+
 ```bash
 diagagent playbooks                               # valide et liste les playbooks
 diagagent ask --category performance "…"          # impose la catégorie, sans classifieur

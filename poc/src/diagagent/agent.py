@@ -82,6 +82,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
                     cancel: CancelToken | None = None, local_tools: dict[str, LocalTool] | None = None,
                     final_tools: tuple[str, ...] = (), parent_id: str | None = None,
                     final_check: Callable[[str], str | None] | None = None,
+                    progress_check: Callable[[list[str]], str | None] | None = None,
                     budget_message: str = "Budget d'appels d'outils atteint : rends maintenant ta réponse "
                                           "finale avec ce que tu as, en indiquant ce qui manque.") -> AgentResult:
     cancel = cancel or CancelToken()
@@ -176,6 +177,10 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             result.status = "stopped"
             result.answer = result.answer or response.text
             break
+        if progress_check and (reminder := progress_check([c.name for c in response.tool_calls])):
+            # Rappel en cours de route (par exemple les vagues du playbook), avant que le budget ne s'épuise.
+            log.event(agent_id, "progress_reminder", {"reason": reminder[:200]}, parent_id=parent_id)
+            messages.append(Message("user", reminder))
     else:
         result.status = "partial"
 

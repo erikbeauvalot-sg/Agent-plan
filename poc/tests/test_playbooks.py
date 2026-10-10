@@ -242,3 +242,18 @@ def test_generic_subagents_do_not_count_as_playbook_waves(tmp_path, monkeypatch)
     clf = classifier(category="performance", confidence="high", entities={"service": "paiement"})
     asyncio.run(cli.ask("Pourquoi paiement est lent ?", providers=with_classifier(lead, clf, generic=generic)))
     assert "1. mesure (metrics, host" in lead.requests[3].messages[-1].content
+
+
+def test_lead_doing_everything_itself_is_reminded_of_the_waves_early(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    direct = tools(call("search", {"source": "changes", "time_from": "2026-10-06T00:00:00Z"}))
+    lead = ScriptedProvider([direct] * 9 + [answer("## Synthèse\nLent.")] * 2)
+    clf = classifier(category="performance", confidence="high", entities={"service": "paiement"})
+    log, status, _ = asyncio.run(cli.ask("Pourquoi paiement est lent ?", providers=with_classifier(lead, clf)))
+    assert status == "completed"
+    events = [json.loads(line) for line in (log.dir / "events.jsonl").read_text().splitlines()]
+    reminders = [e for e in events if e["type"] == "progress_reminder"]
+    # Un seul rappel, juste après le 8e appel direct (early_wave_reminder de config/poc.yaml).
+    assert len(reminders) == 1 and "1. mesure (metrics, host" in reminders[0]["data"]["reason"]
+    assert "8 appels aux sources" in lead.requests[8].messages[-1].content
+    assert lead.requests[7].messages[-1].role == "tool"

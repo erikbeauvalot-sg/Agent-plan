@@ -17,5 +17,6 @@ budgets:
 orchestration:
   max_parallel: 6       # sous-agents simultanés
   max_subagents: 12     # sous-agents au total par question
+  early_wave_reminder: 8  # appels directs de l'agent principal avant le rappel des vagues du playbook
 
 runs_dir: runs
