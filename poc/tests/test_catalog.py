@@ -91,3 +91,21 @@ def test_masked_fields_cannot_be_confirmed_by_search():
         catalog.search("incidents", filters={"caller_email": email})
     with pytest.raises(ValueError, match="caller_email"):
         catalog.aggregate("incidents", "caller_email")
+
+
+def test_filter_values_absent_from_the_source_are_reported():
+    # « Ouvert », « Assigned » n'existent pas dans incidents.state : 0 résultat se lisait « aucun incident ouvert ».
+    res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01",
+                                               "state": ["Ouvert", "New", "Assigned"]})
+    assert res["unknown_values"] == {"state": {"absentes": ["Ouvert", "Assigned"],
+                                               "présentes": ["Closed", "In Progress", "New"]}}
+    assert "absente(s) du champ state" in res["note"]
+    assert "unknown_values" not in catalog.search("incidents", filters={"state": "in progress"},
+                                                   time_from="2026-10-01T00:00:00Z")
+
+
+def test_filter_on_an_object_field_names_its_subfields():
+    with pytest.raises(ValueError, match=r"ci est un objet.*ci\.hostname, ci\.id"):
+        catalog.search("changes", filters={"ci": ["CI0012345", "CI0012400"]})
+    res = catalog.search("changes", filters={"ci.id": ["CI0012345", "CI0012400"]}, time_from="2026-10-05T00:00:00Z")
+    assert "CHG0034567" in [h["number"] for h in res["hits"]]

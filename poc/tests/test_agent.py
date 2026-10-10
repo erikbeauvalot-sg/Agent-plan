@@ -119,3 +119,15 @@ def test_empty_answer_is_not_sent_back_and_malformed_tool_call_is_retried(tmp_pa
     for request in provider.requests[1:]:
         assert all(m.content or m.tool_calls for m in request.messages if m.role == "assistant")
     assert len(provider.requests) == 3
+
+
+def test_empty_retries_limit_is_per_streak(tmp_path, monkeypatch):
+    # Trois ratés isolés, chacun suivi d'un vrai appel d'outil : l'investigation ne doit pas échouer.
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    empty = LLMResponse(text="", tool_calls=[], stop_reason="end")
+    steps = []
+    for _ in range(3):
+        steps += [empty, _tool(("list_sources", {}))]
+    provider = ScriptedProvider(steps + [LLMResponse(text="## Synthèse\nok", tool_calls=[], stop_reason="end")])
+    _, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
+    assert status == "completed" and answer == "## Synthèse\nok"
