@@ -15,7 +15,8 @@ from .runlog import RunLog
 from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
-MAX_EMPTY_RETRIES = 2  # réponses vides relancées avant d'abandonner
+MAX_EMPTY_RETRIES = 2
+MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible  # réponses vides relancées avant d'abandonner
 TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
                    "l'outil, ou rends ta réponse finale en Markdown.")
 EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
@@ -123,6 +124,10 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
             log.event(agent_id, "empty_response", {"retry": empty_retries + 1, "tool_call_as_text": text_call})
             if empty_retries < MAX_EMPTY_RETRIES and not cancel.cancelled:
                 empty_retries += 1
+                if not response.text.strip():
+                    # Un message assistant vide renvoyé tel quel fait refuser toute la conversation par Ollama
+                    # (« invalid message content type: <nil> ») : on ne le garde pas dans l'historique.
+                    messages.pop()
                 messages.append(Message("user", TEXT_CALL_NUDGE if text_call else EMPTY_NUDGE))
                 continue
             result.status = "failed"
@@ -175,6 +180,12 @@ async def _complete(agent_id: str, provider: LLMProvider, request: LLMRequest,
             response = await asyncio.to_thread(provider.complete, request)
         except LLMError as e:
             log.event(agent_id, "llm_call_ended", {"error": e.kind, "message": str(e)[:500]})
+            if MALFORMED_TOOL_CALL in str(e):
+                # Le serveur n'a pas pu lire l'appel d'outil produit par le modèle : renvoyer la même requête
+                # redonne souvent le même charabia. On rend une réponse vide, que la boucle relance avec une
+                # consigne (comme une réponse vide du modèle).
+                return LLMResponse(text="", tool_calls=[], stop_reason="end",
+                                   provider_raw={"malformed_tool_call": str(e)[:500]})
             if e.kind == "retryable" and attempt < 2:
                 await asyncio.sleep(2 ** (attempt + 1))
                 continue

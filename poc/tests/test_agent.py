@@ -101,3 +101,21 @@ def test_tool_call_written_as_text_is_retried(tmp_path, monkeypatch):
     # Un JSON qui ne correspond à aucun outil reste une réponse.
     provider = ScriptedProvider([LLMResponse(text='{"total": 3}', tool_calls=[], stop_reason="end")])
     assert asyncio.run(cli.ask("Question", providers=only(provider)))[2] == '{"total": 3}'
+
+
+def test_empty_answer_is_not_sent_back_and_malformed_tool_call_is_retried(tmp_path, monkeypatch):
+    from diagagent.llm import LLMError
+
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+
+    def malformed(request):
+        raise LLMError("retryable", "Error code: 500 - error parsing tool call: raw='{\"objective\":\"???'")
+
+    final = LLMResponse(text="## Synthèse\nok", tool_calls=[], stop_reason="end")
+    provider = ScriptedProvider([LLMResponse(text="", tool_calls=[], stop_reason="end"), malformed, final])
+    _, status, answer = asyncio.run(cli.ask("Question", providers=only(provider)))
+    assert status == "completed" and answer == "## Synthèse\nok"
+    # Aucun message assistant vide n'est renvoyé au modèle ; l'appel illisible n'est pas répété à l'identique.
+    for request in provider.requests[1:]:
+        assert all(m.content or m.tool_calls for m in request.messages if m.role == "assistant")
+    assert len(provider.requests) == 3
