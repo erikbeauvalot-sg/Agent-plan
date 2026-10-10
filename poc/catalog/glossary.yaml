@@ -21,3 +21,7 @@ metrics:
   http.latency_p95: "Latence HTTP au 95e centile en ms"
   db.connections: "Connexions actives sur la base"
   db.max_connections: "Paramètre max_connections de la base"
+  container.mem_mb: "Mémoire de travail d'un conteneur Docker (cAdvisor), en Mo"
+  container.swap_mb: "Swap d'un conteneur Docker (cAdvisor), en Mo"
+  container.cpu_pct: "CPU d'un conteneur Docker (cAdvisor), en % d'un cœur"
+  container.oom_events: "Événements OOM d'un conteneur Docker, par tranche de 5 min"

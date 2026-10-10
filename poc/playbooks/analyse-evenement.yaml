@@ -1,5 +1,5 @@
 id: analyse-evenement
-version: 4
+version: 5
 status: active
 description: >
   Analyse d'un ticket d'incident ou d'une alerte existant : ce qui s'est passé, dans quel ordre, et
@@ -12,7 +12,7 @@ required_entities:
   ticket: "Quel incident ou quelle alerte veux-tu analyser (numéro ou nom) ?"
 hypotheses:
   - id: change-recent
-    signal: "change terminé sur un CI touché ou une de ses dépendances peu avant l'heure de début"
+    signal: "change terminé, ou conteneur mis à jour ou redémarré (container_changes), sur un CI touché ou une de ses dépendances peu avant l'heure de début"
   - id: alerte-sans-impact
     signal: "l'alerte mesure un niveau (swap, remplissage) sans impact mesuré : ni pression mémoire, ni erreur, ni lenteur"
   - id: probleme-connu

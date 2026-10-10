@@ -12,3 +12,6 @@ system: |
   Date les pics de swap.out_pages_s, mem.pressure_pct et mem.oom_kills, et regarde mem.used_pct à ces
   moments-là ; distingue un manque de RAM en cours (swap.in_pages_s ou pression non nuls maintenant)
   d'un pic passé.
+  Sur un hôte Docker, container_metrics dit quel conteneur a grossi et à quelle heure (max_at) :
+  compare l'heure de ses pics avec celle du symptôme. container_changes date les redémarrages et mises
+  à jour : un pic juste après un démarrage est souvent celui du démarrage, pas une fuite.

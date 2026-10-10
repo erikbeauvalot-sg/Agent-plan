@@ -112,6 +112,17 @@ cases:
     assert [r["attempt"] for r in report["results"]] == [1, 2, 3]
 
 
+def test_same_action_twice_is_recorded_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    again = {**ACTION, "title": ACTION["title"].upper() + "  ", "rationale": "reformulée"}
+    lead = ScriptedProvider([tools(call("propose_action", ACTION), call("propose_action", again)),
+                             answer("## Synthèse\nok")])
+    log, status, _ = asyncio.run(cli.ask("Pourquoi ?", providers=by_role(lead=lead)))
+    assert status == "completed"
+    assert [a["id"] for a in json.loads((log.dir / "actions.json").read_text())] == ["A01"]
+    assert "déjà enregistrée" in lead.requests[1].messages[-1].content
+
+
 def test_actions_written_in_answer_must_be_recorded(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
     text = "## Synthèse\nCHG0034567.\n## Actions proposées\n1) Revenir à max_connections = 500\n## Limites\naucune"

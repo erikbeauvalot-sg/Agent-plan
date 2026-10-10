@@ -94,6 +94,30 @@ class PrometheusMetrics:
             return []
         return to_points(result[0]["values"])
 
+    def container_series(self, host: str, metric: str, start: datetime, end: datetime,
+                         step_s: int) -> dict[str, list[Point]]:
+        """Série par conteneur (label name, cAdvisor) d'une métrique de la section `containers:`."""
+        templates = self.card.get("containers", {})
+        if metric not in templates:
+            raise ValueError(f"Métrique de conteneur {metric} non décrite ; disponibles : {', '.join(templates)}")
+        result = self.range(templates[metric]["promql"].format(sel=self.selector(host)), start, end, step_s)
+        return {r["metric"].get("name", "?"): to_points(r["values"]) for r in result}
+
+    def container_starts(self, host: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Instances de conteneurs vues sur la période : nom, image, version, heure de démarrage."""
+        promql = ("max by (name, id, image, container_label_org_opencontainers_image_version) "
+                  f"(container_start_time_seconds{{name!=\"\",{self.selector(host)}}})")
+        step = max(60, int((end - start).total_seconds() // 200))
+        out = []
+        for r in self.range(promql, start, end, step):
+            points = to_points(r["values"])
+            if points:
+                labels = r["metric"]
+                out.append({"name": labels.get("name"), "image": labels.get("image"),
+                            "version": labels.get("container_label_org_opencontainers_image_version"),
+                            "started_at": datetime.fromtimestamp(points[-1][1], timezone.utc)})
+        return out
+
 
 def host_of(labels: dict[str, str], host_label: str = "instance") -> str:
     """Nom du host à partir des labels Prometheus : instance sans port, ou label host/hostname."""

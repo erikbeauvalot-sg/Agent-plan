@@ -333,6 +333,8 @@ Sans `--now`, l'heure de référence est l'heure réelle. Ce que l'agent obtient
 | `promql` | Prometheus | Requête libre, résumée par série |
 | `list_alerts`, `list_silences` | Alertmanager | Alertes actives, silences en cours |
 | `alert_history` | Prometheus (`ALERTS`) | Alertes passées et leurs intervalles de déclenchement |
+| `container_metrics` | Prometheus (cAdvisor) | Mémoire, swap, CPU ou OOM par conteneur Docker, classés par pic, avec l'heure du pic |
+| `container_changes` | Prometheus (cAdvisor) | Conteneurs démarrés, redémarrés ou mis à jour sur la période, version avant et après |
 | `alert_rule` | Prometheus (règles) | Expression, seuil, durée et hosts en alerte d'une règle : l'alerte mesure-t-elle un impact ? |
 
 Les métriques normalisées sont des modèles PromQL dans `catalog/sources/metrics-prometheus.yaml`,

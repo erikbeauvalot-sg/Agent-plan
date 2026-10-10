@@ -69,6 +69,20 @@ class FakeMonitoring(BaseHTTPRequestHandler):
             return {"resultType": "matrix", "result": [
                 {"metric": {"alertname": "DiskAlmostFull", "instance": "nas.maison:9100",
                             "severity": "warning", "alertstate": "firing"}, "values": values}]}
+        if "container_start_time_seconds" in query:
+            # app : version 1.0 démarrée bien avant la période, recréée en 1.1 deux heures avant la fin.
+            old = {"name": "app", "id": "/docker-a", "image": "app:latest",
+                   "container_label_org_opencontainers_image_version": "1.0"}
+            new = {**old, "id": "/docker-b", "container_label_org_opencontainers_image_version": "1.1"}
+            return {"resultType": "matrix", "result": [
+                {"metric": old, "values": [[start, str(start - 86400)], [end - 7200, str(start - 86400)]]},
+                {"metric": new, "values": [[end - 7000, str(end - 7200)], [end, str(end - 7200)]]}]}
+        if "by (name)" in query:
+            series = []
+            for name, low, high in (("db", "100", "900"), ("app", "50", "60")):
+                values = [[t, high if t >= end - 3 * 3600 else low] for t in range(int(start), int(end), int(step))]
+                series.append({"metric": {"name": name}, "values": values})
+            return {"resultType": "matrix", "result": series}
         values, t = [], start
         while t <= end:
             values.append([t, "20" if t < end - 4 * 3600 else "85"])  # rupture 4 h avant la fin
@@ -172,6 +186,25 @@ def test_alert_rule_shows_expression_threshold_and_firing_hosts(home_monitoring)
     assert rule["firing_now"] == ["nas.maison"] and rule["file"] == "/etc/prometheus/rules.yml"
 
 
+def test_container_metrics_ranks_containers_and_dates_their_peak(home_monitoring):
+    data = _call("container_metrics", {"host": "nas.maison"})
+    assert [c["container"] for c in data["containers"]] == ["db", "app"]
+    db = data["containers"][0]
+    assert db["summary"]["max"] == 900 and db["breaks"]
+    assert db["summary"]["max_at"] == db["breaks"][0]["at"]
+    sent = FakeMonitoring.queries[-1]
+    assert sent.startswith("max by (name) (container_memory_working_set_bytes{name!=\"\",instance=~")
+
+
+def test_container_changes_reports_update_with_versions(home_monitoring):
+    data = _call("container_changes", {"host": "nas.maison"})
+    assert data["total"] == 1  # le démarrage de 1.0, antérieur à la période, n'est pas un changement
+    change = data["changes"][0]
+    assert (change["container"], change["kind"], change["previous_version"], change["version"]) == \
+        ("app", "mise à jour", "1.0", "1.1")
+    assert change["started_at"] == "2026-10-07T04:00:00+00:00"
+
+
 def test_resolve_entity_finds_monitored_host_without_cmdb(home_monitoring):
     data = _call("resolve_entity", {"name": "nas"})
     assert data["found"] and data["cis"] == []
@@ -184,4 +217,4 @@ def test_home_mode_offers_only_roles_with_sources(home_monitoring, tmp_path):
 
     async def fn(hub):
         return set(Investigation("Q", hub, RunLog(tmp_path, "Q", "t"), lambda r: None, {}).roles)
-    assert _run(fn) == {"host", "metrics", "events", "generic"}
+    assert _run(fn) == {"host", "metrics", "events", "changes", "generic"}
