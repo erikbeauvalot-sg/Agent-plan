@@ -132,3 +132,22 @@ def test_near_miss_category_id_is_matched():
                                        '"alternative": "Performance"}', books)
     assert (c.category, c.alternative) == ("analyse-evenement", "performance")
     assert playbooks.parse_classification('{"category": "meteo", "confidence": "high"}', books).category == "autre"
+
+
+def test_models_and_tokens_are_recorded_per_role_and_agent(tmp_path, monkeypatch):
+    from diagagent.llm import Usage
+
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    clf = ScriptedProvider([LLMResponse(text='{"category": "information", "confidence": "high"}', tool_calls=[],
+                                        stop_reason="end", usage=Usage(100, 10), model="nano-1")])
+    lead = ScriptedProvider([LLMResponse(text="## Synthèse\nok", tool_calls=[], stop_reason="end",
+                                         usage=Usage(1000, 50), model="mini-1")])
+    providers = {"lead": (lead, {"model": "mini"}), "classifier": (clf, {"model": "nano"})}
+    log, _, _ = asyncio.run(cli.ask("Qui est srv-pay-01 ?", providers=lambda role: providers[role]))
+    m = json.loads((log.dir / "manifest.json").read_text())
+    assert m["models"]["lead"] == {"provider": "scripted", "model": "mini"}
+    assert m["models"]["classifier"] == {"provider": "scripted", "model": "nano"}
+    assert m["usage_by_agent"] == {
+        "classifier": {"input_tokens": 100, "output_tokens": 10, "calls": 1, "model": "nano-1"},
+        "lead": {"input_tokens": 1000, "output_tokens": 50, "calls": 1, "model": "mini-1"}}
+    assert m["usage"] == {"input_tokens": 1100, "output_tokens": 60}

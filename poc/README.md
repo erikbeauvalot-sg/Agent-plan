@@ -49,6 +49,29 @@ d'Entra ID : `auth: api_key` et la variable `AZURE_OPENAI_API_KEY`.
 
 **Modèle local** : décommenter la ligne `provider: local` de `config/models.yaml` (Ollama ou vLLM).
 
+**OpenAI (POC à la maison)**
+
+Avec `OPENAI_API_KEY` dans `poc/.env`, ajouter le fournisseur dans `config/models.yaml` et l'utiliser
+pour les rôles voulus (aucun modèle n'est gratuit sur l'API OpenAI ; les modèles `mini` et `nano`
+coûtent peu) :
+
+```yaml
+roles:
+  lead:       {provider: openai, model: gpt-5.4-mini}
+  subagent:   {provider: openai, model: gpt-5.4-mini}
+  classifier: {provider: openai, model: gpt-5.4-nano}
+providers:
+  openai:
+    adapter: openai_compatible
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    supports_reasoning: true
+    context_tokens: 128000
+```
+
+Ne pas indiquer `reasoning` pour ces modèles : l'API Chat Completions refuse `reasoning_effort` avec
+des appels d'outils.
+
 **Claude (POC à la maison)**
 
 Réservé au POC sur tes propres sources : en production, les données ne partent pas chez un
@@ -209,6 +232,10 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 - **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec la jauge de
   budget et les signaux (bloqué depuis 120 s, boucle, 3 erreurs d'outil, budget à 80 %, erreur modèle).
 - **Chronologie** : une ligne par agent, appels au modèle et aux outils.
+- **Modèles et tokens** : sous la question, le fournisseur et le modèle de chaque rôle (principal,
+  classifieur, sous-agents) et les tokens consommés, comptés en direct ; sur chaque nœud et dans le
+  détail d'un agent, son modèle et ses tokens. Ils sont aussi dans `manifest.json` (`models`,
+  `usage`, `usage_by_agent`).
 - **Détail d'un agent** (clic sur un nœud) : prompt reçu, rapport, chaque appel d'outil, réponses du modèle,
   bouton d'arrêt.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;

@@ -171,6 +171,8 @@ function closeStream() {
 
 function renderSummary(data) {
   current.canStop = data.can_stop; current.status = data.manifest.status; current.canDetails = data.can_details;
+  current.models = data.manifest.models; current.usage = data.manifest.usage;
+  renderLlm();
   $("run-shared").hidden = !data.manifest.shared;
   $("share-run").hidden = !data.can_share;
   $("share-run").textContent = data.manifest.shared ? "Ne plus partager" : "Partager";
@@ -405,12 +407,15 @@ function apply(e) {
   const d = e.data || {};
   switch (e.type) {
     case "agent_spawned": a.objective = d.objective; a.parent = "lead"; break;
-    case "agent_started": a.maxTools = d.max_tool_calls; a.start = Math.min(a.start, ts); break;
+    case "agent_started":
+      a.maxTools = d.max_tool_calls; a.start = Math.min(a.start, ts);
+      if (d.model) a.llm = `${d.provider} / ${d.model}`;
+      break;
     case "llm_call_started": a.open.llm = ts; break;
     case "llm_call_ended":
-      a.segs.push({ kind: d.error ? "err" : "llm", start: a.open.llm ?? ts, end: ts, label: d.error ? `modèle : ${d.error}` : "modèle" });
+      a.segs.push({ kind: d.error ? "err" : "llm", start: a.open.llm ?? ts, end: ts, label: d.error ? `modèle : ${d.error}` : `modèle ${d.model || ""}` });
       if (d.error) a.model = d.error;
-      if (d.usage) a.tokens += (d.usage.input_tokens || 0) + (d.usage.output_tokens || 0);
+      if (d.usage) addUsage(a, d.usage);
       break;
     case "tool_call_started": {
       a.open[d.ref] = ts;
@@ -436,11 +441,37 @@ function apply(e) {
       // La classification apparaît comme un appel au modèle de l'agent principal ; une demande de précision
       // termine l'investigation sans lancer l'agent.
       if (a.open.cls) a.segs.push({ kind: "llm", start: a.open.cls, end: ts, label: `classification : ${d.id}` });
+      if (d.usage) { current.classifier = { tokensIn: 0, tokensOut: 0, tokens: 0 }; addUsage(current.classifier, d.usage); }
       if (d.mode === "clarify") { a.status = "needs_clarification"; a.end = ts; }
       scheduleSummary(); break;
     case "category_changed": scheduleSummary(); break;
     case "run_failed": a.status = "failed"; a.end = ts; break;
   }
+}
+
+function addUsage(target, usage) {
+  target.tokensIn = (target.tokensIn || 0) + (usage.input_tokens || 0);
+  target.tokensOut = (target.tokensOut || 0) + (usage.output_tokens || 0);
+  target.tokens = target.tokensIn + target.tokensOut;
+}
+
+const fmtTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)} k` : String(n || 0));
+
+// Fournisseur et modèle par rôle, et tokens consommés : relus du manifest, et comptés en direct à partir des
+// événements pendant l'investigation.
+function renderLlm() {
+  if (!current) return;
+  const models = current.models || {};
+  const label = { lead: "principal", classifier: "classifieur" };
+  const roles = Object.entries(models).map(([role, m]) => `${label[role] || role} ${m.provider} / ${m.model}`);
+  const agents = Object.values(current.agents);
+  const live = [...agents, current.classifier || {}];
+  const tin = live.reduce((s, a) => s + (a.tokensIn || 0), 0), tout = live.reduce((s, a) => s + (a.tokensOut || 0), 0);
+  const usage = current.ended && current.usage ? current.usage : { input_tokens: tin, output_tokens: tout };
+  const total = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+  $("run-llm").textContent = (roles.length ? `LLM : ${roles.join(" · ")} — ` : "")
+    + `${total.toLocaleString("fr-FR")} tokens (${(usage.input_tokens || 0).toLocaleString("fr-FR")} en entrée, `
+    + `${(usage.output_tokens || 0).toLocaleString("fr-FR")} en sortie)`;
 }
 
 function signals(a, now) {
@@ -480,6 +511,7 @@ function render() {
     ? node(lead, now) + (children.length ? `<div class="children">${children.map((c) => node(c, now)).join("")}</div>` : "")
     : '<p class="muted">En attente du premier événement…</p>';
   renderTimeline(now);
+  renderLlm();
 }
 
 function node(a, now) {
@@ -490,7 +522,8 @@ function node(a, now) {
   return `<button class="node ${a.status} ${sigs.map((s) => "sig-" + s.key).join(" ")}" data-agent="${esc(a.id)}">
     <span class="name">${esc(a.id === "lead" ? "Agent principal" : a.id)}</span>
     ${a.objective ? `<span class="obj">${esc(a.objective)}</span>` : ""}
-    <span class="stats"><span>${esc(statusLabel(a.status))}</span><span>${a.toolCalls}${a.maxTools ? "/" + a.maxTools : ""} outils · ${dur} s</span></span>
+    <span class="stats"><span>${esc(statusLabel(a.status))}</span><span>${a.toolCalls}${a.maxTools ? "/" + a.maxTools : ""} outils · ${dur} s · ${fmtTokens(a.tokens)} tokens</span></span>
+    ${a.llm ? `<span class="llm-name">${esc(a.llm)}</span>` : ""}
     <span class="gauge ${gauge}"><div style="width:${pct}%"></div></span>
     ${sigs.length ? `<span class="badges">${sigs.map((s) => `<span class="badge ${s.bad ? "bad" : ""}">${esc(s.text)}</span>`).join("")}</span>` : ""}
   </button>`;
@@ -537,7 +570,10 @@ async function openAgent(agentId, focusRef) {
   $("d-stop").onclick = () => stopAgent(agentId);
   const report = d.report ? `<section><h2>Rapport</h2><pre>${esc(JSON.stringify(d.report, null, 2))}</pre></section>` : "";
   const prompt = d.prompt || d.system_prompt;
+  const usage = a ? `<p class="muted">${a.llm ? esc(a.llm) + " · " : ""}${(a.tokensIn || 0).toLocaleString("fr-FR")} tokens en entrée,
+    ${(a.tokensOut || 0).toLocaleString("fr-FR")} en sortie</p>` : "";
   $("d-body").innerHTML = `
+    ${usage}
     ${prompt ? `<section><h2>${d.prompt ? "Prompt reçu" : "Prompt système"}</h2><div class="md">${md(prompt)}</div></section>` : ""}
     ${report}
     <section><h2>Appels d'outils (${d.calls.length})</h2>

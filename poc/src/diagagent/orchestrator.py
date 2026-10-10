@@ -19,6 +19,7 @@ import yaml
 from . import catalog, knowledge, playbooks
 from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, run_agent
 from .llm import LLMProvider, ToolSpec
+from .llm.base import to_jsonable
 from .runlog import RunLog
 from .tools import ToolHub
 
@@ -214,7 +215,7 @@ class Investigation:
         decision, section = await self.categorize()
         if decision.mode == "clarify":
             return AgentResult(status="needs_clarification", answer=self._clarification_text(decision))
-        provider, role_cfg = self.providers("lead")
+        provider, role_cfg = self._provider("lead")
         result = await run_agent(
             agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
             user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
@@ -222,6 +223,16 @@ class Investigation:
             local_tools=self._lead_tools())
         await self._close_pending()
         return result
+
+    def _provider(self, role: str) -> tuple[LLMProvider, dict[str, Any]]:
+        """Fournisseur d'un rôle, noté dans le manifest (fournisseur et modèle par rôle d'agent)."""
+        provider, cfg = self.providers(role)
+        models = self.log.manifest.setdefault("models", {})
+        if role not in models:
+            models[role] = {"provider": provider.name,
+                            "model": cfg.get("model") or cfg.get("deployment") or getattr(provider, "_model", None)}
+            self.log.update_manifest(models=models)
+        return provider, cfg
 
     def lead_system_prompt(self, playbook: str = "") -> str:
         template = (catalog.home() / "prompts" / "lead.md").read_text(encoding="utf-8")
@@ -235,6 +246,7 @@ class Investigation:
 
     async def categorize(self) -> tuple[playbooks.Decision, str]:
         # Les catégories en observation (draft) sont proposées au classifieur mais jamais appliquées.
+        classifier_usage: dict[str, Any] = {}
         self.books = playbooks.load_playbooks(include=("active", "draft"))
         active = {k: b for k, b in self.books.items() if b["status"] == "active"}
         if self.forced_category:
@@ -245,7 +257,7 @@ class Investigation:
         else:
             self.log.event("lead", "classification_started", {})
             try:
-                provider, _ = self.providers("classifier")
+                provider, _ = self._provider("classifier")
             except Exception as e:  # pas de classifieur configuré : stratégie générique
                 provider, err = None, f"{type(e).__name__}: {e}"
             if provider is None:
@@ -254,11 +266,13 @@ class Investigation:
                 similar = knowledge.similar_requests(self.question, self.log.runs_dir)
                 c, raw = await asyncio.to_thread(playbooks.classify, provider, self.question, self.books, similar)
                 if raw is not None:
+                    classifier_usage = {"model": raw.model, "usage": to_jsonable(raw.usage)}
+                if raw is not None:
                     self.log.write_text("lead", "classification_response.txt", raw.text or "")
             source = "classifier"
         decision = playbooks.decide(c, self.books)
         self._set_category(c, decision, source)
-        self.log.event("lead", "request_classified", {**self.category, "mode": decision.mode})
+        self.log.event("lead", "request_classified", {**self.category, "mode": decision.mode, **classifier_usage})
         if decision.mode == "clarify":
             return decision, ""
         section = playbooks.lead_section(decision, c, self.books, set(self.roles))
@@ -431,7 +445,7 @@ class Investigation:
                 "submit_report", "Rend le rapport structuré à l'agent principal et termine la tâche.",
                 REPORT_SCHEMA), submit, terminal=True)}
             try:
-                provider, role_cfg = self.providers(role.name)
+                provider, role_cfg = self._provider(role.name)
                 result = await run_agent(
                     agent_id=sub.task_id, provider=provider, system=self._subagent_system(role),
                     user_message=prompt, tools=self._role_tools(role), hub=self.hub, log=self.log,
@@ -457,14 +471,30 @@ class Investigation:
             return result
 
 
-def usage_total(lead: AgentResult, subagents: dict[str, SubAgent], log_dir: Path) -> dict[str, int]:
-    """Tokens cumulés de l'agent principal et des sous-agents, relus depuis les événements."""
-    total = dict(lead.usage)
+def usage_by_agent(log_dir: Path) -> dict[str, dict[str, Any]]:
+    """Tokens et modèle par agent, relus depuis les événements : chaque appel au modèle (llm_call_ended)
+    et l'appel du classifieur (request_classified, compté sous « classifier »)."""
+    out: dict[str, dict[str, Any]] = {}
     events = log_dir / "events.jsonl"
-    if events.exists():
-        for line in events.read_text(encoding="utf-8").splitlines():
-            e = json.loads(line)
-            if e["type"] == "agent_ended" and e["agent_id"] in subagents:
-                for k, v in e["data"].get("usage", {}).items():
-                    total[k] = total.get(k, 0) + v
-    return total
+    for line in events.read_text(encoding="utf-8").splitlines() if events.exists() else []:
+        e = json.loads(line)
+        if e["type"] == "llm_call_ended" and e["data"].get("usage"):
+            agent = e["agent_id"]
+        elif e["type"] == "request_classified" and e["data"].get("usage"):
+            agent = "classifier"
+        else:
+            continue
+        row = out.setdefault(agent, {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": None})
+        row["calls"] += 1
+        row["model"] = e["data"].get("model") or row["model"]
+        for k in ("input_tokens", "output_tokens"):
+            row[k] += e["data"]["usage"].get(k) or 0
+    return out
+
+
+def usage_total(lead: AgentResult, subagents: dict[str, SubAgent], log_dir: Path) -> dict[str, int]:
+    """Tokens cumulés de tous les appels au modèle (classifieur, agent principal, sous-agents)."""
+    rows = usage_by_agent(log_dir).values()
+    if not rows:
+        return dict(lead.usage)
+    return {k: sum(r[k] for r in rows) for k in ("input_tokens", "output_tokens")}
