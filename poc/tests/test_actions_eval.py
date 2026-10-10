@@ -121,6 +121,13 @@ def test_actions_written_in_answer_must_be_recorded(tmp_path, monkeypatch):
     assert "aucune n'a été enregistrée" in lead.requests[1].messages[-1].content
     assert json.loads((log.dir / "actions.json").read_text())[0]["id"] == "A01"
 
+    # Titre en gras et tableau (gpt-oss) : relance aussi.
+    bold = ("**Synthèse**\nok\n\n**Actions proposées**\n| Titre | Cible |\n|---|---|\n"
+            "| Régler SwapUsageHigh | Prometheus |\n\n**Limites**\naucune")
+    lead = ScriptedProvider([answer(bold), tools(call("propose_action", ACTION)), answer(bold)])
+    asyncio.run(cli.ask("Pourquoi ?", providers=by_role(lead=lead)))
+    assert "aucune n'a été enregistrée" in lead.requests[1].messages[-1].content
+
     # Pas de relance quand la réponse ne décrit aucune action.
     lead = ScriptedProvider([answer("## Synthèse\nok\n## Actions proposées\nAucune.\n")])
     assert asyncio.run(cli.ask("Q", providers=by_role(lead=lead)))[1] == "completed" and len(lead.requests) == 1
