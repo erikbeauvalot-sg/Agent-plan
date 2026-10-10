@@ -26,6 +26,13 @@ metrics:
   net.rx_bytes_s: {promql: 'sum(rate(node_network_receive_bytes_total{{device!="lo",{sel}}}[5m]))'}
   net.tx_bytes_s: {promql: 'sum(rate(node_network_transmit_bytes_total{{device!="lo",{sel}}}[5m]))'}
   net.errors_s: {promql: 'sum(rate(node_network_receive_errs_total{{{sel}}}[5m]) + rate(node_network_transmit_errs_total{{{sel}}}[5m]))'}
+# Par conteneur Docker (cAdvisor, label name), pour container_metrics. max par nom : un conteneur
+# recréé (nouvel identifiant) garde une seule série, sans additionner l'ancien et le nouveau.
+containers:
+  container.mem_mb: {promql: 'max by (name) (container_memory_working_set_bytes{{name!="",{sel}}}) / 2^20'}
+  container.swap_mb: {promql: 'max by (name) (container_memory_swap{{name!="",{sel}}}) / 2^20'}
+  container.cpu_pct: {promql: 'max by (name) (rate(container_cpu_usage_seconds_total{{name!="",{sel}}}[5m])) * 100'}
+  container.oom_events: {promql: 'sum by (name) (increase(container_oom_events_total{{name!="",{sel}}}[5m]))'}
 step_min: 60s
 retention: selon la configuration de Prometheus (15 jours par défaut)
 limits: {max_range: 7 jours, max_series: 10}

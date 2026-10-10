@@ -127,6 +127,65 @@ def promql(query: str, time_from: str | None = None, time_to: str | None = None,
             "series": series}
 
 
+def _prometheus() -> backends_mod.PrometheusMetrics:
+    prom = backends_mod.prometheus()
+    if prom is None:
+        raise ValueError("Aucune source Prometheus configurée (variable PROMETHEUS_URL)")
+    return prom
+
+
+@read_only_tool(server)
+def container_metrics(host: str, metric: str = "container.mem_mb", time_from: str | None = None,
+                      time_to: str | None = None, step_minutes: int = 5, top: int = 8) -> dict[str, Any]:
+    """Historique par conteneur Docker (cAdvisor) : quel conteneur a grossi, et quand. Conteneurs
+    classés par maximum, chacun avec min, max, max_at (heure du pic), moyenne et ruptures.
+
+    metric : container.mem_mb (mémoire de travail), container.swap_mb, container.cpu_pct,
+    container.oom_events. time_from / time_to : ISO 8601 UTC, 24 h par défaut, 7 jours max.
+    """
+    prom = _prometheus()
+    start, end = _window(time_from, time_to)
+    step = _step_minutes(start, end, step_minutes)
+    by_name = prom.container_series(host, metric, start, end, max(60, step * 60 // 4))
+    if not by_name:
+        raise ValueError(f"Pas de série {metric} pour {host} : cAdvisor ne collecte-t-il pas ce host ?")
+    containers = []
+    for name, points in by_name.items():
+        if points:
+            s = _summarize(points, start, step)
+            containers.append({"container": name, "summary": s["summary"], "breaks": s["breaks"]})
+    containers.sort(key=lambda c: c["summary"]["max"], reverse=True)
+    top = max(1, min(top, MAX_SERIES))
+    return {"host": host, "metric": metric, "source": prom.source_id,
+            "time_range": [start.isoformat(), end.isoformat()], "step_minutes": step,
+            "containers_total": len(containers), "containers": containers[:top]}
+
+
+@read_only_tool(server)
+def container_changes(host: str, time_from: str | None = None, time_to: str | None = None) -> dict[str, Any]:
+    """Conteneurs Docker démarrés ou recréés sur la période (cAdvisor), avec image et version avant et
+    après : une mise à jour ou un redémarrage est un changement à croiser avec le début du symptôme."""
+    prom = _prometheus()
+    start, end = _window(time_from, time_to)
+    instances: dict[str, list[dict[str, Any]]] = {}
+    for inst in prom.container_starts(host, start, end):
+        instances.setdefault(inst["name"], []).append(inst)
+    changes = []
+    for name, seen in instances.items():
+        seen.sort(key=lambda i: i["started_at"])
+        for before, after in zip([None, *seen], seen):
+            if after["started_at"] < start:
+                continue  # démarré avant la période : pas un changement de la période
+            changes.append({"container": name, "started_at": after["started_at"].isoformat(),
+                            "image": after["image"], "version": after["version"],
+                            "previous_version": before["version"] if before else None,
+                            "kind": ("mise à jour" if before and before["version"] != after["version"]
+                                     else "redémarrage" if before else "démarrage")})
+    changes.sort(key=lambda c: c["started_at"])
+    return {"host": host, "source": prom.source_id, "time_range": [start.isoformat(), end.isoformat()],
+            "total": len(changes), "changes": changes}
+
+
 def _breaks(points: list[tuple[Any, float]], window: int = 6, ratio: float = 0.5) -> list[dict[str, Any]]:
     """Ruptures : points où la moyenne des `window` points suivants s'écarte de plus de `ratio` de la
     moyenne des `window` précédents ; on garde le point le plus marqué de chaque zone."""
