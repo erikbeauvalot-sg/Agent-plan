@@ -377,6 +377,13 @@ class Investigation:
         action = validate_action(dict(args))
         path = self.log.dir / "actions.json"
         actions = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        # Les modèles rappellent souvent propose_action pour la même action (après un rappel du
+        # contrôle final, ou en reformulant) : une seule entrée par titre et cible.
+        key = (" ".join(action["title"].lower().split()), action["target"].lower())
+        for known in actions:
+            if (" ".join(known["title"].lower().split()), known["target"].lower()) == key:
+                return json.dumps({"id": known["id"], "status": "déjà enregistrée, rien d'ajouté"},
+                                  ensure_ascii=False)
         action = {"id": f"A{len(actions) + 1:02d}", "status": "proposed", **action}
         actions.append(action)
         path.write_text(json.dumps(actions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
