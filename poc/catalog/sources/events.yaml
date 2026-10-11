@@ -12,6 +12,10 @@ fields:
   check: {type: keyword, desc: "Nom du contrôle de supervision"}
   message: {type: text}
   status: {type: keyword, values: [open, closed]}
+  closed_at: {type: date}
+# État à l'heure de référence : une alerte fermée plus tard est encore ouverte.
+as_of:
+  - {field: closed_at, before: {status: open}}
 retention: 90 jours
 freshness: 1 min
 limits: {max_hits: 200}

@@ -25,6 +25,15 @@ from .llm import LLMProvider, LLMRequest, Message
 STATUSES = ("active", "draft", "retired")
 CONFIDENCES = ("low", "medium", "high")
 FALLBACK = "autre"
+# Une entité indispensable peut être donnée sous une autre forme : un host nommé désigne le composant
+# en cause (« la latence de srv-pay-01 »), comme le ferait un service.
+ENTITY_ALIASES = {"service": ("host", "ci"),
+                  # Un événement sur un host ou un service nommé se retrouve dans les incidents et les
+                  # alertes : l'agent cherche le ticket lui-même plutôt que de le demander.
+                  "ticket": ("host", "service", "ci")}
+GENERIC_NAMES = {"site", "site web", "site internet", "web", "internet", "application", "appli", "app", "application web",
+                 "service", "serveur", "outil", "logiciel", "système", "plateforme", "réseau", "base",
+                 "base de données", "appli web", "programme"}
 REQUIRED_KEYS = ("id", "version", "status", "description", "steps", "stop_when", "output", "owner")
 
 
@@ -111,6 +120,9 @@ Réponds uniquement par un objet JSON, sans texte autour :
   "reason": "<une phrase>"}}
 
 - category : la catégorie qui décrit le mieux la demande ; {fallback} si aucune ne convient.
+  Une question factuelle à réponse courte (priorité, statut ou résolution d'un ticket, heure d'une
+  alerte, valeur d'une métrique, propriétaire) est information, même si elle cite un numéro INC ou une
+  alerte : analyser, expliquer ou chercher une cause, c'est une autre catégorie.
 - alternative : une deuxième catégorie seulement si elle est presque aussi plausible.
 - entities : seulement les entités écrites dans la demande, sans rien deviner.
 - missing : les entités indispensables de la catégorie (liste « indispensable » ci-dessus) que la
@@ -140,7 +152,7 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     match = re.search(r"\{.*\}", text or "", re.S)
     if not match:
         raise PlaybookError("pas d'objet JSON dans la réponse du classifieur")
-    data = json.loads(match.group(0))
+    data = lenient_json(match.group(0))
     active = {k for k, b in books.items() if b["status"] == "active"}
     category, alternative = _known(data.get("category"), books), _known(data.get("alternative"), books)
     draft_match = None
@@ -155,10 +167,86 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     confidence = data.get("confidence") if data.get("confidence") in CONFIDENCES else "low"
     entities = {k: str(v) for k, v in (data.get("entities") or {}).items() if v not in (None, "", [])}
     required = books[category].get("required_entities") or {}
-    missing = [m for m in data.get("missing") or [] if m in required and m not in entities]
+    # « Mon site web » n'identifie rien : l'entité est écartée, et manquante si la catégorie l'exige.
+    vague = [k for k, v in entities.items() if is_vague(v)]
+    for k in vague:
+        del entities[k]
+
+    missing = [m for m in dict.fromkeys([*(data.get("missing") or []), *vague]) if m in required and m not in entities]
     return Classification(category, confidence, alternative, entities, missing,
                           [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
                           draft_match=draft_match)
+
+
+FACTUAL_START = re.compile(r"^\s*(?:quel(?:le)?s?\b|à quelle (?:heure|date)\b|qui\b|combien\b|comment a été\b|"
+                           r"quand\b)", re.I)
+NOT_FACTUAL = re.compile(r"\b(?:pourquoi|cause|causes|explique|expliquer|analyse|analyser|lent|lente|lents|"
+                         r"lenteurs?|panne|ne fonctionne|indisponible|erreurs?|échou\w*|plante|impact\w*|"
+                         r"probl[eè]me|faire|corriger|résoudre)\b", re.I)
+FACTUAL_FROM = ("performance", "analyse-evenement", "indisponibilite")
+
+
+def factual_override(c: Classification, question: str, books: dict[str, dict[str, Any]]) -> Classification:
+    """Une question qui demande une valeur (« Quelle a été la latence maximale… », « Comment a été résolu
+    INC… ») est information, même classée performance ou analyse : le classifieur réagit au mot
+    « latence » ou au numéro de ticket et lance une investigation complète pour une réponse d'une ligne.
+    Rien ne change si la question parle de cause, de panne ou d'erreur."""
+    if c.category not in FACTUAL_FROM or "information" not in books or books["information"]["status"] != "active":
+        return c
+    if not FACTUAL_START.search(question) or NOT_FACTUAL.search(question):
+        return c
+    return Classification("information", c.confidence, None, dict(c.entities), [], [], c.reason,
+                           draft_match=c.draft_match)
+
+
+def glossary_service(question: str) -> str | None:
+    """Service du glossaire cité par son nom ou un alias (« les commandes », « le batch de facturation ») :
+    le premier cité, sujet de la phrase (« les commandes échouent avec une erreur d'authentification »
+    parle des commandes) ; à égalité, l'alias le plus long."""
+    text = question.lower()
+    best = None
+    for s in (catalog.load_yaml("glossary.yaml").get("services") or {}).values():
+        for name in [s["name"], *s.get("aliases", [])]:
+            if is_vague(name):  # « site web » ne désigne pas le portail plus qu'un autre site
+                continue
+            if m := re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", text):
+                key = (m.start(), -len(name))
+                if best is None or key < best[0]:
+                    best = (key, s["name"])
+    return best[1] if best else None
+
+
+def lenient_json(text: str) -> dict[str, Any]:
+    """Objet JSON du classifieur, même un peu abîmé : gpt-oss écrit \\' dans une chaîne, ou oublie le
+    guillemet qui ferme la dernière (« …non précisé.} »). Les champs utiles sont alors relevés un à un ;
+    seule une réponse sans catégorie reste illisible."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first:
+        try:
+            return json.loads(text.replace("\\'", "'"))
+        except json.JSONDecodeError:
+            pass
+        data: dict[str, Any] = {}
+        for key in ("category", "confidence", "alternative", "reason"):
+            if m := re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)', text):
+                data[key] = m.group(1)
+        for key, pattern in (("entities", r"\{[^{}]*\}"), ("missing", r"\[[^\[\]]*\]"), ("choices", r"\[[^\[\]]*\]")):
+            if m := re.search(rf'"{key}"\s*:\s*({pattern})', text):
+                try:
+                    data[key] = json.loads(m.group(1).replace("\\'", "'"))
+                except json.JSONDecodeError:
+                    pass
+        if "category" not in data:
+            raise first
+        return data
+
+
+def is_vague(value: str) -> bool:
+    """Nom générique, sans rien qui désigne un objet précis : « mon site web », « l'application »."""
+    words = re.sub(r"\b(?:mon|ma|mes|notre|nos|votre|vos|le|la|les|l'|un|une|des|ce|cet|cette)\s*", " ",
+                   value.strip().lower().replace("’", "'"))
+    return " ".join(words.split()) in GENERIC_NAMES
 
 
 def _known(value: Any, books: dict[str, dict[str, Any]]) -> Any:
@@ -215,6 +303,8 @@ def complete_entities(c: Classification, question: str, alert_names: set[str] | 
     alert = named_alert(question, alert_names)
     if alert and "ticket" not in found:
         found["ticket"] = alert
+    if service := glossary_service(question):
+        found.setdefault("service", service)
     completed = [m for m in c.missing if m in found]
     for m in completed:
         c.entities[m] = found[m]
@@ -223,6 +313,8 @@ def complete_entities(c: Classification, question: str, alert_names: set[str] | 
 
 
 def decide(c: Classification, books: dict[str, dict[str, Any]]) -> Decision:
+    # Après complete_entities : une entité manquante donnée sous une autre forme ne vaut pas une question.
+    c.missing = [m for m in c.missing if not any(a in c.entities for a in ENTITY_ALIASES.get(m, ()))]
     if c.missing:
         book = books[c.category]
         question = " ".join(book["required_entities"][m] for m in c.missing)

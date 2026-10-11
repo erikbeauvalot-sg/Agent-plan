@@ -48,5 +48,105 @@
       "CI0011000",
       "CI0012345"
     ]
+  },
+  {
+    "ci_id": "CI0014001",
+    "hostname": "srv-crm-01",
+    "type": "serveur applicatif",
+    "service": "CRM",
+    "application": "crm-web",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe CRM",
+    "depends_on": [
+      "CI0014002",
+      "CI0011000"
+    ]
+  },
+  {
+    "ci_id": "CI0014002",
+    "hostname": "db-crm-01",
+    "type": "base de données",
+    "service": "CRM",
+    "application": "mysql-crm",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Bases de données",
+    "depends_on": []
+  },
+  {
+    "ci_id": "CI0014003",
+    "hostname": "srv-api-02",
+    "type": "serveur applicatif",
+    "service": "CMD",
+    "application": "commandes-api",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Commandes",
+    "depends_on": [
+      "CI0014004",
+      "CI0014005"
+    ]
+  },
+  {
+    "ci_id": "CI0014004",
+    "hostname": "mq-01",
+    "type": "bus de messages",
+    "service": "MW",
+    "application": "rabbitmq",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Middleware",
+    "depends_on": []
+  },
+  {
+    "ci_id": "CI0014005",
+    "hostname": "srv-auth-01",
+    "type": "serveur applicatif",
+    "service": "AUTH",
+    "application": "keycloak-sso",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Sécurité",
+    "depends_on": [
+      "CI0014006"
+    ]
+  },
+  {
+    "ci_id": "CI0014006",
+    "hostname": "dns-01",
+    "type": "serveur DNS",
+    "service": "NET",
+    "application": "bind-interne",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Réseau",
+    "depends_on": []
+  },
+  {
+    "ci_id": "CI0014007",
+    "hostname": "srv-batch-01",
+    "type": "serveur de traitements",
+    "service": "DATA",
+    "application": "batchs-nuit",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Data",
+    "depends_on": [
+      "CI0014002",
+      "CI0014004",
+      "CI0014008"
+    ]
+  },
+  {
+    "ci_id": "CI0014008",
+    "hostname": "nfs-01",
+    "type": "serveur de fichiers",
+    "service": "STO",
+    "application": "nfs-partages",
+    "environment": "prod",
+    "os": "RHEL 9",
+    "owner_team": "équipe Stockage",
+    "depends_on": []
   }
 ]

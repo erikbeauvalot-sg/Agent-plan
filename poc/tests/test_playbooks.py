@@ -257,3 +257,62 @@ def test_lead_doing_everything_itself_is_reminded_of_the_waves_early(tmp_path, m
     assert len(reminders) == 1 and "1. mesure (metrics, host" in reminders[0]["data"]["reason"]
     assert "8 appels aux sources" in lead.requests[8].messages[-1].content
     assert lead.requests[7].messages[-1].role == "tool"
+
+
+def test_vague_entity_is_missing_and_host_counts_as_service():
+    books = playbooks.load_playbooks()
+    vague = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "Mon site web"}, "missing": []}', books)
+    assert vague.missing == ["service"] and vague.entities == {}
+    assert playbooks.decide(vague, books).mode == "clarify"
+    named = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "le portail client"}}', books)
+    assert named.missing == [] and named.entities == {"service": "le portail client"}
+    host = playbooks.parse_classification(
+        '{"category": "performance", "confidence": "high", "entities": {"host": "srv-pay-01"}, "missing": ["service"]}', books)
+    assert playbooks.decide(host, books).mode == "playbook" and host.missing == []
+
+
+def test_damaged_classifier_json_is_still_read():
+    # Réponses réelles de gpt-oss:20b : \' dans une chaîne, guillemet final oublié.
+    books = playbooks.load_playbooks()
+    escaped = ('{"category":"information","confidence":"high","alternative":null,"entities":{"host":"db-pay-02"},'
+               '"missing":[],"choices":[],"reason":"demande d\\\'exposer les erreurs d\\\'un hôte."}')
+    assert playbooks.parse_classification(escaped, books).entities == {"host": "db-pay-02"}
+    unterminated = ('{"category":"indisponibilite","confidence":"high","alternative":null,"entities":{"service":"site web"},'
+                    '"missing":["service"],"choices":[],"reason":"le nom exact du service est non précisé.}')
+    c = playbooks.parse_classification(unterminated, books)
+    assert (c.category, c.missing) == ("indisponibilite", ["service"])
+    with pytest.raises(json.JSONDecodeError):
+        playbooks.parse_classification('{"confidence": "high", "reason": "sans catégorie}', books)
+
+
+def test_service_named_by_glossary_alias_needs_no_clarification():
+    books = playbooks.load_playbooks()
+    # Réponses réelles de gpt-oss:20b qui demandaient à tort une précision.
+    slow = playbooks.parse_classification(
+        '{"category":"performance","confidence":"medium","entities":{},"missing":["service"]}', books)
+    assert playbooks.complete_entities(slow, "Pourquoi les commandes sont-elles très lentes depuis 14h ?") == ["service"]
+    assert slow.entities == {"service": "Commandes"} and playbooks.decide(slow, books).mode == "playbook"
+    batch = playbooks.parse_classification(
+        '{"category":"analyse-evenement","confidence":"high","entities":{"service":"batch de rapprochement"},'
+        '"missing":["ticket"]}', books)
+    assert playbooks.decide(batch, books).mode != "clarify"
+    # Un alias générique (« site web ») ne désigne aucun service précis.
+    site = playbooks.parse_classification(
+        '{"category":"indisponibilite","confidence":"high","entities":{},"missing":["service"]}', books)
+    playbooks.complete_entities(site, "Mon site web ne fonctionne pas")
+    assert site.missing == ["service"]
+
+
+def test_factual_question_is_information_but_not_a_diagnosis():
+    books = playbooks.load_playbooks()
+    perf = playbooks.Classification("performance", "medium", entities={"host": "srv-pay-01"})
+    factual = playbooks.factual_override(perf, "Quelle a été la latence p95 maximale de srv-pay-01 hier ?", books)
+    assert factual.category == "information" and factual.entities == {"host": "srv-pay-01"}
+    event = playbooks.Classification("analyse-evenement", "high", entities={"ticket": "INC0097012"})
+    assert playbooks.factual_override(event, "Comment a été résolu l'incident INC0097012 ?", books).category == "information"
+    for question in ("Pourquoi srv-pay-01 est-il lent ?", "Quelle est la cause de l'incident INC0098765 ?",
+                     "Quel a été l'impact du change CHG0034567 ?", "Quelles erreurs bloquent les paiements ?"):
+        c = playbooks.Classification("performance", "medium")
+        assert playbooks.factual_override(c, question, books) is c, question

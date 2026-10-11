@@ -3,6 +3,13 @@ services:
   PAY: {name: Paiement, aliases: [paiement, paiements, payment, "service paiement", carte]}
   WEB: {name: Portail client, aliases: [portail, site web, portail client]}
   FRONT: {name: Front réseau, aliases: [front, répartiteur, load balancer]}
+  CRM: {name: CRM, aliases: [crm, fiches clients, gestion clients, relation client]}
+  CMD: {name: Commandes, aliases: [commandes, commande, prise de commande, api commandes]}
+  AUTH: {name: Authentification SSO, aliases: [sso, authentification, connexion, keycloak, login]}
+  DATA: {name: Traitements batch, aliases: [batch, batchs, facturation, rapprochement, exports, traitements de nuit]}
+  MW: {name: Bus de messages, aliases: [rabbitmq, bus de messages, files de messages, file facturation]}
+  NET: {name: DNS interne, aliases: [dns, résolution de noms]}
+  STO: {name: Stockage NFS, aliases: [nfs, partages, stockage de fichiers]}
 metrics:
   up: "Cible de collecte joignable (1) ou non (0)"
   cpu.usage: "Utilisation CPU en %"
@@ -19,6 +26,24 @@ metrics:
   swap.in_pages_s: "Pages relues depuis le swap par seconde ; non nul en continu : la machine manque de RAM"
   swap.out_pages_s: "Pages envoyées vers le swap par seconde ; un pic date le moment où la RAM a manqué"
   http.latency_p95: "Latence HTTP au 95e centile en ms"
+  http.error_rate_pct: "Part des requêtes HTTP en erreur (5xx), en %"
+  http.requests_per_min: "Requêtes HTTP reçues par minute"
+  http.requests_per_s: "Requêtes HTTP reçues par seconde"
+  disk.inodes_used_pct: "Inodes utilisés du système de fichiers le plus plein, en % (plein à 100 % même avec de la place)"
+  tls.cert_days_left: "Jours avant l'expiration du certificat TLS"
+  net.rx_errors_per_s: "Erreurs de réception réseau par seconde"
+  nfs.ops_per_s: "Opérations NFS servies par seconde"
+  dns.queries_per_s: "Requêtes DNS servies par seconde"
+  auth.login_failures_per_min: "Échecs de connexion par minute"
+  auth.token_errors_per_min: "Jetons d'authentification rejetés par minute"
+  ntp.offset_s: "Écart de l'horloge avec la référence NTP, en secondes"
+  db.lock_waits: "Attentes de verrou sur la base par minute"
+  db.slow_queries_per_min: "Requêtes lentes par minute"
+  batch.rows_per_min: "Lignes traitées par minute par un batch"
+  mq.queue_messages: "Messages en attente dans les files du bus"
+  mq.mem_used_pct: "Mémoire utilisée par le bus de messages, en % (alarme au-delà du seuil haut)"
+  mq.consumers: "Consommateurs connectés à la file"
+  lb.backends_up: "Serveurs du répartiteur déclarés disponibles"
   db.connections: "Connexions actives sur la base"
   db.max_connections: "Paramètre max_connections de la base"
   container.mem_mb: "Mémoire de travail d'un conteneur Docker (cAdvisor), en Mo"

@@ -354,12 +354,27 @@ validation humaine fera l'objet d'un document séparé.
 diagagent eval                                   # joue eval/cases.yaml avec le modèle configuré
 diagagent eval --only diag-paiement              # un seul cas
 diagagent eval --repeat 3                        # chaque cas 3 fois : taux de réussite par cas
+diagagent eval --kind simple                     # seulement les 20 questions simples (ou --kind incident)
 diagagent replay 20261008T061159Z-5f31           # rejoue une investigation sans appeler le modèle
 ```
 
 `eval` pose chaque question du jeu de cas et vérifie la réponse : catégorie rendue par le classifieur,
 mentions attendues ou interdites, nombre de sous-agents, actions proposées, erreurs d'outil. Le résumé
 donne aussi la justesse de catégorisation. Le rapport va dans `eval/results/`.
+Les cas sont rangés en deux familles, comptées à part pour les critères de sortie du document
+d'architecture : 20 questions `simple` (critère : toutes justes) et 20 `incident` (critère : cause
+correcte sur une majorité). Une mention attendue peut être une liste d'écritures possibles
+(`[["3897", "3 898"]]`), et la comparaison ignore les traits d'union et espaces insécables.
+
+Les 17 incidents passés ajoutés au scénario de démonstration (`demo_data/scenarios.py`, du 15 septembre
+au 3 octobre) ont chacun une cause connue : disque plein, certificat expiré, fuite mémoire après
+déploiement, DNS arrêté, verrous d'une sauvegarde, alarme mémoire RabbitMQ, mot de passe changé, réseau
+NFS, robot, index supprimé, OOM, horloge, traces DEBUG, contrôle de santé, inodes, port erroné,
+consommateur arrêté. Chaque cas est rejoué à son heure de référence (`now`, 30 minutes après le début du
+symptôme) et les sources de démonstration répondent telles qu'elles étaient alors : rien d'horodaté après,
+ticket encore « In Progress » sans sa résolution, alertes encore ouvertes (`as_of` des fiches
+`incidents` et `events`). `python demo_data/generate.py` régénère ces données.
+
 `eval/cases.yaml` porte sur le scénario de démonstration ; `eval/cases-maison.example.yaml` sert de
 modèle pour des questions sur tes propres sources. `diagagent --models <profil> eval` compare les
 modèles sur les mêmes questions ; le rapport donne la durée totale et le profil utilisé. Avec un modèle local, les résultats varient
@@ -422,10 +437,18 @@ avec une sonde fixe (`memory`, `processes`, `containers`, `oom`). Le modèle ne 
 parmi ceux de `SSH_HOSTS` ; il n'écrit jamais de commande.
 
 ```bash
-SSH_HOSTS=xdocker,pdocker            # mêmes noms que dans Prometheus ; xdocker=192.168.1.20 si besoin
+SSH_HOSTS=xdocker,pdocker,traefik    # séparés par des virgules, sans guillemets ; xdocker=192.168.1.20 si besoin
 SSH_USER=diagagent                   # facultatif, sinon ~/.ssh/config
 SSH_KEY=~/.ssh/diagagent_ed25519     # facultatif
 ```
+
+`SSH_HOSTS` est une liste séparée par des virgules (les espaces autour des noms sont ignorés). Chaque
+nom est celui du host dans Prometheus (label `instance` sans le port), pour que le sous-agent `system`
+relie l'état en direct aux métriques. Quand ce nom ne se résout pas en SSH, on ajoute l'adresse après
+`=` : `xdocker=192.168.1.20`. Chaque machine doit accepter la connexion sans mot de passe
+(`BatchMode=yes`) et avoir sa clé d'hôte déjà dans `known_hosts` (`StrictHostKeyChecking=yes`). Rien
+n'est à installer : le script `remote/diagagent-probe` part sur l'entrée standard. Pour vérifier une
+machine : `ssh <host> sh -s -- memory < remote/diagagent-probe`.
 
 | Outil | Contenu |
 | --- | --- |

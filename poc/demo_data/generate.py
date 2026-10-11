@@ -17,7 +17,11 @@ import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from scenarios import CIS, NORMAL_LOGS, SCENARIOS, TEAMS
+
 HERE = Path(__file__).parent
+WINDOW_BEFORE = 600   # minutes de métriques et de journaux avant le début d'un incident passé
+RESOLVED_AFTER = 240  # minutes après le début : résolution du ticket, fermeture des alertes
 START = datetime(2026, 10, 5, 22, 0, tzinfo=timezone.utc)
 END = datetime(2026, 10, 7, 6, 0, tzinfo=timezone.utc)
 INCIDENT_START = datetime(2026, 10, 6, 22, 10, tzinfo=timezone.utc)
@@ -49,7 +53,7 @@ def cmdb() -> list[dict]:
         {"ci_id": "CI0013001", "hostname": "srv-web-03", "type": "serveur web", "service": "WEB",
          "application": "portail-client", "environment": "prod", "os": "RHEL 9",
          "owner_team": "équipe Portail", "depends_on": ["CI0011000", "CI0012345"]},
-    ]
+    ] + CIS
 
 
 def incidents() -> list[dict]:
@@ -158,11 +162,106 @@ def metrics() -> list[dict]:
     return rows
 
 
+
+
+# Incidents passés du jeu d'évaluation (scenarios.py)
+
+def _t(scenario: dict, minutes: float) -> datetime:
+    return datetime.fromisoformat(scenario["t0"].replace("Z", "+00:00")) + timedelta(minutes=minutes)
+
+
+def _ci(hostname: str) -> dict:
+    return next(c for c in cmdb() if c["hostname"] == hostname)
+
+
+def _hosts(s: dict) -> list[str]:
+    hosts = {s["incident"]["host"]} | {m[0] for m in s["metrics"]} | {log[0] for log in s["logs"]}
+    return sorted(hosts)
+
+
+def scenario_incidents() -> list[dict]:
+    rows = []
+    for s in SCENARIOS:
+        inc, ci = s["incident"], _ci(s["incident"]["host"])
+        rows.append({"number": inc["number"], "priority": inc["priority"], "state": "Resolved",
+                     "opened_at": iso(_t(s, 15)), "affected_ci": {"hostname": ci["hostname"], "id": ci["ci_id"]},
+                     "business_service": inc["service"], "short_description": inc["short_description"],
+                     "assignment_group": TEAMS[inc["service"]], "caller_email": "support.n1@example.com",
+                     "resolved_at": iso(_t(s, RESOLVED_AFTER)), "resolution": inc["resolution"]})
+    return rows
+
+
+def scenario_changes() -> list[dict]:
+    rows = []
+    for s in SCENARIOS:
+        for c in s.get("changes", []):
+            ci = _ci(c["host"])
+            rows.append({"number": c["number"], "state": "Implemented", "risk": c.get("risk", "Low"),
+                         "start": iso(_t(s, c["start"])), "end": iso(_t(s, c["start"] + 10)),
+                         "ci": {"hostname": ci["hostname"], "id": ci["ci_id"]}, "service": ci["service"],
+                         "short_description": c["short_description"],
+                         "implementer": c.get("implementer", ci["owner_team"])})
+    return rows
+
+
+def scenario_events() -> list[dict]:
+    return [{"@timestamp": iso(_t(s, off)), "host": host, "severity": sev, "check": check, "message": msg,
+             "status": "closed", "closed_at": iso(_t(s, RESOLVED_AFTER))}
+            for s in SCENARIOS for off, host, sev, check, msg in s["events"]]
+
+
+def scenario_logs() -> list[dict]:
+    rnd = random.Random(11)
+
+    def line(host: str, level: str, logger: str, message: str, ts: datetime) -> dict:
+        return {"@timestamp": iso(ts), "host": host, "level": level, "service": _ci(host)["service"],
+                "logger": logger, "message": message.replace("{n}", str(rnd.randint(10, 999)))}
+
+    rows = []
+    for s in SCENARIOS:
+        quiet = set(s.get("quiet", []))
+        for host in _hosts(s):
+            logger, message = NORMAL_LOGS[host]
+            m = -WINDOW_BEFORE
+            while m < RESOLVED_AFTER and not (host in quiet and m >= 0):
+                rows.append(line(host, "INFO", logger, message, _t(s, m + rnd.randint(0, 14))))
+                m += 15
+        for host, level, logger, message, start, end, every, count in s["logs"]:
+            m = start
+            while m < (RESOLVED_AFTER if end is None else end):
+                for _ in range(count):
+                    rows.append(line(host, level, logger, message, _t(s, m) + timedelta(seconds=rnd.randint(0, every * 60 - 1))))
+                m += every
+    return rows
+
+
+def scenario_metrics() -> list[dict]:
+    rnd = random.Random(13)
+    rows = []
+    for s in SCENARIOS:
+        for host, metric, base, noise, shapes in s["metrics"]:
+            m = -WINDOW_BEFORE
+            while m < RESOLVED_AFTER:
+                value = base
+                for shape in shapes:
+                    if shape[0] == "step" and m >= shape[1]:
+                        value = shape[2]
+                    elif shape[0] == "ramp" and m >= shape[1]:
+                        frac = min(1.0, (m - shape[1]) / (shape[2] - shape[1]))
+                        value = value + (shape[3] - value) * frac
+                value = max(0.0, value + rnd.uniform(-noise, noise))
+                if metric.endswith("_pct"):
+                    value = min(100.0, value)
+                rows.append({"ts": iso(_t(s, m)), "host": host, "metric": metric, "value": round(value, 1)})
+                m += 5
+    return rows
+
+
 if __name__ == "__main__":
     write("cmdb.json", cmdb())
-    write("incidents.json", incidents())
-    write("changes.json", changes())
-    write("events.json", events())
-    write("logs.jsonl", logs())
-    write("metrics.jsonl", metrics())
+    write("incidents.json", incidents() + scenario_incidents())
+    write("changes.json", changes() + scenario_changes())
+    write("events.json", events() + scenario_events())
+    write("logs.jsonl", sorted(logs() + scenario_logs(), key=lambda r: r["@timestamp"]))
+    write("metrics.jsonl", sorted(metrics() + scenario_metrics(), key=lambda r: r["ts"]))
     print("Données de démonstration régénérées dans", HERE)

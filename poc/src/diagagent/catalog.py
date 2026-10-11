@@ -40,7 +40,9 @@ def parse_time(value: str) -> datetime:
 
 
 def time_window(time_from: str | None, time_to: str | None) -> tuple[datetime, datetime]:
-    """Période obligatoire : par défaut les 24 heures précédant l'heure de référence."""
+    """Période obligatoire : par défaut les 24 heures précédant l'heure de référence. Les deux bornes sont
+    comprises : un change lancé à 14:30 doit sortir d'une recherche « jusqu'à 14:30 », l'heure où le
+    symptôme commence."""
     end = parse_time(time_to) if time_to else now()
     start = parse_time(time_from) if time_from else end - timedelta(hours=24)
     if start >= end:
@@ -178,10 +180,32 @@ def _load_rows(path: str) -> tuple[dict[str, Any], ...]:
 
 
 def rows(source_id: str) -> tuple[dict[str, Any], ...]:
-    backend = get_source(source_id)["backend"]
+    card = get_source(source_id)
+    backend = card["backend"]
     if backend["type"] != "file":
         raise NotImplementedError(f"Backend {backend['type']} pas encore disponible dans le POC")
-    return _load_rows(backend["path"])
+    return as_of(card, _load_rows(backend["path"]))
+
+
+def as_of(card: dict[str, Any], docs: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    """Documents tels qu'ils étaient à l'heure de référence : rien d'horodaté après elle (time_field),
+    et un document daté d'un état futur (`as_of` de la fiche : un incident résolu plus tard, une alerte
+    fermée plus tard) rendu dans son état d'alors. Sans cela, un incident passé rejoué dans le jeu
+    d'évaluation montrerait sa résolution."""
+    time_field, transitions = card.get("time_field"), card.get("as_of", [])
+    if not time_field and not transitions:
+        return docs
+    ref = now()
+    out = []
+    for doc in docs:
+        if time_field and (t := field_value(doc, time_field)) and parse_time(t) > ref:
+            continue
+        for tr in transitions:
+            if (t := doc.get(tr["field"])) and parse_time(t) > ref:
+                doc = {k: v for k, v in doc.items() if k != tr["field"] and k not in tr.get("hide", [])}
+                doc.update(tr.get("before", {}))
+        out.append(doc)
+    return tuple(out)
 
 
 def field_value(doc: dict[str, Any], dotted: str) -> Any:
@@ -265,17 +289,24 @@ def _clean(doc: dict[str, Any], exclude: list[str]) -> dict[str, Any]:
     return out
 
 
+def _text_fields(card: dict[str, Any]) -> frozenset[str]:
+    return frozenset(k for k, f in (card.get("fields") or {}).items() if isinstance(f, dict) and f.get("type") == "text")
+
+
 def _matches(doc: dict[str, Any], filters: dict[str, Any] | None, text: str | None,
-             exclude: list[str] | None = None) -> bool:
+             exclude: list[str] | None = None, text_fields: set[str] | frozenset[str] = frozenset()) -> bool:
+    """Filtres sans tenir compte de la casse (« MAJOR » vaut « major », valeur seule ou liste) ; sur un champ
+    de type text (message, short_description), le filtre cherche le mot dans le texte, comme ELK."""
     for key, expected in (filters or {}).items():
         actual = field_value(doc, key)
-        if isinstance(expected, list):
-            if actual not in expected:
+        wanted = [str(e).lower() for e in (expected if isinstance(expected, list) else [expected])]
+        if key in text_fields:
+            if not any(w in str(actual or "").lower() for w in wanted):
                 return False
         elif isinstance(actual, list):
-            if expected not in actual:
+            if not any(str(a).lower() in wanted for a in actual):
                 return False
-        elif str(actual).lower() != str(expected).lower():
+        elif str(actual).lower() not in wanted:
             return False
     # La recherche texte ne porte pas sur les champs masqués : sinon un résultat non vide confirmerait
     # une valeur cachée (adresse de l'appelant, par exemple) sans jamais l'afficher.
@@ -293,13 +324,13 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     time_field = card.get("time_field")
     _check_filters(source_id, filters)
     exclude = limits.get("exclude_fields", [])
-    matching = [d for d in rows(source_id) if _matches(d, filters, text, exclude)]
+    matching = [d for d in rows(source_id) if _matches(d, filters, text, exclude, _text_fields(card))]
     hits, window = matching, None
     if time_field:
         start, end = time_window(time_from, time_to)
         window = [start.isoformat(), end.isoformat()]
         hits = [d for d in matching
-                if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
+                if (t := field_value(d, time_field)) and start <= parse_time(t) <= end]
         hits.sort(key=lambda d: field_value(d, time_field), reverse=True)
     result = {
         "source": source_id,
@@ -322,6 +353,21 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         note = (f"Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
                 f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")
         result["note"] = f"{result['note']} {note}" if result.get("note") else note
+    if not hits and filters and len(filters) > 1:
+        # Les modèles ajoutent volontiers un filtre deviné (severity: critical pour une alerte major) et
+        # concluent « aucune alerte » : on dit ce que chaque filtre retiré rendrait, dans la même période.
+        relaxed = {}
+        for key in filters:
+            others = {k: v for k, v in filters.items() if k != key}
+            n = sum(1 for d in rows(source_id) if _matches(d, others, text, exclude, _text_fields(card))
+                    and (not time_field or ((t := field_value(d, time_field)) and start <= parse_time(t) <= end)))
+            if n:
+                relaxed[key] = n
+        if relaxed:
+            result["without_filter"] = relaxed
+            note = ("Aucun document avec tous ces filtres, mais " + ", ".join(
+                f"{n} sans le filtre {k}" for k, n in relaxed.items()) + " : vérifie ces filtres avant de conclure.")
+            result["note"] = f"{result['note']} {note}" if result.get("note") else note
     return result
 
 
@@ -331,12 +377,12 @@ def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
     time_field = card.get("time_field")
     _check_fields(source_id, [field])
     _check_filters(source_id, filters)
-    docs = [d for d in rows(source_id) if _matches(d, filters, None)]
+    docs = [d for d in rows(source_id) if _matches(d, filters, None, text_fields=_text_fields(card))]
     window = None
     if time_field:
         start, end = time_window(time_from, time_to)
         window = [start.isoformat(), end.isoformat()]
-        docs = [d for d in docs if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
+        docs = [d for d in docs if (t := field_value(d, time_field)) and start <= parse_time(t) <= end]
     counts = Counter(str(field_value(d, field)) for d in docs)
     buckets = [{"value": v, "count": c} for v, c in counts.most_common(top)]
     if time_field:

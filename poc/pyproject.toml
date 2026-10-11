@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 azure = ["azure-identity>=1.17"]
 claude = ["anthropic>=1.12,<2"]
-dev = ["pytest>=8", "httpx>=0.27"]
+dev = ["pytest>=8", "pytest-xdist>=3.6", "httpx>=0.27"]
 
 [project.scripts]
 diagagent = "diagagent.cli:main"
@@ -32,3 +32,6 @@ diagagent = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests en parallèle, un processus par cœur : chaque test lance ses serveurs MCP, la suite passe de
+# 3 min à moins d'une. Un seul test, sans parallélisme : pytest -n 0 tests/test_x.py::test_y
+addopts = "-n auto"

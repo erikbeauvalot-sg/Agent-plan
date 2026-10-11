@@ -1,15 +1,20 @@
 id: information
-version: 1
+version: 3
 status: active
 description: >
-  Demande de renseignements sur un objet nommé (host, CI, application, service, équipe) : fiche,
-  dépendances, propriétaires, incidents et changements ouverts ou récents. Pas de diagnostic.
+  Demande de renseignements sur un objet nommé (host, CI, application, service, équipe, ticket, alerte) :
+  fiche, dépendances, propriétaires, incidents et changements, statut, priorité ou résolution d'un ticket,
+  heure d'une alerte, valeur d'une métrique. Réponse courte, pas de diagnostic.
 examples:
   - "Donne-moi les informations sur srv-pay-01"
   - "Qui gère l'application Paiement ?"
   - "Quels incidents sont ouverts sur srv-pay-01 ?"
   - "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
   - "Quelles alertes de supervision sont ouvertes en ce moment ?"
+  - "Quel est le statut de l'incident INC0090001 ?"
+  - "Comment a été résolu l'incident INC0091234 ?"
+  - "Quelle est la valeur actuelle de la mémoire de srv-web-03 ?"
+  - "Quel a été le pic de CPU de db-pay-02 cette nuit ?"
 required_entities: {}
 hypotheses: []
 steps:

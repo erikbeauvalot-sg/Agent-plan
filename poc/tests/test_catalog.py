@@ -98,7 +98,7 @@ def test_filter_values_absent_from_the_source_are_reported():
     res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01",
                                                "state": ["Ouvert", "New", "Assigned"]})
     assert res["unknown_values"] == {"state": {"absentes": ["Ouvert", "Assigned"],
-                                               "présentes": ["Closed", "In Progress", "New"]}}
+                                               "présentes": ["Closed", "In Progress", "New", "Resolved"]}}
     assert "absente(s) du champ state" in res["note"]
     assert "unknown_values" not in catalog.search("incidents", filters={"state": "in progress"},
                                                    time_from="2026-10-01T00:00:00Z")
@@ -109,3 +109,25 @@ def test_filter_on_an_object_field_names_its_subfields():
         catalog.search("changes", filters={"ci": ["CI0012345", "CI0012400"]})
     res = catalog.search("changes", filters={"ci.id": ["CI0012345", "CI0012400"]}, time_from="2026-10-05T00:00:00Z")
     assert "CHG0034567" in [h["number"] for h in res["hits"]]
+
+
+def test_filters_ignore_case_and_text_fields_match_words():
+    # Recherches réelles de gpt-4.1-mini qui revenaient vides.
+    assert catalog.search("events", filters={"severity": ["MAJOR", "MINOR"], "status": "open"})["total"] == 2
+    hits = catalog.search("events", filters={"host": "srv-pay-01", "message": "latence"})["hits"]
+    assert [h["@timestamp"] for h in hits] == ["2026-10-06T22:12:00Z"]
+
+
+def test_search_window_includes_its_end(monkeypatch):
+    # Change lancé à l'heure exacte où la recherche s'arrête (début du symptôme) : il doit sortir.
+    monkeypatch.setenv("DIAGAGENT_NOW", "2026-09-29T15:30:00Z")
+    hits = catalog.search("changes", filters={"ci.hostname": "srv-api-02"},
+                          time_from="2026-09-27T14:30:00Z", time_to="2026-09-29T14:30:00Z")["hits"]
+    assert [h["number"] for h in hits] == ["CHG0034320"]
+
+
+def test_empty_search_says_which_filter_removes_the_results():
+    # Recherche réelle de gpt-4.1-mini : severity devinée, l'alerte de latence est major.
+    res = catalog.search("events", filters={"host": "srv-pay-01", "check": "http.latency_p95", "severity": "critical"})
+    assert res["total"] == 0 and res["without_filter"] == {"severity": 1}
+    assert "1 sans le filtre severity" in res["note"]

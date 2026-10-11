@@ -26,5 +26,159 @@
     "service": "WEB",
     "short_description": "Mise à jour du certificat TLS du portail",
     "implementer": "équipe Portail"
+  },
+  {
+    "number": "CHG0034090",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-14T07:30:00Z",
+    "end": "2026-09-14T07:40:00Z",
+    "ci": {
+      "hostname": "srv-crm-01",
+      "id": "CI0014001"
+    },
+    "service": "CRM",
+    "short_description": "Mise à jour mineure de la bibliothèque PDF du CRM",
+    "implementer": "équipe CRM"
+  },
+  {
+    "number": "CHG0034101",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-17T07:00:00Z",
+    "end": "2026-09-17T07:10:00Z",
+    "ci": {
+      "hostname": "srv-api-02",
+      "id": "CI0014003"
+    },
+    "service": "CMD",
+    "short_description": "Déploiement de l'API commandes v2.4.0",
+    "implementer": "équipe Commandes"
+  },
+  {
+    "number": "CHG0034120",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-16T10:15:00Z",
+    "end": "2026-09-16T10:25:00Z",
+    "ci": {
+      "hostname": "srv-auth-01",
+      "id": "CI0014005"
+    },
+    "service": "AUTH",
+    "short_description": "Mise à jour du thème de la page de connexion",
+    "implementer": "équipe Sécurité"
+  },
+  {
+    "number": "CHG0034150",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-18T15:00:00Z",
+    "end": "2026-09-18T15:10:00Z",
+    "ci": {
+      "hostname": "db-crm-01",
+      "id": "CI0014002"
+    },
+    "service": "CRM",
+    "short_description": "Sauvegarde complète de db-crm-01 avancée de 04:00 à 01:00",
+    "implementer": "équipe Bases de données"
+  },
+  {
+    "number": "CHG0034201",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-22T15:55:00Z",
+    "end": "2026-09-22T16:05:00Z",
+    "ci": {
+      "hostname": "db-pay-02",
+      "id": "CI0012400"
+    },
+    "service": "PAY",
+    "short_description": "Rotation du mot de passe du compte applicatif pay_app sur db-pay-02",
+    "implementer": "équipe Bases de données"
+  },
+  {
+    "number": "CHG0034250",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-25T06:00:00Z",
+    "end": "2026-09-25T06:10:00Z",
+    "ci": {
+      "hostname": "db-crm-01",
+      "id": "CI0014002"
+    },
+    "service": "CRM",
+    "short_description": "Migration du schéma CRM v5",
+    "implementer": "équipe CRM"
+  },
+  {
+    "number": "CHG0034280",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-25T17:00:00Z",
+    "end": "2026-09-25T17:10:00Z",
+    "ci": {
+      "hostname": "srv-batch-01",
+      "id": "CI0014007"
+    },
+    "service": "DATA",
+    "short_description": "Batch de rapprochement : parallélisme porté de 8 à 32 threads",
+    "implementer": "équipe Data"
+  },
+  {
+    "number": "CHG0034320",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-29T14:30:00Z",
+    "end": "2026-09-29T14:40:00Z",
+    "ci": {
+      "hostname": "srv-api-02",
+      "id": "CI0014003"
+    },
+    "service": "CMD",
+    "short_description": "Activation des traces DEBUG sur l'API commandes pour analyse",
+    "implementer": "équipe Commandes"
+  },
+  {
+    "number": "CHG0034350",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-09-30T07:55:00Z",
+    "end": "2026-09-30T08:05:00Z",
+    "ci": {
+      "hostname": "lb-front-01",
+      "id": "CI0011000"
+    },
+    "service": "FRONT",
+    "short_description": "Harmonisation des contrôles de santé HAProxy",
+    "implementer": "équipe Réseau"
+  },
+  {
+    "number": "CHG0034400",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-10-02T17:50:00Z",
+    "end": "2026-10-02T18:00:00Z",
+    "ci": {
+      "hostname": "srv-api-02",
+      "id": "CI0014003"
+    },
+    "service": "CMD",
+    "short_description": "Déploiement de l'API commandes v2.6.0",
+    "implementer": "équipe Commandes"
+  },
+  {
+    "number": "CHG0034450",
+    "state": "Implemented",
+    "risk": "Low",
+    "start": "2026-10-03T05:00:00Z",
+    "end": "2026-10-03T05:10:00Z",
+    "ci": {
+      "hostname": "srv-batch-01",
+      "id": "CI0014007"
+    },
+    "service": "DATA",
+    "short_description": "Correctifs de sécurité de l'OS et redémarrage",
+    "implementer": "équipe Système"
   }
 ]

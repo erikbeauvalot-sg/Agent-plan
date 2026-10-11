@@ -2,8 +2,13 @@
 # Chaque cas est rejoué avec le modèle configuré ; les contrôles sont mécaniques et volontairement
 # simples : ils détectent une régression, ils ne remplacent pas une relecture humaine.
 #
+# Familles (kind), comptées à part pour les critères de sortie du document d'architecture :
+#   simple    question à réponse courte, vérifiable dans une source ; critère : toutes justes
+#   incident  diagnostic d'un incident ; critère : cause correcte sur une majorité
+#
 # Contrôles disponibles :
-#   must_mention      chaînes qui doivent apparaître dans la réponse (sans tenir compte de la casse)
+#   must_mention      chaînes qui doivent apparaître dans la réponse (sans tenir compte de la casse) ;
+#                     une liste vaut « l'une de ces écritures » (nombres : 3897, 3 898…)
 #   must_not_mention  chaînes interdites
 #   status            statuts acceptés (défaut : completed)
 #   min_subagents / max_subagents, min_actions, max_tool_errors
@@ -13,53 +18,275 @@ defaults:
   sources: demo        # banc reproductible : jamais les sources réelles, même configurées
 
 cases:
+  # Incidents
+
   - id: diag-paiement
+    kind: incident
     question: "Pourquoi le service paiement est-il lent depuis hier soir ?"
     category: performance
     must_mention: [CHG0034567, db-pay-02, max_connections]
     min_subagents: 2
     min_actions: 1
 
-  - id: incidents-ouverts
-    question: "Quels incidents sont ouverts sur srv-pay-01 ?"
-    category: information
-    must_mention: [INC0098765]
-    max_subagents: 0
-
-  - id: changements-db
-    question: "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
-    category: information
-    must_mention: [CHG0034567]
-    max_subagents: 1
-
-  - id: proprietaire-db
-    question: "Quelle équipe est responsable de db-pay-02 ?"
-    category: information
-    must_mention: ["équipe Bases de données"]
-    max_subagents: 0
-
-  - id: alertes-ouvertes
-    question: "Quelles alertes de supervision sont ouvertes en ce moment ?"
-    category: information
-    must_mention: [srv-pay-01, db-pay-02]
-    must_not_mention: ["srv-web-03"]
-
   - id: impact-change
+    kind: incident
     question: "Le change CHG0034567 a-t-il eu un impact ?"
     category: impact-change
     must_mention: [db-pay-02, max_connections]
 
   - id: analyse-incident
+    kind: incident
     question: "Analyse l'incident INC0098765"
     category: analyse-evenement
     must_mention: [CHG0034567]
 
+  # Incidents passés (demo_data/scenarios.py), rejoués à leur heure de référence : t0 + 30 min, ticket
+  # ouvert, alertes en cours, résolution encore inconnue. must_mention : la cause et sa preuve principale.
+
+  - id: inc-crm-disque
+    kind: incident
+    now: "2026-09-15T09:00:00Z"
+    question: "Le CRM affiche des erreurs à l'enregistrement des fiches clients depuis 8h30, pourquoi ?"
+    must_mention: [db-crm-01, [disque, disk, "no space", espace]]
+
+  - id: inc-portail-certificat
+    kind: incident
+    now: "2026-09-16T09:30:00Z"
+    question: "Analyse l'incident INC0099102"
+    must_mention: [certificat, expir]
+
+  - id: inc-api-fuite-memoire
+    kind: incident
+    now: "2026-09-17T14:30:00Z"
+    question: "Pourquoi les commandes sont-elles très lentes depuis 14h ?"
+    must_mention: [CHG0034101, [mémoire, memory, heap]]
+
+  - id: inc-sso-dns
+    kind: incident
+    now: "2026-09-18T10:45:00Z"
+    question: "Analyse l'incident INC0099104"
+    must_mention: [dns-01, [DNS, named]]
+
+  - id: inc-batch-verrou
+    kind: incident
+    now: "2026-09-19T03:00:00Z"
+    question: "Pourquoi le batch de facturation de cette nuit n'est-il pas terminé ?"
+    must_mention: [CHG0034150, [verrou, lock]]
+
+  - id: inc-mq-alarme-memoire
+    kind: incident
+    now: "2026-09-21T11:30:00Z"
+    question: "Analyse l'incident INC0099106"
+    must_mention: [[mq-01, rabbitmq], [mémoire, memory]]
+
+  - id: inc-pay-mot-de-passe
+    kind: incident
+    now: "2026-09-22T16:30:00Z"
+    question: "Pourquoi tous les paiements échouent-ils depuis 16h ?"
+    must_mention: [CHG0034201, [mot de passe, password, authentification, authentication]]
+
+  - id: inc-nfs-reseau
+    kind: incident
+    now: "2026-09-23T08:15:00Z"
+    question: "Analyse l'incident INC0099108"
+    must_mention: [nfs-01, [eth1, réseau, network, câble, link]]
+
+  - id: inc-lb-robot
+    kind: incident
+    now: "2026-09-24T13:50:00Z"
+    question: "Pourquoi le portail et le CRM sont-ils lents pour tout le monde depuis 13h20 ?"
+    must_mention: [lb-front-01, "203.0.113.45"]
+
+  - id: inc-crm-index
+    kind: incident
+    now: "2026-09-25T09:40:00Z"
+    question: "Analyse l'incident INC0099110"
+    must_mention: [CHG0034250, index]
+
+  - id: inc-batch-oom
+    kind: incident
+    now: "2026-09-26T03:30:00Z"
+    question: "Pourquoi le batch de rapprochement bancaire s'est-il arrêté cette nuit ?"
+    must_mention: [CHG0034280, [OOM, mémoire, "out of memory", memory]]
+
+  - id: inc-sso-horloge
+    kind: incident
+    now: "2026-09-28T11:00:00Z"
+    question: "Analyse l'incident INC0099112"
+    must_mention: [[horloge, NTP, chrony, clock]]
+
+  - id: inc-api-debug
+    kind: incident
+    now: "2026-09-29T15:30:00Z"
+    question: "Pourquoi l'API commandes est-elle lente depuis 14h30 ?"
+    must_mention: [CHG0034320, DEBUG]
+
+  - id: inc-lb-controle-sante
+    kind: incident
+    now: "2026-09-30T08:30:00Z"
+    question: "Le portail client renvoie une erreur 503 depuis 8h, pourquoi ?"
+    must_mention: [CHG0034350, [/status, "contrôle de santé", health]]
+
+  - id: inc-portail-inodes
+    kind: incident
+    now: "2026-10-01T12:30:00Z"
+    question: "Analyse l'incident INC0099115"
+    must_mention: [inode]
+
+  - id: inc-api-port-sso
+    kind: incident
+    now: "2026-10-02T18:30:00Z"
+    question: "Pourquoi les commandes échouent-elles avec une erreur d'authentification depuis 18h ?"
+    must_mention: [CHG0034400, "8443"]
+
+  - id: inc-mq-consommateur
+    kind: incident
+    now: "2026-10-03T07:00:00Z"
+    question: "Analyse l'incident INC0099117"
+    must_mention: [srv-batch-01, CHG0034450]
+
+  # Questions simples : CMDB
+
+  - id: proprietaire-db
+    kind: simple
+    question: "Quelle équipe est responsable de db-pay-02 ?"
+    category: information
+    must_mention: ["équipe Bases de données"]
+    max_subagents: 0
+
+  - id: equipe-portail
+    kind: simple
+    question: "Quelle équipe gère le portail client ?"
+    category: information
+    must_mention: ["équipe Portail"]
+    max_subagents: 1
+
+  - id: dependances-pay
+    kind: simple
+    question: "De quels composants dépend srv-pay-01 ?"
+    category: information
+    must_mention: [db-pay-02, lb-front-01]
+    max_subagents: 1
+
+  - id: dependants-lb
+    kind: simple
+    question: "Quels serveurs dépendent de lb-front-01 ?"
+    category: information
+    must_mention: [srv-pay-01, srv-web-03]
+    max_subagents: 1
+
+  - id: application-db
+    kind: simple
+    question: "Quelle application tourne sur db-pay-02 ?"
+    category: information
+    must_mention: [postgresql]
+    max_subagents: 1
+
+  - id: os-lb
+    kind: simple
+    question: "Quel système d'exploitation tourne sur lb-front-01 ?"
+    category: information
+    must_mention: [["RHEL 9", "Red Hat Enterprise Linux 9"]]
+    max_subagents: 1
+
+  # Questions simples : incidents et changements
+
+  - id: incidents-ouverts
+    kind: simple
+    question: "Quels incidents sont ouverts sur srv-pay-01 ?"
+    category: information
+    must_mention: [INC0098765]
+    must_not_mention: [INC0098701]
+    max_subagents: 0
+
+  - id: incidents-portail
+    kind: simple
+    question: "Y a-t-il des incidents sur srv-web-03 ?"
+    category: information
+    must_mention: [INC0098701]
+    max_subagents: 1
+
+  - id: priorite-incident
+    kind: simple
+    question: "Quelle est la priorité de l'incident INC0098765 ?"
+    category: [information, analyse-evenement]
+    must_mention: [P2]
+    max_subagents: 1
+
+  - id: resolution-incident
+    kind: simple
+    question: "Comment a été résolu l'incident INC0097012 ?"
+    category: [information, analyse-evenement]
+    must_mention: [[purge, purgé], rotation]
+    max_subagents: 1
+
+  - id: changements-db
+    kind: simple
+    question: "Quels changements ont été faits sur db-pay-02 depuis deux jours ?"
+    category: information
+    must_mention: [CHG0034567]
+    must_not_mention: [CHG0034550]
+    max_subagents: 1
+
+  - id: changement-portail
+    kind: simple
+    question: "Quel changement a été fait sur srv-web-03 le 6 octobre ?"
+    category: information
+    must_mention: [CHG0034550, certificat]
+    max_subagents: 1
+
+  # Questions simples : alertes, métriques, logs
+
+  - id: alertes-ouvertes
+    kind: simple
+    question: "Quelles alertes de supervision sont ouvertes en ce moment ?"
+    category: information
+    must_mention: [srv-pay-01, db-pay-02]
+    must_not_mention: ["srv-web-03"]
+
+  - id: alerte-disque
+    kind: simple
+    question: "L'alerte disque sur srv-web-03 est-elle encore ouverte ?"
+    category: [information, analyse-evenement]
+    must_mention: [[fermée, close, résolue, "n'est plus", "plus ouverte"]]
+    max_subagents: 1
+
+  - id: heure-alerte-latence
+    kind: simple
+    question: "À quelle heure l'alerte de latence s'est-elle déclenchée sur srv-pay-01 ?"
+    category: [information, analyse-evenement]
+    must_mention: [["22:12", "22h12", "22 h 12"]]
+    max_subagents: 1
+
+  - id: max-connections
+    kind: simple
+    question: "Quelle est la valeur actuelle de max_connections sur db-pay-02 ?"
+    category: information
+    must_mention: ["200"]
+    max_subagents: 1
+
+  - id: latence-max
+    kind: simple
+    question: "Quelle a été la latence p95 maximale de srv-pay-01 sur les dernières 24 heures ?"
+    category: [information, tendance]
+    must_mention: [["3897", "3898", "3 897", "3 898", "3,9 s", "3.9 s"]]
+    max_subagents: 1
+
+  - id: erreurs-db
+    kind: simple
+    question: "Quelles erreurs voit-on dans les logs de db-pay-02 ?"
+    category: [information, tendance]
+    must_mention: ["too many clients"]
+    max_subagents: 1
+
+  - id: tendance-erreurs
+    kind: simple
+    question: "Quelles erreurs reviennent le plus dans les logs de srv-pay-01 depuis hier soir ?"
+    category: [tendance, information]
+    must_mention: [[connection, connexion]]
+
   - id: precision-site
+    kind: simple
     question: "Mon site web ne fonctionne pas"
     category: indisponibilite
     status: [needs_clarification]
-
-  - id: tendance-erreurs
-    question: "Quelles erreurs reviennent le plus dans les logs de srv-pay-01 depuis hier soir ?"
-    category: [tendance, information]
-    must_mention: [connection]

@@ -22,5 +22,212 @@
     "check": "disk.used_pct",
     "message": "Disque /data à 82 %",
     "status": "closed"
+  },
+  {
+    "@timestamp": "2026-09-15T06:30:00Z",
+    "host": "db-crm-01",
+    "severity": "minor",
+    "check": "disk.used_pct",
+    "message": "Disque /var/lib/mysql à 95 %",
+    "status": "closed",
+    "closed_at": "2026-09-15T12:30:00Z"
+  },
+  {
+    "@timestamp": "2026-09-15T08:30:00Z",
+    "host": "db-crm-01",
+    "severity": "critical",
+    "check": "disk.used_pct",
+    "message": "Disque /var/lib/mysql à 100 %",
+    "status": "closed",
+    "closed_at": "2026-09-15T12:30:00Z"
+  },
+  {
+    "@timestamp": "2026-09-15T08:35:00Z",
+    "host": "srv-crm-01",
+    "severity": "major",
+    "check": "http.error_rate_pct",
+    "message": "Taux d'erreur HTTP > 20 % (35 %)",
+    "status": "closed",
+    "closed_at": "2026-09-15T12:30:00Z"
+  },
+  {
+    "@timestamp": "2026-09-15T09:00:00Z",
+    "host": "srv-web-03",
+    "severity": "minor",
+    "check": "tls.cert_days_left",
+    "message": "Certificat TLS portail.example.com : expire dans 1 jour",
+    "status": "closed",
+    "closed_at": "2026-09-16T13:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-16T09:02:00Z",
+    "host": "srv-web-03",
+    "severity": "critical",
+    "check": "tls.cert_days_left",
+    "message": "Certificat TLS portail.example.com expiré (notAfter=2026-09-16T09:00:00Z)",
+    "status": "closed",
+    "closed_at": "2026-09-16T13:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-17T13:40:00Z",
+    "host": "srv-api-02",
+    "severity": "major",
+    "check": "mem.used_pct",
+    "message": "Mémoire utilisée à 95 %",
+    "status": "closed",
+    "closed_at": "2026-09-17T18:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-17T14:00:00Z",
+    "host": "srv-api-02",
+    "severity": "major",
+    "check": "http.latency_p95",
+    "message": "Latence p95 > 2000 ms (valeur 2480 ms)",
+    "status": "closed",
+    "closed_at": "2026-09-17T18:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-18T10:18:00Z",
+    "host": "srv-auth-01",
+    "severity": "critical",
+    "check": "auth.login_failures",
+    "message": "Échecs de connexion SSO > 100/min",
+    "status": "closed",
+    "closed_at": "2026-09-18T14:15:00Z"
+  },
+  {
+    "@timestamp": "2026-09-18T10:19:00Z",
+    "host": "dns-01",
+    "severity": "critical",
+    "check": "service.named",
+    "message": "Service named arrêté",
+    "status": "closed",
+    "closed_at": "2026-09-18T14:15:00Z"
+  },
+  {
+    "@timestamp": "2026-09-19T02:30:00Z",
+    "host": "srv-batch-01",
+    "severity": "major",
+    "check": "batch.duration",
+    "message": "Batch facturation en retard (> 90 min)",
+    "status": "closed",
+    "closed_at": "2026-09-19T06:30:00Z"
+  },
+  {
+    "@timestamp": "2026-09-21T11:02:00Z",
+    "host": "mq-01",
+    "severity": "critical",
+    "check": "mq.memory_alarm",
+    "message": "Alarme mémoire RabbitMQ sur rabbit@mq-01",
+    "status": "closed",
+    "closed_at": "2026-09-21T15:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-21T11:03:00Z",
+    "host": "srv-api-02",
+    "severity": "major",
+    "check": "http.error_rate_pct",
+    "message": "Taux d'erreur HTTP > 20 % (45 %)",
+    "status": "closed",
+    "closed_at": "2026-09-21T15:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-22T16:02:00Z",
+    "host": "srv-pay-01",
+    "severity": "critical",
+    "check": "http.error_rate_pct",
+    "message": "Taux d'erreur HTTP > 50 % (98 %)",
+    "status": "closed",
+    "closed_at": "2026-09-22T20:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-23T07:50:00Z",
+    "host": "nfs-01",
+    "severity": "major",
+    "check": "net.rx_errors",
+    "message": "Erreurs réseau sur eth1 (850/s)",
+    "status": "closed",
+    "closed_at": "2026-09-23T11:45:00Z"
+  },
+  {
+    "@timestamp": "2026-09-24T13:23:00Z",
+    "host": "lb-front-01",
+    "severity": "major",
+    "check": "cpu.usage",
+    "message": "CPU > 95 % (98 %)",
+    "status": "closed",
+    "closed_at": "2026-09-24T17:20:00Z"
+  },
+  {
+    "@timestamp": "2026-09-25T09:14:00Z",
+    "host": "srv-crm-01",
+    "severity": "major",
+    "check": "http.latency_p95",
+    "message": "Latence p95 > 2000 ms (valeur 9120 ms)",
+    "status": "closed",
+    "closed_at": "2026-09-25T13:10:00Z"
+  },
+  {
+    "@timestamp": "2026-09-26T03:01:00Z",
+    "host": "srv-batch-01",
+    "severity": "major",
+    "check": "batch.status",
+    "message": "Batch rapprochement en échec",
+    "status": "closed",
+    "closed_at": "2026-09-26T07:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-28T10:35:00Z",
+    "host": "srv-auth-01",
+    "severity": "major",
+    "check": "ntp.offset_s",
+    "message": "Dérive d'horloge de 300 s",
+    "status": "closed",
+    "closed_at": "2026-09-28T14:30:00Z"
+  },
+  {
+    "@timestamp": "2026-09-29T14:55:00Z",
+    "host": "srv-api-02",
+    "severity": "major",
+    "check": "disk.io_util_pct",
+    "message": "Disque à 99 % d'utilisation (I/O)",
+    "status": "closed",
+    "closed_at": "2026-09-29T19:00:00Z"
+  },
+  {
+    "@timestamp": "2026-09-30T08:01:00Z",
+    "host": "srv-web-03",
+    "severity": "critical",
+    "check": "http.availability",
+    "message": "Portail injoignable (503)",
+    "status": "closed",
+    "closed_at": "2026-09-30T12:00:00Z"
+  },
+  {
+    "@timestamp": "2026-10-01T12:03:00Z",
+    "host": "srv-web-03",
+    "severity": "major",
+    "check": "disk.inodes_used_pct",
+    "message": "Inodes de / à 100 %",
+    "status": "closed",
+    "closed_at": "2026-10-01T16:00:00Z"
+  },
+  {
+    "@timestamp": "2026-10-02T18:02:00Z",
+    "host": "srv-api-02",
+    "severity": "major",
+    "check": "http.error_rate_pct",
+    "message": "Taux d'erreur HTTP > 20 % (60 %)",
+    "status": "closed",
+    "closed_at": "2026-10-02T22:00:00Z"
+  },
+  {
+    "@timestamp": "2026-10-03T06:30:00Z",
+    "host": "mq-01",
+    "severity": "major",
+    "check": "mq.queue_messages",
+    "message": "File facturation > 40 000 messages",
+    "status": "closed",
+    "closed_at": "2026-10-03T10:30:00Z"
   }
 ]

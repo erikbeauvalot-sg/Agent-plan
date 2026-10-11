@@ -29,14 +29,19 @@ class DemoMetrics:
     def __init__(self, card: dict[str, Any]):
         self.source_id = card["id"]
 
+    def _rows(self) -> list[dict[str, Any]]:
+        """Points mesurés jusqu'à l'heure de référence : un incident passé rejoué ne voit pas la suite."""
+        ref = catalog.now()
+        return [r for r in catalog.rows(self.source_id) if catalog.parse_time(r["ts"]) <= ref]
+
     def hosts(self) -> list[str]:
-        return sorted({r["host"] for r in catalog.rows(self.source_id)})
+        return sorted({r["host"] for r in self._rows()})
 
     def metrics(self, host: str) -> list[str]:
-        return sorted({r["metric"] for r in catalog.rows(self.source_id) if r["host"] == host})
+        return sorted({r["metric"] for r in self._rows() if r["host"] == host})
 
     def series(self, host: str, metric: str, start: datetime, end: datetime, step_s: int) -> list[Point]:
-        points = [(catalog.parse_time(r["ts"]), r["value"]) for r in catalog.rows(self.source_id)
+        points = [(catalog.parse_time(r["ts"]), r["value"]) for r in self._rows()
                   if r["host"] == host and r["metric"] == metric]
         return [(t, v) for t, v in points if start <= t < end]
 

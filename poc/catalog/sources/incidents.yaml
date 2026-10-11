@@ -14,6 +14,10 @@ fields:
   short_description: {type: text}
   assignment_group: {type: keyword}
   resolution: {type: text}
+  resolved_at: {type: date}
+# État à l'heure de référence : un ticket résolu plus tard est encore en cours, sans sa résolution.
+as_of:
+  - {field: resolved_at, before: {state: In Progress}, hide: [resolution]}
 example_queries:
   - question: "Incidents ouverts sur un host"
     search: {filters: {affected_ci.hostname: "{host}"}, time_range: "30 derniers jours"}
