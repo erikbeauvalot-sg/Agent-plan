@@ -371,6 +371,50 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     return result
 
 
+def changes_around(entity: str, time_to: str | None = None, hours: int = 72) -> dict[str, Any]:
+    """Changements sur un CI, ses dépendances (deux niveaux) et les CI qui l'utilisent, dans les heures qui
+    précèdent time_to. Les modèles cherchaient sur le seul CI qui souffre, sur une fenêtre qui commençait
+    au symptôme, et manquaient le change en cause (max_connections réduit sur la base, sauvegarde avancée
+    la veille, redémarrage d'un consommateur)."""
+    sources = load_catalog()
+    if "changes" not in sources or "cmdb" not in sources:
+        raise ValueError("changes_around demande les sources changes et cmdb")
+    cmdb = {c["ci_id"]: c for c in rows("cmdb")}
+    key = entity.strip().lower()
+    root = next((c for c in cmdb.values() if key in (c["ci_id"].lower(), c["hostname"].lower())), None)
+    if root is None:
+        raise ValueError(f"CI introuvable dans la CMDB : {entity} (utilise resolve_entity)")
+    relation = {root["ci_id"]: "le CI lui-même"}
+    frontier = [root["ci_id"]]
+    for level in (1, 2):
+        nxt = []
+        for cid in frontier:
+            for dep in cmdb[cid].get("depends_on", []):
+                if dep in cmdb and dep not in relation:
+                    relation[dep] = f"dépendance de niveau {level} (via {cmdb[cid]['hostname']})"
+                    nxt.append(dep)
+        frontier = nxt
+    for c in cmdb.values():
+        if root["ci_id"] in c.get("depends_on", []) and c["ci_id"] not in relation:
+            relation[c["ci_id"]] = "utilise ce CI"
+    hours = max(1, min(int(hours), 168))
+    end = parse_time(time_to) if time_to else now()
+    start = end - timedelta(hours=hours)
+    out = []
+    for ch in rows("changes"):
+        cid = field_value(ch, "ci.id")
+        t = field_value(ch, "start")
+        if cid in relation and t and start <= parse_time(t) <= end:
+            out.append({**ch, "relation": relation[cid],
+                        "minutes_before": round((end - parse_time(t)).total_seconds() / 60)})
+    out.sort(key=lambda c: c["minutes_before"])
+    return {"entity": root["hostname"], "ci": root["ci_id"], "time_range": [start.isoformat(), end.isoformat()],
+            "perimeter": [{"ci_id": k, "hostname": cmdb[k]["hostname"], "relation": v} for k, v in relation.items()],
+            "total": len(out), "changes": out,
+            "note": None if out else f"Aucun change sur le CI et son périmètre dans les {hours} h : "
+                                     "élargis hours (168 au plus) avant de l'exclure."}
+
+
 def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
               time_from: str | None = None, time_to: str | None = None, top: int = 10) -> dict[str, Any]:
     card = get_source(source_id)

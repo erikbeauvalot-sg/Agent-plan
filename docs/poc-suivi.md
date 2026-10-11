@@ -24,19 +24,18 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 17. Rappel précoce des vagues | Après 8 appels directs de l'agent principal sans sous-agent spécialisé (`early_wave_reminder`), rappel des étapes du playbook, une fois | Fait (PR #29) |
 | 18. Contrôle des faits et des actions | `propose_action` refuse une limite mémoire sous le pic de mémoire de travail + 20 % (peak_mb du cgroup compte le cache), une règle d'alerte refusée par Prometheus, sur des métriques sans série ou recopiant une règle existante ; réponse finale relancée si elle prête à un conteneur une taille que ses mesures n'atteignent pas | Fait (PR #30) |
 | 19. Configuration depuis l'interface | Écran Administration : édition des fiches du catalogue, modèles, paramètres, rôles de sous-agents (Administrateur), playbooks, prompts et jeu d'évaluation (Superviseur) ; validation par les règles de l'orchestrateur, refus d'une version périmée, historique avec auteur et commentaire, écart et retour arrière, journal `config_changed` ; comptes gérés par formulaire | Fait (PR #31) |
-| 20. Jeu d'évaluation des critères de sortie | 20 questions simples et 20 incidents (familles `simple` et `incident`, `--kind`) ; 17 incidents passés ajoutés à la démonstration, rejoués à leur heure de référence (`as_of` : ni la suite ni la résolution) ; corrections tirées des échecs : classifieur (entités génériques, alias du glossaire, questions factuelles, JSON abîmé), recherches (sans casse, mot dans un champ texte, borne de fin comprise, filtre de trop signalé), glossaire des nouveaux services ; tests en parallèle | En cours (PR #33) |
+| 20. Jeu d'évaluation des critères de sortie | 20 questions simples et 20 incidents (familles `simple` et `incident`, `--kind`) ; 17 incidents passés ajoutés à la démonstration, rejoués à leur heure de référence (`as_of` : ni la suite ni la résolution) ; corrections tirées des échecs : classifieur (entités génériques, alias du glossaire, questions factuelles, JSON abîmé), recherches (sans casse, mot dans un champ texte, borne de fin comprise, filtre de trop signalé), glossaire des nouveaux services ; tests en parallèle | Fait (PR #33) |
+| 21. Changements autour d'un incident | Outil `changes_around` : changements sur le CI, ses dépendances (deux niveaux) et les CI qui l'utilisent, 72 h avant le symptôme, avec la relation et l'avance ; réponse finale relancée si un change proche y manque. Incidents : 18 sur 20 (10 à 11 avant) | En cours (PR #34) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
 
-- **Critères de sortie** : mesurés le 11 octobre sur le profil `openai` (gpt-4.1-mini, sous-agents
-  gpt-4.1-nano), 40 cas en 22 minutes : questions simples 16 puis 18 sur 20 (20 sur 20 en rejouant les
-  cas corrigés depuis), incidents 11 puis 10 sur 20 ; sur `gpt-oss:20b`, 17 sur 20 et 10 sur 20, plus de
-  3 heures. Le critère des incidents se joue à un cas près. Deux faiblesses expliquent la plupart des
-  échecs : le changement en cause n'est pas cherché sur les dépendances ni avant la fenêtre du symptôme,
-  et la synthèse de l'agent principal laisse de côté des faits trouvés par ses sous-agents (« No space
-  left on device », un changement trouvé). Cas maison : `eval/cases-maison.yaml` (local) attend les
-  causes réelles.
+- **Critères de sortie** : atteints pour les incidents le 11 octobre (profil `openai`, gpt-4.1-mini et
+  nano : 18 sur 20 avec `changes_around`). Questions simples : 18 sur 20 au dernier passage complet, les
+  deux échecs corrigés depuis et rejoués seuls ; à confirmer par un passage complet, puis sur
+  `gpt-oss:20b` et sur Azure. Échecs restants : la synthèse laisse de côté des faits trouvés par les
+  sous-agents (adresse du robot, réponse 404 du contrôle de santé). Cas maison :
+  `eval/cases-maison.yaml` (local) attend les causes réelles.
 - **Faits non vérifiés** : l'étape 18 contrôle les tailles de conteneurs ; les autres affirmations (un
   « bug Docker 27.2.0 » lu sur le web, des versions, des durées) ne sont pas encore confrontées aux sources.
 - **Industrialisation** (étape 4 du document d'architecture) : connecteur `mcp-elk` réel et Druid,
@@ -90,3 +89,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-11 : PR #31 ouverte (configuration et comptes modifiables depuis l'interface, document d'architecture complété).
 - 2026-10-11 : PR #32 ouverte : skill Claude Code `interface-diagagent`, commande `/refonte-interface` et [recherche UX](interface-recherche-ux.md) pour la refonte de l'interface web en six lots.
 - 2026-10-11 : PR #30 à #32 fusionnées ; rétention de Prometheus maison portée à 90 jours ; PR #33 ouverte (jeu d'évaluation à 40 cas, évaluations sur le profil openai).
+- 2026-10-11 : PR #33 fusionnée ; PR #34 ouverte (changes_around : incidents à 18 sur 20 sur le profil openai).

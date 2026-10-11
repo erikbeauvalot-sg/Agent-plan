@@ -149,3 +149,18 @@ def test_orchestrator_refuses_bad_limit_and_wrong_sizes(tmp_path, monkeypatch):
     events = [json.loads(line) for line in (log.dir / "events.jsonl").read_text().splitlines()]
     assert [e["type"] for e in events if e["type"] in ("action_rejected", "facts_unsupported")] == \
         ["action_rejected", "facts_unsupported"]
+
+
+def test_change_found_but_left_out_of_the_answer_is_recalled(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    lead = ScriptedProvider([
+        tools(call("changes_around", {"entity": "srv-pay-01", "time_to": "2026-10-06T22:10:00Z"})),
+        answer("## Synthèse\nPool de connexions saturé sur srv-pay-01, cause inconnue."),
+        answer("## Synthèse\nCHG0034567 a réduit max_connections sur db-pay-02, 25 min avant le symptôme."),
+    ])
+    log, status, text = asyncio.run(cli.ask("Pourquoi ?", providers=by_role(lead=lead)))
+    assert status == "completed" and "CHG0034567" in text
+    recall = lead.requests[2].messages[-1].content
+    assert "CHG0034567 sur db-pay-02 (dépendance de niveau 1" in recall and "25 min avant" in recall
+    events = [json.loads(line) for line in (log.dir / "events.jsonl").read_text().splitlines()]
+    assert [e["data"] for e in events if e["type"] == "changes_unmentioned"] == [{"changes": ["CHG0034567"]}]

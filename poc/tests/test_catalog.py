@@ -131,3 +131,20 @@ def test_empty_search_says_which_filter_removes_the_results():
     res = catalog.search("events", filters={"host": "srv-pay-01", "check": "http.latency_p95", "severity": "critical"})
     assert res["total"] == 0 and res["without_filter"] == {"severity": 1}
     assert "1 sans le filtre severity" in res["note"]
+
+
+def test_changes_around_covers_dependencies_and_users(monkeypatch):
+    # Paiements : le change en cause est sur la base dont dépend le serveur applicatif.
+    res = catalog.changes_around("srv-pay-01", "2026-10-06T22:10:00Z")
+    assert [(c["number"], c["relation"], c["minutes_before"]) for c in res["changes"]][0] == \
+        ("CHG0034567", "dépendance de niveau 1 (via srv-pay-01)", 25)
+    assert {p["hostname"] for p in res["perimeter"]} >= {"srv-pay-01", "db-pay-02", "lb-front-01", "srv-web-03"}
+    # File qui déborde : le change est sur le consommateur, qui utilise le bus.
+    monkeypatch.setenv("DIAGAGENT_NOW", "2026-10-03T07:00:00Z")
+    first = catalog.changes_around("mq-01", "2026-10-03T06:30:00Z")["changes"][0]
+    assert (first["number"], first["relation"]) == ("CHG0034450", "utilise ce CI")
+    # La veille au soir, hors d'une fenêtre qui commencerait au symptôme.
+    monkeypatch.setenv("DIAGAGENT_NOW", "2026-09-26T03:30:00Z")
+    assert catalog.changes_around("srv-batch-01", "2026-09-26T03:00:00Z")["changes"][0]["number"] == "CHG0034280"
+    with pytest.raises(ValueError, match="introuvable"):
+        catalog.changes_around("inconnu", None)

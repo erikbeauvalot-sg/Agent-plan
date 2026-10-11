@@ -21,11 +21,25 @@ def search(source: str, time_from: str | None = None, time_to: str | None = None
     """Cherche des documents dans une source du catalogue.
 
     source : id de la source (voir list_sources). time_from / time_to : ISO 8601 UTC ; par défaut les
-    24 h précédant l'heure de référence. filters : égalité exacte par champ (notation pointée, ex.
-    {"affected_ci.hostname": "srv-pay-01"}) ; une liste vaut « l'une des valeurs ». text : sous-chaîne
-    cherchée dans tout le document. size : nombre max de documents renvoyés (plafonné par la source).
+    24 h précédant l'heure de référence. filters : égalité par champ, sans casse (notation pointée, ex.
+    {"affected_ci.hostname": "srv-pay-01"}) ; sur un champ texte (message…), le mot cherché ; une liste
+    vaut « l'une des valeurs ». text : sous-chaîne cherchée dans tout le document. size : nombre max de
+    documents renvoyés (plafonné par la source). Pour les changements autour d'un incident, préfère
+    changes_around, qui couvre aussi les dépendances.
     """
     return catalog.search(source, filters, text, time_from, time_to, size)
+
+
+@read_only_tool(server)
+def changes_around(entity: str, time_to: str | None = None, hours: int = 72) -> dict[str, Any]:
+    """Changements à regarder pour un incident sur `entity` (host ou CI) : sur le CI lui-même, sur ce dont
+    il dépend (deux niveaux : base, bus, DNS, répartiteur…) et sur les CI qui l'utilisent, dans les
+    `hours` heures (72 par défaut, 168 au plus) qui précèdent time_to (début du symptôme ; par défaut
+    l'heure de référence). Chaque change dit sa relation au CI et son avance sur time_to, du plus proche
+    au plus ancien. Une cause fréquente est un change sur une dépendance, quelques minutes à quelques
+    heures avant le symptôme.
+    """
+    return catalog.changes_around(entity, time_to, hours)
 
 
 @read_only_tool(server)
