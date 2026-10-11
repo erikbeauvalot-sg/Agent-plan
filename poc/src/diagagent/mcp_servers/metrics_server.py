@@ -84,6 +84,21 @@ def list_metrics(host: str) -> dict[str, Any]:
             "metrics": [{"name": n, "desc": glossary.get(n, "")} for n in b.metrics(host)]}
 
 
+def _available(b: Any, host: str, metric: str, end: datetime) -> str:
+    """Où sont les points, quand la période demandée n'en a pas : un modèle qui se trompe de jour (« la
+    veille » prise pour le jour même) concluait « aucune métrique disponible »."""
+    ref = catalog.now()
+    try:
+        around = b.series(host, metric, ref - timedelta(days=7), ref + timedelta(seconds=1), 3600)
+    except (ValueError, NotImplementedError):
+        return ""
+    if not around:
+        return " ; aucun point non plus sur les 7 jours précédant l'heure de référence"
+    first, last = around[0][0].isoformat(), around[-1][0].isoformat()
+    return (f" ; des points existent du {first} au {last} (heure de référence {ref.isoformat()}) : "
+            "vérifie la date de ta période avant de conclure à une absence de mesure")
+
+
 @read_only_tool(server)
 def query_metric(host: str, metric: str, time_from: str | None = None, time_to: str | None = None,
                  step_minutes: int = 5) -> dict[str, Any]:
@@ -97,7 +112,8 @@ def query_metric(host: str, metric: str, time_from: str | None = None, time_to: 
     step = _step_minutes(start, end, step_minutes)
     points = b.series(host, metric, start, end, max(60, step * 60 // 4))
     if not points:
-        raise ValueError(f"Pas de point pour {host}/{metric} sur la période")
+        raise ValueError(f"Pas de point pour {host}/{metric} du {start.isoformat()} au {end.isoformat()}"
+                         + _available(b, host, metric, end))
     return {"host": host, "metric": metric, "source": b.source_id,
             "time_range": [start.isoformat(), end.isoformat()], "step_minutes": step,
             **_summarize(points, start, step)}

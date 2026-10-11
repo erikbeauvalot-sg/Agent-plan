@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import datetime, timedelta
 
+import pytest
 import yaml
 
 from conftest import POC
@@ -86,3 +87,11 @@ def test_every_scenario_service_is_in_the_glossary():
         code = s["incident"]["service"]
         assert code in services, code
         assert s["incident"]["host"] in {c["hostname"] for c in resolve_entity(services[code]["aliases"][0])["cis"]}
+
+
+def test_metric_on_the_wrong_day_says_where_points_are(monkeypatch):
+    # gpt-4.1-nano a pris « la veille » pour le jour du symptôme et conclu « aucune métrique ».
+    from diagagent.mcp_servers import metrics_server
+    _at(monkeypatch, "2026-09-24T13:50:00Z")
+    with pytest.raises(ValueError, match="des points existent du 2026-09-24"):
+        metrics_server.query_metric("srv-web-03", "http.latency_p95", "2026-09-23T13:20:00Z", "2026-09-23T13:50:00Z")

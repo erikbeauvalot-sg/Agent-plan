@@ -223,6 +223,42 @@ def check_rule(rule: dict[str, Any], prom: Prometheus) -> str | None:
     return None
 
 
+# Faits des sous-agents
+
+HYPHENS = dict.fromkeys(map(ord, "‐‑‒–—−"), "-")
+SPACES = dict.fromkeys(map(ord, "    "), " ")
+MARKS = [re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"),            # adresse IP
+         re.compile(r"\b(?:CHG|INC)\d{7}\b"),                   # change, incident
+         re.compile(r"[«\"“]\s*([^»\"”]{6,240}?)\s*[»\"”]")]    # message cité
+
+
+def normalize(text: str) -> str:
+    """Traits d'union et espaces insécables ramenés aux caractères ordinaires, en minuscules."""
+    return text.translate(HYPHENS).translate(SPACES).lower()
+
+
+def distinctive(fact: str, hosts: set[str], question: str = "") -> list[str]:
+    """Éléments qui identifient un fait : adresse IP, numéro CHG ou INC, début d'un message cité ; à
+    défaut, un host connu que la question ne nomme pas (le host de la question est dans toute réponse et
+    ne prouve pas que le fait a été repris)."""
+    fact = fact.translate(HYPHENS).translate(SPACES)
+    strong: list[str] = []
+    for pattern in MARKS[:2]:
+        strong += [m.group(0) for m in pattern.finditer(fact)]
+    # Un message cité compte s'il est repris en partie : chacun de ses segments d'au moins 10 caractères.
+    for m in MARKS[2].finditer(fact):
+        quote = m.group(1)
+        strong += [s.strip() for s in re.split(r"[:;,()\[\]]| - ", quote) if len(s.strip()) >= 10]
+        # Un numéro du message (port, code) suffit aussi : « port 8443 » reprend le fait. Pas un host,
+        # que la réponse cite de toute façon pour d'autres raisons.
+        strong += re.findall(r"(?<![\w.-])\d{3,}(?![\w.])", quote)
+    if strong:
+        return list(dict.fromkeys(s for s in strong if s))
+    lowered, asked = fact.lower(), normalize(question)
+    return sorted(h for h in hosts if re.search(rf"(?<![\w-]){re.escape(h.lower())}(?![\w-])", lowered)
+                  and h.lower() not in asked)
+
+
 # Réponse finale
 
 def unsupported_claims(text: str, peaks: dict[str, dict[str, Any]]) -> list[str]:

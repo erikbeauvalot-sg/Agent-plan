@@ -36,7 +36,9 @@ def changes_around(entity: str, time_to: str | None = None, hours: int = 72) -> 
     il dépend (deux niveaux : base, bus, DNS, répartiteur…) et sur les CI qui l'utilisent, dans les
     `hours` heures (72 par défaut, 168 au plus) qui précèdent time_to (début du symptôme ; par défaut
     l'heure de référence). Chaque change dit sa relation au CI et son avance sur time_to, du plus proche
-    au plus ancien. Une cause fréquente est un change sur une dépendance, quelques minutes à quelques
+    au plus ancien, jusqu'à l'heure de référence : un change postérieur à time_to (minutes_before
+    négatif, after_time_to) signale que le symptôme a peut-être commencé plus tard que prévu. Une cause
+    fréquente est un change sur une dépendance, quelques minutes à quelques
     heures avant le symptôme.
     """
     return catalog.changes_around(entity, time_to, hours)

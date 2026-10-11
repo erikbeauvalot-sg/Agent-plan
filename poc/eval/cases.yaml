@@ -125,7 +125,7 @@ cases:
     kind: incident
     now: "2026-09-30T08:30:00Z"
     question: "Le portail client renvoie une erreur 503 depuis 8h, pourquoi ?"
-    must_mention: [CHG0034350, [/status, "contrôle de santé", health]]
+    must_mention: [CHG0034350, [/status, "contrôle de santé", "contrôles de santé", "contrôles santé", health, "404"]]
 
   - id: inc-portail-inodes
     kind: incident
