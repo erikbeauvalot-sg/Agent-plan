@@ -40,7 +40,9 @@ def parse_time(value: str) -> datetime:
 
 
 def time_window(time_from: str | None, time_to: str | None) -> tuple[datetime, datetime]:
-    """Période obligatoire : par défaut les 24 heures précédant l'heure de référence."""
+    """Période obligatoire : par défaut les 24 heures précédant l'heure de référence. Les deux bornes sont
+    comprises : un change lancé à 14:30 doit sortir d'une recherche « jusqu'à 14:30 », l'heure où le
+    symptôme commence."""
     end = parse_time(time_to) if time_to else now()
     start = parse_time(time_from) if time_from else end - timedelta(hours=24)
     if start >= end:
@@ -328,7 +330,7 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         start, end = time_window(time_from, time_to)
         window = [start.isoformat(), end.isoformat()]
         hits = [d for d in matching
-                if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
+                if (t := field_value(d, time_field)) and start <= parse_time(t) <= end]
         hits.sort(key=lambda d: field_value(d, time_field), reverse=True)
     result = {
         "source": source_id,
@@ -351,6 +353,21 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
         note = (f"Aucun document dans la période, mais {len(outside)} hors période ({time_field} du "
                 f"{outside[0]} au {outside[-1]}) : élargis time_from / time_to pour les voir.")
         result["note"] = f"{result['note']} {note}" if result.get("note") else note
+    if not hits and filters and len(filters) > 1:
+        # Les modèles ajoutent volontiers un filtre deviné (severity: critical pour une alerte major) et
+        # concluent « aucune alerte » : on dit ce que chaque filtre retiré rendrait, dans la même période.
+        relaxed = {}
+        for key in filters:
+            others = {k: v for k, v in filters.items() if k != key}
+            n = sum(1 for d in rows(source_id) if _matches(d, others, text, exclude, _text_fields(card))
+                    and (not time_field or ((t := field_value(d, time_field)) and start <= parse_time(t) <= end)))
+            if n:
+                relaxed[key] = n
+        if relaxed:
+            result["without_filter"] = relaxed
+            note = ("Aucun document avec tous ces filtres, mais " + ", ".join(
+                f"{n} sans le filtre {k}" for k, n in relaxed.items()) + " : vérifie ces filtres avant de conclure.")
+            result["note"] = f"{result['note']} {note}" if result.get("note") else note
     return result
 
 
@@ -365,7 +382,7 @@ def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
     if time_field:
         start, end = time_window(time_from, time_to)
         window = [start.isoformat(), end.isoformat()]
-        docs = [d for d in docs if (t := field_value(d, time_field)) and start <= parse_time(t) < end]
+        docs = [d for d in docs if (t := field_value(d, time_field)) and start <= parse_time(t) <= end]
     counts = Counter(str(field_value(d, field)) for d in docs)
     buckets = [{"value": v, "count": c} for v, c in counts.most_common(top)]
     if time_field:
