@@ -95,8 +95,8 @@ def top_processes(host: str, sort_by: str = "rss", limit: int = 15) -> dict[str,
 @read_only_tool(server)
 def container_memory(host: str) -> dict[str, Any]:
     """Mémoire de chaque conteneur Docker d'après ses cgroups : utilisée maintenant, en swap, pic depuis
-    le démarrage du conteneur (peak_mb, utile pour un pic passé), limite éventuelle, image et version
-    (pour chercher les problèmes connus de cette version)."""
+    le démarrage du conteneur (peak_mb, cache de fichiers compris : borne haute, pas un besoin de mémoire),
+    limite éventuelle, image et version (pour chercher les problèmes connus de cette version)."""
     head, data = _run(host, "containers")
     info = ssh.containers(data.get("docker", []))
     out = []

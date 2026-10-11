@@ -18,5 +18,6 @@ orchestration:
   max_parallel: 6       # sous-agents simultanés
   max_subagents: 12     # sous-agents au total par question
   early_wave_reminder: 8  # appels directs de l'agent principal avant le rappel des vagues du playbook
+  memory_limit_margin_pct: 20  # une limite mémoire proposée dépasse le pic mesuré du conteneur d'au moins 20 %
 
 runs_dir: runs
