@@ -270,7 +270,7 @@ def test_vague_entity_is_missing_and_host_counts_as_service():
     assert named.missing == [] and named.entities == {"service": "le portail client"}
     host = playbooks.parse_classification(
         '{"category": "performance", "confidence": "high", "entities": {"host": "srv-pay-01"}, "missing": ["service"]}', books)
-    assert host.missing == [] and playbooks.decide(host, books).mode == "playbook"
+    assert playbooks.decide(host, books).mode == "playbook" and host.missing == []
 
 
 def test_damaged_classifier_json_is_still_read():
@@ -285,3 +285,21 @@ def test_damaged_classifier_json_is_still_read():
     assert (c.category, c.missing) == ("indisponibilite", ["service"])
     with pytest.raises(json.JSONDecodeError):
         playbooks.parse_classification('{"confidence": "high", "reason": "sans catégorie}', books)
+
+
+def test_service_named_by_glossary_alias_needs_no_clarification():
+    books = playbooks.load_playbooks()
+    # Réponses réelles de gpt-oss:20b qui demandaient à tort une précision.
+    slow = playbooks.parse_classification(
+        '{"category":"performance","confidence":"medium","entities":{},"missing":["service"]}', books)
+    assert playbooks.complete_entities(slow, "Pourquoi les commandes sont-elles très lentes depuis 14h ?") == ["service"]
+    assert slow.entities == {"service": "Commandes"} and playbooks.decide(slow, books).mode == "playbook"
+    batch = playbooks.parse_classification(
+        '{"category":"analyse-evenement","confidence":"high","entities":{"service":"batch de rapprochement"},'
+        '"missing":["ticket"]}', books)
+    assert playbooks.decide(batch, books).mode != "clarify"
+    # Un alias générique (« site web ») ne désigne aucun service précis.
+    site = playbooks.parse_classification(
+        '{"category":"indisponibilite","confidence":"high","entities":{},"missing":["service"]}', books)
+    playbooks.complete_entities(site, "Mon site web ne fonctionne pas")
+    assert site.missing == ["service"]

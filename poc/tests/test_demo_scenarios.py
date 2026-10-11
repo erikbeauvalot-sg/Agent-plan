@@ -76,3 +76,13 @@ def test_expected_evidence_is_visible_at_reference_time(monkeypatch):
         if number:
             ticket = next(t for t in catalog.rows("incidents") if t["number"] == number[0])
             assert ticket["state"] == "In Progress" and "resolution" not in ticket, case["id"]
+
+
+def test_every_scenario_service_is_in_the_glossary():
+    """Sans alias, « les commandes » ne se résout en aucun CI et l'agent part sur le mauvais host."""
+    from diagagent.mcp_servers.catalog_server import resolve_entity
+    services = catalog.load_yaml("glossary.yaml")["services"]
+    for s in SCENARIOS:
+        code = s["incident"]["service"]
+        assert code in services, code
+        assert s["incident"]["host"] in {c["hostname"] for c in resolve_entity(services[code]["aliases"][0])["cis"]}

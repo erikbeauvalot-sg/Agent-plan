@@ -27,7 +27,10 @@ CONFIDENCES = ("low", "medium", "high")
 FALLBACK = "autre"
 # Une entité indispensable peut être donnée sous une autre forme : un host nommé désigne le composant
 # en cause (« la latence de srv-pay-01 »), comme le ferait un service.
-ENTITY_ALIASES = {"service": ("host", "ci")}
+ENTITY_ALIASES = {"service": ("host", "ci"),
+                  # Un événement sur un host ou un service nommé se retrouve dans les incidents et les
+                  # alertes : l'agent cherche le ticket lui-même plutôt que de le demander.
+                  "ticket": ("host", "service", "ci")}
 GENERIC_NAMES = {"site", "site web", "site internet", "application", "appli", "app", "application web",
                  "service", "serveur", "outil", "logiciel", "système", "plateforme", "réseau", "base",
                  "base de données", "appli web", "programme"}
@@ -169,13 +172,27 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     for k in vague:
         del entities[k]
 
-    def present(m: str) -> bool:
-        return m in entities or any(a in entities for a in ENTITY_ALIASES.get(m, ()))
-
-    missing = [m for m in dict.fromkeys([*(data.get("missing") or []), *vague]) if m in required and not present(m)]
+    missing = [m for m in dict.fromkeys([*(data.get("missing") or []), *vague]) if m in required and m not in entities]
     return Classification(category, confidence, alternative, entities, missing,
                           [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
                           draft_match=draft_match)
+
+
+def glossary_service(question: str) -> str | None:
+    """Service du glossaire cité par son nom ou un alias (« les commandes », « le batch de facturation ») :
+    le premier cité, sujet de la phrase (« les commandes échouent avec une erreur d'authentification »
+    parle des commandes) ; à égalité, l'alias le plus long."""
+    text = question.lower()
+    best = None
+    for s in (catalog.load_yaml("glossary.yaml").get("services") or {}).values():
+        for name in [s["name"], *s.get("aliases", [])]:
+            if is_vague(name):  # « site web » ne désigne pas le portail plus qu'un autre site
+                continue
+            if m := re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", text):
+                key = (m.start(), -len(name))
+                if best is None or key < best[0]:
+                    best = (key, s["name"])
+    return best[1] if best else None
 
 
 def lenient_json(text: str) -> dict[str, Any]:
@@ -265,6 +282,8 @@ def complete_entities(c: Classification, question: str, alert_names: set[str] | 
     alert = named_alert(question, alert_names)
     if alert and "ticket" not in found:
         found["ticket"] = alert
+    if service := glossary_service(question):
+        found.setdefault("service", service)
     completed = [m for m in c.missing if m in found]
     for m in completed:
         c.entities[m] = found[m]
@@ -273,6 +292,8 @@ def complete_entities(c: Classification, question: str, alert_names: set[str] | 
 
 
 def decide(c: Classification, books: dict[str, dict[str, Any]]) -> Decision:
+    # Après complete_entities : une entité manquante donnée sous une autre forme ne vaut pas une question.
+    c.missing = [m for m in c.missing if not any(a in c.entities for a in ENTITY_ALIASES.get(m, ()))]
     if c.missing:
         book = books[c.category]
         question = " ".join(book["required_entities"][m] for m in c.missing)
