@@ -27,6 +27,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 20. Jeu d'évaluation des critères de sortie | 20 questions simples et 20 incidents (familles `simple` et `incident`, `--kind`) ; 17 incidents passés ajoutés à la démonstration, rejoués à leur heure de référence (`as_of` : ni la suite ni la résolution) ; corrections tirées des échecs : classifieur (entités génériques, alias du glossaire, questions factuelles, JSON abîmé), recherches (sans casse, mot dans un champ texte, borne de fin comprise, filtre de trop signalé), glossaire des nouveaux services ; tests en parallèle | Fait (PR #33) |
 | 21. Changements autour d'un incident | Outil `changes_around` : changements sur le CI, ses dépendances (deux niveaux) et les CI qui l'utilisent, 72 h avant le symptôme, avec la relation et l'avance ; réponse finale relancée si un change proche y manque. Incidents : 18 sur 20 (10 à 11 avant) | Fait (PR #34) |
 | 22. Synthèse fidèle aux rapports | Réponse finale relancée une fois si un fait sûr d'un sous-agent (adresse, numéro, message cité, host) n'y figure pas, rapports non attendus compris ; `changes_around` rend aussi les changes postérieurs à un début de symptôme mal estimé ; métrique interrogée au mauvais jour : l'outil dit où sont les points. Incidents : 18 sur 20 | En cours (PR #35) |
+| 24. Portée globale | « Quel est l'état du SI ? » : « SI », « la prod », « l'infra » désignent tout le périmètre (section `scopes` du glossaire) ; `resolve_entity` rend `scope: global`, le classifieur note `scope: global` au lieu d'un service, sans précision demandée ; étape `etat-global` du playbook `information` (alertes, sources injoignables, incidents ouverts, changements récents, synthèse par service) | En cours (PR #38) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
@@ -94,3 +95,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-11 : PR #33 fusionnée ; PR #34 ouverte (changes_around : incidents à 18 sur 20 sur le profil openai).
 - 2026-10-11 : PR #34 fusionnée ; PR #35 ouverte (synthèse fidèle aux rapports des sous-agents ; incidents 18 sur 20).
 - 2026-10-11 : PR #35 fusionnée ; plan d'amélioration de l'interface web (docs/plan-interface.md) : TypeScript, React et React Flow, lots 0a à 7.
+- 2026-10-11 : PR #38 ouverte (portée globale : « état du SI »).
