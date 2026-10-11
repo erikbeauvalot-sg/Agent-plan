@@ -439,6 +439,11 @@ class Investigation:
                 completed = playbooks.complete_entities(c, self.question, names)
                 if completed:
                     self.log.event("lead", "entities_completed", {m: c.entities[m] for m in completed})
+            if (scoped := playbooks.scope_override(c, self.question, self.books)) is not c:
+                # « l'état du SI » : tout le périmètre, ni un service introuvable ni une précision à demander.
+                self.log.event("lead", "global_scope", {"scope": scoped.entities["scope"], "from": c.category,
+                                                        "to": scoped.category})
+                c = scoped
             if (factual := playbooks.factual_override(c, self.question, self.books)) is not c:
                 self.log.event("lead", "factual_question", {"from": c.category, "to": factual.category})
                 c = factual

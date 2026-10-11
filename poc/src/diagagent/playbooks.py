@@ -27,10 +27,12 @@ CONFIDENCES = ("low", "medium", "high")
 FALLBACK = "autre"
 # Une entité indispensable peut être donnée sous une autre forme : un host nommé désigne le composant
 # en cause (« la latence de srv-pay-01 »), comme le ferait un service.
-ENTITY_ALIASES = {"service": ("host", "ci"),
+# Une portée globale (« le SI », « la prod ») couvre tous les services : rien à préciser.
+ENTITY_ALIASES = {"service": ("host", "ci", "scope"),
                   # Un événement sur un host ou un service nommé se retrouve dans les incidents et les
                   # alertes : l'agent cherche le ticket lui-même plutôt que de le demander.
-                  "ticket": ("host", "service", "ci")}
+                  "ticket": ("host", "service", "ci", "scope")}
+NAMED_ENTITIES = ("host", "service", "ci", "ticket", "change")
 GENERIC_NAMES = {"site", "site web", "site internet", "web", "internet", "application", "appli", "app", "application web",
                  "service", "serveur", "outil", "logiciel", "système", "plateforme", "réseau", "base",
                  "base de données", "appli web", "programme"}
@@ -127,6 +129,8 @@ Réponds uniquement par un objet JSON, sans texte autour :
 - entities : seulement les entités écrites dans la demande, sans rien deviner.
 - missing : les entités indispensables de la catégorie (liste « indispensable » ci-dessus) que la
   demande ne permet pas d'identifier. « mon site » sans dire lequel : service manquant.
+- « le SI », « le système d'information », « la prod », « l'infra », « tout le système » désignent tout
+  le périmètre, pas un service ni un host : entities {{"scope": "global"}}, rien de manquant.
 """
 
 
@@ -166,6 +170,14 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
         alternative = None
     confidence = data.get("confidence") if data.get("confidence") in CONFIDENCES else "low"
     entities = {k: str(v) for k, v in (data.get("entities") or {}).items() if v not in (None, "", [])}
+    # « SI » ou « la prod » donné comme service ou host est une portée, pas un objet à résoudre.
+    given = entities.pop("scope", None)
+    scopes = [s for v in entities.values() if (s := catalog.scope_of(v))]
+    if given and (s := given if given in catalog.scopes() else catalog.scope_of(given)):
+        scopes.append(s)
+    entities = {k: v for k, v in entities.items() if not catalog.scope_of(v)}
+    if scopes:
+        entities["scope"] = scopes[0]
     required = books[category].get("required_entities") or {}
     # « Mon site web » n'identifie rien : l'entité est écartée, et manquante si la catégorie l'exige.
     vague = [k for k, v in entities.items() if is_vague(v)]
@@ -197,6 +209,30 @@ def factual_override(c: Classification, question: str, books: dict[str, dict[str
         return c
     return Classification("information", c.confidence, None, dict(c.entities), [], [], c.reason,
                            draft_match=c.draft_match)
+
+
+STATE_WORDS = re.compile(r"\b(?:état|etat|statut|santé|sante|bilan|situation|point sur|tout va bien|ça va)\b", re.I)
+
+
+def scope_override(c: Classification, question: str, books: dict[str, dict[str, Any]]) -> Classification:
+    """Portée globale citée dans la demande (« Quel est l'état du SI ? ») sans objet nommé : entité
+    `scope: global`, qui dispense de préciser un service. Une demande d'état global classée `autre` est
+    information. Rend `c` inchangé si rien ne s'applique."""
+    scope = c.entities.get("scope")
+    if not scope and not any(k in c.entities for k in NAMED_ENTITIES):
+        scope = catalog.scope_in_text(question)
+    if not scope:
+        return c
+    category = c.category
+    if (category == FALLBACK and STATE_WORDS.search(question)
+            and books.get("information", {}).get("status") == "active"):
+        category = "information"
+    if c.entities.get("scope") == scope and category == c.category:
+        return c
+    reason = c.reason if category == c.category else f"état global demandé ; le classifieur proposait {c.category}"
+    return Classification(category, c.confidence, c.alternative if category == c.category else None,
+                          {**c.entities, "scope": scope}, list(c.missing), list(c.choices), reason,
+                          error=c.error, draft_match=c.draft_match)
 
 
 def glossary_service(question: str) -> str | None:
@@ -359,6 +395,10 @@ def lead_section(decision: Decision, c: Classification, books: dict[str, dict[st
     head = f"Catégorie : {', '.join(decision.categories)} (confiance {c.confidence})."
     if c.entities:
         head += " Entités repérées : " + ", ".join(f"{k} = {v}" for k, v in c.entities.items()) + "."
+    if c.entities.get("scope") == "global":
+        head += (" Portée globale : tout le système d'information. Fais un état global (alertes, sources "
+                 "injoignables, incidents ouverts, changements récents, synthèse par service), sans demander "
+                 "de précision.")
     if decision.mode == "combined":
         head += (" Deux catégories sont plausibles : commence par les étapes communes aux deux playbooks, "
                  "puis tranche avec les faits et appelle requalify pour retenir la bonne.")

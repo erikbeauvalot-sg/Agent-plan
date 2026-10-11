@@ -10,6 +10,27 @@ services:
   MW: {name: Bus de messages, aliases: [rabbitmq, bus de messages, files de messages, file facturation]}
   NET: {name: DNS interne, aliases: [dns, résolution de noms]}
   STO: {name: Stockage NFS, aliases: [nfs, partages, stockage de fichiers]}
+# Portées : des noms qui ne désignent pas un objet mais un périmètre entier. « Quel est l'état du SI ? »
+# vise tout le système d'information, pas un service nommé « SI ». resolve_entity rend alors
+# `scope: global` avec le sens et la consigne ; le classifieur note `entities: {scope: global}` au lieu
+# d'un service ou d'un host, et ne demande pas de précision. La comparaison ignore la casse, les accents
+# et les articles (« le », « la », « l' », « tout le »…). Dans une phrase, « SI » n'est reconnu qu'en
+# majuscules (« que faire si le disque est plein » n'est pas une portée), et un alias d'un seul mot
+# (« prod », « infra ») seulement précédé d'un article (« la prod », « l'infra »).
+scopes:
+  global:
+    name: Système d'information
+    meaning: "Tout le périmètre surveillé : tous les services, machines et sources"
+    guidance: >
+      État global, sans demande de précision : alertes en cours (list_alerts si Alertmanager est là,
+      search sur events avec status open), sources et machines injoignables (list_hosts : cibles down,
+      erreurs), incidents ouverts (search sur incidents), changements des dernières 24 h (search sur
+      changes), puis une synthèse par service : ce qui va bien, ce qui ne va pas.
+    aliases: [SI, "système d'information", "systèmes d'information", "le SI", "l'ensemble du SI", "tout le SI",
+              prod, production, "la prod", "toute la prod", "toute la production", "environnement de production",
+              infra, infrastructure, "l'infra", "toute l'infra", "toute l'infrastructure",
+              "tout le système", "l'ensemble du système", "l'ensemble", "tout le périmètre", "le parc",
+              "l'ensemble des services", "tous les services", "tout le parc"]
 metrics:
   up: "Cible de collecte joignable (1) ou non (0)"
   cpu.usage: "Utilisation CPU en %"
