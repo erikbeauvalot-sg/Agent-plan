@@ -132,6 +132,12 @@ l'orchestrateur relit la demande : un numéro `INC` ou `CHG`, ou le nom exact d'
 `entities_completed`). Une demande classée `autre` qui nomme une alerte connue passe en
 `analyse-evenement`, avec une confiance faible.
 
+Une **portée globale** (« le SI », « le système d'information », « la prod », « l'infra » : section
+`scopes` de `catalog/glossary.yaml`) n'est ni un service ni un host : l'entité devient `scope: global`,
+aucune précision n'est demandée (événement `global_scope`), `resolve_entity` rend `scope: global` et
+l'agent principal fait un état global (étape `etat-global` du playbook `information`). Dans une phrase,
+« SI » n'est reconnu qu'en majuscules : « que faire si le disque est plein » n'est pas une portée.
+
 En cours de route, l'agent principal peut appeler `requalify` si les faits contredisent la catégorie ;
 le changement est tracé (`category_changed` dans `events.jsonl`). La catégorie, sa confiance et la
 version des playbooks appliqués sont dans `manifest.json` (clé `category`) et dans `runs/index.jsonl`.

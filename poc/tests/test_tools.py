@@ -41,3 +41,15 @@ def test_resolve_entity_by_business_alias():
         return await hub.call("resolve_entity", {"name": "service paiement"})
     data = json.loads(asyncio.run(_with_hub(run)).content)
     assert {c["hostname"] for c in data["cis"]} == {"srv-pay-01", "db-pay-02"}
+
+
+def test_resolve_entity_global_scope():
+    # « SI » n'est pas un service introuvable : c'est tout le système d'information.
+    from diagagent.mcp_servers.catalog_server import resolve_entity
+    for name in ("SI", "le système d'information", "la prod", "Systeme d’information"):
+        data = resolve_entity(name)
+        assert data["found"] and data["scope"] == "global", name
+        assert "état global" in data["guidance"].lower() and data["meaning"]
+        assert {s["code"] for s in data["services"]} >= {"PAY", "CMD"} and not data["ambiguous"]
+    other = resolve_entity("srv-pay-01")
+    assert "scope" not in other and other["found"]

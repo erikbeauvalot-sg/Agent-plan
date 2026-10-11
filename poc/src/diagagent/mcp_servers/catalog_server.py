@@ -33,9 +33,16 @@ def describe_source(id: str) -> dict[str, Any]:
 @read_only_tool(server)
 def resolve_entity(name: str) -> dict[str, Any]:
     """Résout un nom libre (host, CI, service, alias métier) en entités connues : CMDB et hosts suivis
-    par les outils de métriques."""
+    par les outils de métriques. Une portée (« SI », « la prod ») rend scope = global et la consigne
+    d'un état global : ce n'est pas un objet introuvable."""
     needle = name.strip().lower()
     services = catalog.load_yaml("glossary.yaml").get("services", {})
+    if scope := catalog.scope_of(name):
+        s = catalog.scopes()[scope]
+        return {"query": name, "scope": scope, "meaning": s.get("meaning", s["name"]),
+                "guidance": " ".join(str(s.get("guidance", "")).split()),
+                "services": [{"code": c, "name": v["name"]} for c, v in services.items()],
+                "cis": [], "monitored_hosts": [], "ambiguous": False, "found": True}
     matched_services = [code for code, s in services.items()
                         if needle == code.lower() or needle == s["name"].lower()
                         or any(needle == a.lower() or a.lower() in needle for a in s.get("aliases", []))]

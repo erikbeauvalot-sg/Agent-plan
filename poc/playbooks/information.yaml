@@ -1,10 +1,11 @@
 id: information
-version: 3
+version: 4
 status: active
 description: >
   Demande de renseignements sur un objet nommé (host, CI, application, service, équipe, ticket, alerte) :
   fiche, dépendances, propriétaires, incidents et changements, statut, priorité ou résolution d'un ticket,
-  heure d'une alerte, valeur d'une métrique. Réponse courte, pas de diagnostic.
+  heure d'une alerte, valeur d'une métrique. Aussi l'état global du système d'information (« le SI »,
+  « la prod ») : ce qui va bien et ce qui ne va pas, service par service. Réponse courte, pas de diagnostic.
 examples:
   - "Donne-moi les informations sur srv-pay-01"
   - "Qui gère l'application Paiement ?"
@@ -15,6 +16,7 @@ examples:
   - "Comment a été résolu l'incident INC0091234 ?"
   - "Quelle est la valeur actuelle de la mémoire de srv-web-03 ?"
   - "Quel a été le pic de CPU de db-pay-02 cette nuit ?"
+  - "Quel est l'état du SI ?"
 required_entities: {}
 hypotheses: []
 steps:
@@ -23,8 +25,19 @@ steps:
     collect:
       - "Résoudre l'objet nommé (resolve_entity, fiche CMDB)"
       - "Selon la question : dépendances, propriétaires, incidents ou changements ouverts ou récents, alertes"
+  - name: etat-global
+    direct: >
+      Seulement pour une portée globale (entité scope = global, ou resolve_entity rend scope global) :
+      l'agent principal répond lui-même, sans sous-agent et sans demander de précision.
+    collect:
+      - "Alertes en cours : list_alerts si Alertmanager est présent, sinon search sur events (status open)"
+      - "Sources et machines injoignables : list_hosts (cibles down, erreurs de collecte)"
+      - "Incidents ouverts : search sur incidents (state New ou In Progress)"
+      - "Changements récents : search sur changes, dernières 24 h"
+      - "Synthèse par service : ce qui va bien, ce qui ne va pas, avec les identifiants"
 stop_when:
   - "l'information demandée est trouvée, ou son absence est vérifiée dans la bonne source"
+  - "pour un état global, chaque point ci-dessus est vérifié ou sa source signalée absente"
 requalify:
   indisponibilite: "la question décrit en fait un service en panne ou en erreur"
   performance: "la question décrit en fait une lenteur"

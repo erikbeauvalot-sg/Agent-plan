@@ -316,3 +316,66 @@ def test_factual_question_is_information_but_not_a_diagnosis():
                      "Quel a été l'impact du change CHG0034567 ?", "Quelles erreurs bloquent les paiements ?"):
         c = playbooks.Classification("performance", "medium")
         assert playbooks.factual_override(c, question, books) is c, question
+
+
+# Réponse réelle de gpt-oss:20b à « quel est l'etat du SI ? » : l'agent principal cherchait un service « SI ».
+SI_ANSWER = ('{"category": "information", "confidence": "medium", "alternative": null, "entities": {"service": "SI"}, '
+             '"missing": ["service"], "choices": [], "reason": "La demande cherche le statut général du SI."}')
+
+
+def test_global_scope_is_not_a_service_and_needs_no_precision():
+    books = playbooks.load_playbooks()
+    c = playbooks.parse_classification(SI_ANSWER, books)
+    assert c.entities == {"scope": "global"} and c.missing == []
+    c = playbooks.scope_override(c, "quel est l'etat du SI ?", books)
+    assert playbooks.decide(c, books).mode == "playbook" and c.category == "information"
+    assert "Portée globale" in playbooks.lead_section(playbooks.decide(c, books), c, books, set())
+    # Même dans une catégorie qui exige un service, la portée globale en tient lieu.
+    down = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "la prod"}, "missing": ["service"]}',
+        books)
+    assert down.entities == {"scope": "global"} and playbooks.decide(down, books).mode == "playbook"
+
+
+@pytest.mark.parametrize("question", ["Quel est l'état du SI ?", "Fais-moi un bilan du système d'information",
+                                      "Est-ce que tout va bien en production ?", "Quel est l'état de la prod ?",
+                                      "état de toute l'infrastructure"])
+def test_global_scope_found_in_the_question(question):
+    books = playbooks.load_playbooks()
+    c = playbooks.scope_override(playbooks.Classification("autre", "low"), question, books)
+    assert c.entities == {"scope": "global"} and c.category == "information", question
+
+
+@pytest.mark.parametrize("question", ["Que faire si le disque est plein ?", "si srv-pay-01 redémarre, que se passe-t-il ?",
+                                      "QUE FAIRE SI LE DISQUE EST PLEIN", "Le batch de production de factures échoue",
+                                      "srv-prod-01 est lent"])
+def test_ordinary_words_are_not_a_global_scope(question):
+    books = playbooks.load_playbooks()
+    c = playbooks.Classification("autre", "low")
+    assert playbooks.scope_override(c, question, books) is c, question
+
+
+def test_global_scope_keeps_existing_rules():
+    books = playbooks.load_playbooks()
+    site = playbooks.parse_classification(
+        '{"category":"indisponibilite","confidence":"high","entities":{"service":"Mon site web"},"missing":["service"]}', books)
+    playbooks.complete_entities(site, "Mon site web ne fonctionne pas")
+    site = playbooks.scope_override(site, "Mon site web ne fonctionne pas", books)
+    assert site.missing == ["service"] and playbooks.decide(site, books).mode == "clarify"
+    slow = playbooks.parse_classification(
+        '{"category":"performance","confidence":"medium","entities":{},"missing":["service"]}', books)
+    question = "Pourquoi les commandes sont-elles lentes en production ?"
+    playbooks.complete_entities(slow, question)
+    slow = playbooks.scope_override(slow, question, books)
+    assert slow.entities == {"service": "Commandes"} and playbooks.decide(slow, books).mode == "playbook"
+
+
+def test_global_scope_reaches_the_lead_without_clarification(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    lead = ScriptedProvider([answer("## Synthèse\nRien d'anormal")] * 2)
+    clf = ScriptedProvider([LLMResponse(text=SI_ANSWER, tool_calls=[], stop_reason="end")])
+    log, status, _ = asyncio.run(cli.ask("quel est l'etat du SI ?", providers=with_classifier(lead, clf)))
+    assert status == "completed"
+    assert "scope = global" in lead.requests[0].system and "etat-global" in lead.requests[0].system
+    category = json.loads((log.dir / "manifest.json").read_text())["category"]
+    assert (category["id"], category["mode"], category["entities"]) == ("information", "playbook", {"scope": "global"})

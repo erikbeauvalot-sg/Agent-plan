@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import unicodedata
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -152,6 +154,49 @@ def sources_of_kind(kind: str) -> list[dict[str, Any]]:
 def load_yaml(name: str) -> dict[str, Any]:
     path = home() / "catalog" / name
     return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def _fold(text: str) -> str:
+    """Minuscules, sans accents, apostrophe droite : « Système d’information » → « systeme d'information »."""
+    text = unicodedata.normalize("NFKD", text.replace("’", "'"))
+    return "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
+
+
+def _scope_key(text: str) -> str:
+    """Nom comparable d'une portée : sans casse, accents ni articles (« le SI » = « si »)."""
+    text = re.sub(r"(?<![\w'])(?:le|la|les|l'|du|des)(?![\w'])\s*", " ", _fold(text).replace("l'", "l' "))
+    return " ".join(text.split())
+
+
+def scopes() -> dict[str, dict[str, Any]]:
+    return load_yaml("glossary.yaml").get("scopes") or {}
+
+
+def scope_of(name: str) -> str | None:
+    """Portée désignée par un nom entier (« SI », « la prod », « le système d'information »), sinon None."""
+    key = _scope_key(name)
+    return next((sid for sid, s in scopes().items()
+                 if key and key in {_scope_key(a) for a in [s["name"], *s.get("aliases", [])]}), None)
+
+
+def scope_in_text(text: str) -> str | None:
+    """Portée citée dans une phrase. « SI » compte seulement en majuscules et en mot entier (« si » est une
+    conjonction) ; un alias d'un seul mot (« prod », « infra ») seulement après un article ou « en »
+    (« la prod », « en production »), sinon « srv-prod » ou « production de factures » suffiraient."""
+    shouted = text.isupper() and len(text.split()) > 2  # « QUE FAIRE SI LE DISQUE EST PLEIN »
+    has_si = not shouted and re.search(r"(?<![\w-])SI(?![\w-])", text)
+    folded = _fold(text)
+    for sid, s in scopes().items():
+        for alias in [s["name"], *s.get("aliases", [])]:
+            if re.search(r"(?<![\w-])SI(?![\w-])", alias):
+                if has_si:
+                    return sid
+                continue
+            a = re.escape(_fold(alias))
+            pattern = a if re.search(r"[\s']", alias) else rf"(?:\b(?:la|le|en|toute|tout)\s+|\bl'){a}"
+            if re.search(rf"(?<![\w-]){pattern}(?![\w-])", folded):
+                return sid
+    return None
 
 
 def get_source(source_id: str) -> dict[str, Any]:
