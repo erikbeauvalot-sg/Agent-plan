@@ -262,7 +262,8 @@ class Investigation:
         """Relance l'agent principal une fois par motif : vagues du playbook jamais lancées, actions
         décrites dans la réponse sans propose_action, puis tailles contraires aux mesures."""
         for motive, check in (("waves", self._missing_waves), ("changes", self._unmentioned_changes),
-                              ("actions", self._unrecorded_actions), ("facts", self._unsupported_facts)):
+                              ("findings", self._dropped_findings), ("actions", self._unrecorded_actions),
+                              ("facts", self._unsupported_facts)):
             if motive not in self.rechecked and (nudge := check(text)):
                 self.rechecked.add(motive)
                 return nudge
@@ -319,6 +320,30 @@ class Investigation:
                 + " ; ".join(missing) + ". Lance maintenant la prochaine étape avec spawn_subagent (toutes ses "
                 "investigations dans la même réponse, puis wait_subagents) en reportant ce que tu as établi ; "
                 "les sous-agents interrogent les sources à ta place.")
+
+    def _dropped_findings(self, text: str) -> str | None:
+        """Faits sûrs des sous-agents absents de la synthèse : l'agent principal concluait « bug
+        applicatif » quand un rapport citait « No space left on device » sur db-crm-01, ou « absence de
+        métriques » quand un autre avait trouvé l'adresse du robot. Un fait compte comme repris si l'un de
+        ses éléments distinctifs (adresse, numéro, host, message cité) figure dans la réponse."""
+        hosts = {c["hostname"] for c in catalog.rows("cmdb")} if "cmdb" in catalog.load_catalog() else set()
+        dropped = []
+        for sub in self.subagents.values():
+            # Seuls les faits structurés comptent : le résumé d'un sous-agent sans rapport décrit le plus
+            # souvent son propre échec (« la source logs_srv-crm-01 n'est pas disponible »).
+            for f in (sub.report or {}).get("findings") or []:
+                if f.get("confidence") != "high":
+                    continue
+                marks = checks.distinctive(str(f.get("fact", "")), hosts, self.question)
+                if marks and not any(m.lower() in checks.normalize(text) for m in marks):
+                    dropped.append((sub.task_id, f))
+        if not dropped:
+            return None
+        self.log.event("lead", "findings_dropped", {"findings": [f"{t}: {f['fact'][:120]}" for t, f in dropped[:8]]})
+        lines = [f"- {t} : {f['fact'][:300]} [{', '.join(f.get('evidence', [])[:2])}]" for t, f in dropped[:8]]
+        return ("Ta réponse laisse de côté des faits établis avec une confiance élevée par tes sous-agents :\n"
+                + "\n".join(lines) + "\nIntègre-les à la synthèse et à la cause probable, ou dis pourquoi tu les "
+                "écartes, puis rends la réponse complète.")
 
     def _unmentioned_changes(self, text: str) -> str | None:
         """Change rendu par changes_around peu avant le symptôme, absent de la réponse : les modèles le

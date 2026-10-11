@@ -400,15 +400,20 @@ def changes_around(entity: str, time_to: str | None = None, hours: int = 72) -> 
     hours = max(1, min(int(hours), 168))
     end = parse_time(time_to) if time_to else now()
     start = end - timedelta(hours=hours)
+    # Jusqu'à l'heure de référence, pas seulement jusqu'à time_to : le début du symptôme est souvent mal
+    # estimé (« hier soir » pris pour 18 h, le change en cause à 21:45 tombait hors de la fenêtre). Un
+    # change postérieur à time_to a un minutes_before négatif.
+    until = max(end, now())
     out = []
     for ch in rows("changes"):
         cid = field_value(ch, "ci.id")
         t = field_value(ch, "start")
-        if cid in relation and t and start <= parse_time(t) <= end:
-            out.append({**ch, "relation": relation[cid],
-                        "minutes_before": round((end - parse_time(t)).total_seconds() / 60)})
-    out.sort(key=lambda c: c["minutes_before"])
-    return {"entity": root["hostname"], "ci": root["ci_id"], "time_range": [start.isoformat(), end.isoformat()],
+        if cid in relation and t and start <= parse_time(t) <= until:
+            minutes = round((end - parse_time(t)).total_seconds() / 60)
+            out.append({**ch, "relation": relation[cid], "minutes_before": minutes,
+                        **({"after_time_to": True} if minutes < 0 else {})})
+    out.sort(key=lambda c: abs(c["minutes_before"]))
+    return {"entity": root["hostname"], "ci": root["ci_id"], "time_range": [start.isoformat(), until.isoformat()],
             "perimeter": [{"ci_id": k, "hostname": cmdb[k]["hostname"], "relation": v} for k, v in relation.items()],
             "total": len(out), "changes": out,
             "note": None if out else f"Aucun change sur le CI et son périmètre dans les {hours} h : "

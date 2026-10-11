@@ -148,3 +148,9 @@ def test_changes_around_covers_dependencies_and_users(monkeypatch):
     assert catalog.changes_around("srv-batch-01", "2026-09-26T03:00:00Z")["changes"][0]["number"] == "CHG0034280"
     with pytest.raises(ValueError, match="introuvable"):
         catalog.changes_around("inconnu", None)
+
+
+def test_changes_around_also_returns_changes_after_a_too_early_start():
+    # « Hier soir » pris pour 18 h : le change en cause, à 21:45, vient après time_to.
+    first = catalog.changes_around("srv-pay-01", "2026-10-06T18:00:00Z", 48)["changes"][0]
+    assert (first["number"], first["minutes_before"], first["after_time_to"]) == ("CHG0034567", -225, True)

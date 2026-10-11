@@ -164,3 +164,35 @@ def test_change_found_but_left_out_of_the_answer_is_recalled(tmp_path, monkeypat
     assert "CHG0034567 sur db-pay-02 (dépendance de niveau 1" in recall and "25 min avant" in recall
     events = [json.loads(line) for line in (log.dir / "events.jsonl").read_text().splitlines()]
     assert [e["data"] for e in events if e["type"] == "changes_unmentioned"] == [{"changes": ["CHG0034567"]}]
+
+
+def test_distinctive_marks_of_a_finding():
+    hosts = {"srv-crm-01", "db-crm-01", "lb-front-01"}
+    fact = ('17 occurrences de "SQLException: Error writing file (Errcode: 28 - No space left on device) on '
+            'db-crm-01:3306" sur srv-crm-01')
+    assert checks.distinctive(fact, hosts, "Le CRM affiche des erreurs") == [
+        "SQLException", "Error writing file", "No space left on device", "on db-crm-01", "3306"]
+    assert checks.distinctive("Client 203.0.113.45 : 1560 requêtes, CHG0034350 la veille", hosts) == \
+        ["203.0.113.45", "CHG0034350"]
+    # Sans élément fort : un host que la question ne nomme pas ; le host de la question ne prouve rien.
+    assert checks.distinctive("Pool saturé vers db-crm-01", hosts, "srv-crm-01 lent") == ["db-crm-01"]
+    assert checks.distinctive("CPU normal sur srv-crm-01", hosts, "srv-crm-01 lent") == []
+
+
+def test_finding_left_out_of_the_answer_is_recalled(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    report = {"status": "completed", "summary": "Disque plein sur la base",
+              "findings": [{"fact": '17 erreurs "SQLException: Error writing file (Errcode: 28 - No space left on device)"',
+                            "evidence": ["subagents/T01-logs-srv-crm-01/calls/0001.json"], "confidence": "high"}]}
+    lead = ScriptedProvider([
+        tools(call("spawn_subagent", {"role": "logs", "entity": "srv-crm-01", "objective": "Erreurs",
+                                      "period": "2026-09-15T08:30Z"})),
+        tools(call("wait_subagents", {})),
+        answer("## Synthèse\nBug applicatif probable dans le CRM."),
+        answer("## Synthèse\nDisque plein sur db-crm-01 : « No space left on device » (17 erreurs)."),
+    ])
+    logs = ScriptedProvider([tools(call("submit_report", report))])
+    log, status, text = asyncio.run(cli.ask("Le CRM affiche des erreurs, pourquoi ?", providers=by_role(lead=lead, logs=logs)))
+    assert status == "completed" and "No space left on device" in text
+    recall = lead.requests[3].messages[-1].content
+    assert "laisse de côté des faits" in recall and "T01-logs-srv-crm-01" in recall
