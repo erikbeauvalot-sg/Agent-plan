@@ -93,3 +93,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-11 : PR #30 à #32 fusionnées ; rétention de Prometheus maison portée à 90 jours ; PR #33 ouverte (jeu d'évaluation à 40 cas, évaluations sur le profil openai).
 - 2026-10-11 : PR #33 fusionnée ; PR #34 ouverte (changes_around : incidents à 18 sur 20 sur le profil openai).
 - 2026-10-11 : PR #34 fusionnée ; PR #35 ouverte (synthèse fidèle aux rapports des sous-agents ; incidents 18 sur 20).
+- 2026-10-11 : PR #35 fusionnée ; plan d'amélioration de l'interface web (docs/plan-interface.md) : TypeScript, React et React Flow, lots 0a à 7.
