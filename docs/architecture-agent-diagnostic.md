@@ -505,7 +505,7 @@ Sur cet exemple fictif, T03 n'a rien reçu depuis 3 minutes et T05 enchaîne les
 | Détail d'un agent | Prompt reçu, échanges avec le modèle, chaque appel d'outil avec entrée, sortie, durée ; jauges de budget | Comprendre pourquoi un agent se trompe ou tourne en rond |
 | Actions proposées | Liste des actions avec risque, justification et preuves ; validation ou rejet par un rôle habilité | Revue humaine avant toute exécution future |
 | Historique | Recherche dans `index.jsonl` par date, utilisateur, catégorie, host, statut ; ouverture d'une investigation passée en lecture | Retrouver et comparer des analyses |
-| Administration | Catalogue des sources, catégories et playbooks, propositions d'évolution à valider avec leur résultat de rejeu, indicateurs de classification, configuration des modèles par rôle, budgets, utilisateurs et rôles, coûts | Exploiter la plateforme |
+| Administration | Catalogue des sources, catégories et playbooks, propositions d'évolution à valider avec leur résultat de rejeu, indicateurs de classification, configuration des modèles par rôle, budgets, utilisateurs et rôles, coûts ; édition de chaque fichier de configuration avec validation et historique (voir « Configuration depuis l'interface ») | Exploiter la plateforme |
 
 **Détection visuelle des problèmes d'exécution**
 
@@ -544,6 +544,36 @@ L'orchestrateur calcule des signaux à partir des événements ; l'interface les
 - **Passerelle API** : service Python (FastAPI) entre le front et l'orchestrateur ; elle porte l'authentification, les contrôles de rôle et les commandes.
 - **Temps réel** : flux Server-Sent Events par investigation, alimenté par les événements de l'orchestrateur ; une reconnexion reprend au dernier numéro d'événement reçu en relisant `events.jsonl`.
 - **Modèle d'événement** : `{seq, ts, run_id, agent_id, parent_id, type, data}` avec `type` parmi `agent_started`, `llm_call_started`, `llm_call_ended`, `tool_call_started`, `tool_call_ended`, `report_submitted`, `signal_raised`, `agent_stopped`, `agent_ended`. Le front reconstruit l'état à partir de ces seuls événements.
+
+### Configuration depuis l'interface
+
+Tout ce qui règle le comportement de l'agent est un fichier texte (YAML ou Markdown), et chacun se modifie depuis l'écran Administration. Personne n'a besoin d'un accès au serveur pour corriger une fiche de source, un playbook ou un budget. Le fichier reste la référence : l'interface n'est qu'un éditeur, et ce qu'elle enregistre est exactement ce que l'orchestrateur lit.
+
+**Fichiers modifiables**
+
+| Fichiers | Contenu | Modifié par |
+| --- | --- | --- |
+| `catalog/sources/*.yaml`, `catalog/glossary.yaml`, `catalog/relations.yaml` | Fiches des sources, glossaire, relations entre entités | Administrateur |
+| `config/models.yaml` | Fournisseur, modèle et effort de raisonnement par rôle d'agent | Administrateur |
+| `config/poc.yaml` (paramètres de la plateforme) | Budgets, parallélisme, seuils des contrôles | Administrateur |
+| `agents/*.yaml` | Rôles de sous-agents : sources accessibles, consignes, budget | Administrateur |
+| `playbooks/*.yaml` | Catégories et stratégies de collecte | Superviseur |
+| `prompts/*.md` | Prompts système de l'agent principal et des sous-agents | Superviseur |
+| `eval/cases*.yaml` | Jeu d'évaluation | Superviseur |
+| Utilisateurs | Comptes, rôles, désactivation, réinitialisation du mot de passe | Administrateur, par un formulaire |
+
+Les comptes ne s'éditent jamais en texte brut : un formulaire crée, désactive ou change les rôles d'un compte, et les empreintes de mot de passe ne quittent jamais la passerelle. Restent hors de l'interface : le code, les secrets (coffre de l'entreprise, variables d'environnement), les traces `runs/` et le journal d'accès `audit/`, qui sont en ajout seul. La base de cas `knowledge/` suit son propre circuit (avis, validation par un Superviseur).
+
+**Garanties à l'enregistrement**
+
+1. **Validation avant écriture** : le contenu est relu par le même chargeur que l'orchestrateur (syntaxe YAML, champs obligatoires, valeurs autorisées, identifiant égal au nom du fichier, variables d'un prompt). Un fichier invalide est refusé avec le message d'erreur, et rien n'est écrit.
+2. **Pas d'écrasement silencieux** : l'éditeur part d'une version identifiée par son empreinte. Si le fichier a changé depuis, l'enregistrement est refusé et l'écart affiché.
+3. **Historique** : chaque enregistrement garde la version précédente, avec son auteur, sa date et un commentaire obligatoire. L'écran montre l'historique et l'écart entre deux versions ; revenir en arrière, c'est enregistrer une ancienne version, tracé comme le reste.
+4. **Journal d'accès** : une entrée `config_changed` (fichier, auteur, commentaire, empreintes avant et après) dans `audit/`.
+5. **Prise d'effet** : une modification vaut pour les investigations suivantes, jamais pour celles en cours, qui gardent la configuration lue à leur lancement. La version des playbooks appliqués est déjà notée dans chaque `manifest.json`.
+6. **Rejeu** : modifier un playbook ou un prompt peut faire régresser le diagnostic. L'écran propose de rejouer le jeu d'évaluation sur la nouvelle version et affiche le résultat à côté du précédent, comme pour les propositions d'évolution.
+
+En industrialisation, ces fichiers vivent dans un dépôt Git : chaque enregistrement devient un commit signé de l'auteur, et la promotion d'un environnement à l'autre passe par une demande de fusion. L'historique de l'interface est alors celui du dépôt.
 
 ## Authentification et rôles
 
@@ -597,7 +627,9 @@ users:
 | Arrêt immédiat, ajuster un budget | non | non | oui | oui | non |
 | Valider ou rejeter une action proposée, une évolution de catégorie ou de playbook | non | non | oui | non | non |
 | Modifier le catalogue de sources | non | non | non | oui | non |
-| Choisir modèles et fournisseurs par rôle d'agent | non | non | non | oui | non |
+| Choisir modèles et fournisseurs par rôle d'agent, budgets, rôles de sous-agents | non | non | non | oui | non |
+| Modifier playbooks, prompts et jeu d'évaluation | non | non | oui | non | non |
+| Lire la configuration et son historique | non | non | oui | oui | oui |
 | Gérer les rôles et les groupes | non | non | non | oui | non |
 | Consulter coûts et journaux d'accès | non | non | ses équipes | oui | oui |
 
@@ -726,7 +758,7 @@ La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 
 1. **Socle** : branchement Azure OpenAI (identité de service, point de terminaison privé, déploiement GPT-5.6 Luna), catalogue (3 sources : incidents, changes, CMDB), `mcp-catalog` et `mcp-elk`, couche LLM avec adaptateurs `azure_openai` et `replay`, agent principal seul, classification et playbooks des sept catégories initiales, journalisation fichier complète. Critère de sortie : réponses justes à 20 questions simples de référence.
 2. **Multi-agents et interface** : `spawn_subagent`, rôles `host`, `logs`, `metrics`, `events`, rapports structurés, consolidation ; interface web avec conversation, graphe d'investigation, chronologie et arrêt d'agent ; authentification par table d'utilisateurs interne avec les rôles Opérateur et Administrateur. Critère de sortie : cause correcte sur une majorité d'un jeu de 20 incidents passés.
-3. **Actions proposées et rôles complets** : `propose_action`, lien vers les runbooks, écran de revue des actions ; rôles Lecteur, Superviseur et Auditeur, journal d'accès ; signaux de détection (blocage, boucle, budget) ; base de cas \`knowledge/\` et boucle d'apprentissage (agent hebdomadaire, propositions rejouées sur le jeu d'évaluation, validation par un Superviseur, mode observation pour les nouvelles catégories).
+3. **Actions proposées et rôles complets** : `propose_action`, lien vers les runbooks, écran de revue des actions ; rôles Lecteur, Superviseur et Auditeur, journal d'accès ; signaux de détection (blocage, boucle, budget) ; édition de la configuration depuis l'interface, avec validation, historique et journal ; base de cas \`knowledge/\` et boucle d'apprentissage (agent hebdomadaire, propositions rejouées sur le jeu d'évaluation, validation par un Superviseur, mode observation pour les nouvelles catégories).
 4. **Industrialisation** : ensemble des sources au catalogue, comparaison de plusieurs déploiements sur le jeu d'évaluation, branchement sur l'annuaire d'entreprise (OIDC), périmètres de données par utilisateur, suivi des quotas et des coûts Azure, archivage. L'exécution d'actions avec validation humaine fera l'objet d'un document séparé.
 
 **Points ouverts**
@@ -741,6 +773,7 @@ La construction se fait en quatre étapes, chacune livrable et évaluable seule.
 - [ ] Outils de métriques : Druid, Prometheus et ELK (confirmé le 7 octobre 2026). Reste à savoir quels hosts, applications et métriques couvre chacun.
 - [ ] Catégories initiales : valider la liste des sept catégories et leurs exemples avec les équipes d'exploitation.
 - [ ] Validation des évolutions de catégories et de playbooks : par défaut un Superviseur ; à confirmer s'il faut aussi l'accord du propriétaire de la source concernée.
+- [ ] Modification directe d'un playbook ou d'un prompt depuis l'interface : par défaut un Superviseur, sans second avis ; à confirmer s'il faut une relecture par un second Superviseur (principe des quatre yeux), ou un rejeu du jeu d'évaluation obligatoire avant la prise d'effet.
 
 * [x] Authentification : table d'utilisateurs interne pour commencer, annuaire d'entreprise plus tard (décidé le 7 octobre 2026).
 * [x] Périmètres de données par utilisateur : aucun en V1, tout utilisateur connecté voit toutes les sources (décidé le 7 octobre 2026).
