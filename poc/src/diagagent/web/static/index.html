@@ -189,6 +189,46 @@
           <h2>Propositions d'évolution des catégories et playbooks</h2>
           <div id="proposals" class="actions"></div>
         </section>
+        <section class="card" id="config-box" hidden>
+          <div class="card-head">
+            <h2>Configuration <span class="muted">· validée avant écriture, versionnée, tracée dans le journal</span></h2>
+            <button id="config-new" class="link" hidden>Nouveau fichier…</button>
+          </div>
+          <div class="config-grid">
+            <nav id="config-files" class="config-files"></nav>
+            <div id="config-editor" class="config-editor" hidden>
+              <div class="card-head"><h3 id="config-path"></h3><span id="config-mode" class="pill"></span></div>
+              <form id="config-create" class="config-create" hidden>
+                <select id="config-create-dir" aria-label="Dossier"></select>
+                <input id="config-create-name" placeholder="nom-du-fichier.yaml" required>
+              </form>
+              <textarea id="config-text" spellcheck="false" rows="26" aria-label="Contenu du fichier"></textarea>
+              <div class="ask-row">
+                <input id="config-comment" placeholder="Commentaire obligatoire : pourquoi ce changement ?" aria-label="Commentaire">
+                <button type="button" id="config-check">Vérifier</button>
+                <button type="button" id="config-save" class="primary">Enregistrer</button>
+                <button type="button" id="config-reset" class="link">Annuler les modifications</button>
+              </div>
+              <p id="config-msg" class="muted"></p>
+              <details id="config-history-box"><summary>Historique</summary>
+                <ul id="config-history" class="config-history"></ul>
+                <pre id="config-diff" class="config-diff" hidden></pre>
+              </details>
+            </div>
+          </div>
+        </section>
+        <section class="card" id="users-box" hidden>
+          <h2>Comptes <span class="muted">· les mots de passe ne sont jamais affichés</span></h2>
+          <div id="users" class="table-wrap"></div>
+          <form id="user-new" class="ask-row">
+            <input name="login" placeholder="Identifiant" required pattern="[a-zA-Z0-9._\-]+">
+            <input name="display_name" placeholder="Nom affiché">
+            <span id="user-new-roles" class="roles"></span>
+            <input name="password" type="password" placeholder="Mot de passe (12 caractères min.)" required minlength="12" autocomplete="new-password">
+            <button type="submit">Créer le compte</button>
+          </form>
+          <p id="users-msg" class="muted"></p>
+        </section>
         <section class="card" id="costs-box" hidden>
           <h2>Coûts <span class="muted">· tokens par jour, utilisateur et modèle</span></h2>
           <div id="costs" class="table-wrap"></div>

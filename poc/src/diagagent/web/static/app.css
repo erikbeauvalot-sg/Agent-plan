@@ -179,3 +179,26 @@ details { margin-top: .8rem; }
   .tl-row { grid-template-columns: 90px 1fr; }
   .node { width: 100%; }
 }
+
+/* Configuration : liste des fichiers à gauche, éditeur à droite ; une colonne sur téléphone */
+.config-grid { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 1rem; align-items: start; }
+.config-files h3 { margin: .6rem 0 .2rem; font-size: .8rem; text-transform: uppercase; color: var(--muted); }
+.config-files ul { list-style: none; margin: 0; padding: 0; font-size: .85rem; }
+.config-files li { padding: .15rem 0; overflow-wrap: anywhere; }
+.config-files a { color: var(--text); text-decoration: none; }
+.config-files a.active { color: var(--accent); font-weight: 600; }
+.config-editor { min-width: 0; }
+.config-editor textarea { width: 100%; box-sizing: border-box; font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: .6rem; tab-size: 2; }
+.config-editor textarea[readonly] { opacity: .85; }
+.config-editor .ask-row input { flex: 1; min-width: 12rem; }
+.config-create { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.config-history { list-style: none; padding: 0; font-size: .85rem; }
+.config-history li { display: flex; gap: .5rem; flex-wrap: wrap; align-items: baseline; padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.config-diff { max-height: 24rem; font-size: .8rem; background: var(--bg); }
+.roles { display: inline-flex; gap: .4rem; flex-wrap: wrap; }
+#user-new input { width: auto; flex: 1 1 11rem; min-width: 0; }
+@media (max-width: 760px) {
+  .config-grid { grid-template-columns: 1fr; }
+  .config-files { max-height: 40vh; overflow-y: auto; border-bottom: 1px solid var(--line); }
+}

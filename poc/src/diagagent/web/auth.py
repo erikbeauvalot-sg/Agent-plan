@@ -40,14 +40,19 @@ SESSION_MAX_S = 8 * 3600
 #   share_own      partager ses investigations avec les Lecteurs
 #   review         valider ou rejeter une action proposée, une évolution de catégorie ou de playbook
 #   view_costs, view_access_log, view_indicators, manage_users
+#   view_config     lire la configuration et son historique
+#   edit_platform   catalogue, modèles, paramètres, rôles de sous-agents (Administrateur)
+#   edit_diagnostic playbooks, prompts, jeu d'évaluation (Superviseur)
 _OWN = {"view_shared", "ask", "view_own", "details_own", "stop_own", "share_own"}
 _ALL = {"view_all", "details_all", "stop_all", "kill", "share_all"}
 PERMISSIONS = {
     "lecteur": {"view_shared"},
     "operateur": _OWN,
-    "superviseur": _OWN | _ALL | {"review", "view_indicators", "view_costs"},
-    "administrateur": _OWN | _ALL | {"manage_users", "view_indicators", "view_costs", "view_access_log"},
-    "auditeur": {"view_shared", "view_all", "details_all", "view_costs", "view_access_log", "view_indicators"},
+    "superviseur": _OWN | _ALL | {"review", "view_indicators", "view_costs", "view_config", "edit_diagnostic"},
+    "administrateur": _OWN | _ALL | {"manage_users", "view_indicators", "view_costs", "view_access_log",
+                                     "view_config", "edit_platform"},
+    "auditeur": {"view_shared", "view_all", "details_all", "view_costs", "view_access_log", "view_indicators",
+                 "view_config"},
 }
 
 _hasher = PasswordHasher()
@@ -145,6 +150,38 @@ class FileUserStore:
                 entry["failed_logins"], entry["locked_until"] = 0, None
                 self._write(data)
             return self._user(entry)
+
+    def accounts(self) -> list[dict[str, Any]]:
+        """Comptes sans leur empreinte de mot de passe, qui ne quitte jamais la passerelle."""
+        keep = ("id", "login", "display_name", "roles", "status", "locked_until", "created_at")
+        return [{k: u.get(k) for k in keep} for u in self._read()["users"]]
+
+    def update(self, user_id: str, roles: list[str] | None = None, status: str | None = None,
+               password: str | None = None, display_name: str | None = None) -> dict[str, Any]:
+        if roles is not None and (not roles or any(r not in ROLES for r in roles)):
+            raise AuthError(f"Rôles invalides : {roles} ; rôles : {', '.join(ROLES)}")
+        if status not in (None, "active", "disabled"):
+            raise AuthError("status vaut active ou disabled")
+        if password is not None and len(password) < MIN_PASSWORD:
+            raise AuthError(f"Mot de passe trop court : {MIN_PASSWORD} caractères minimum")
+        with self._lock:
+            data = self._read()
+            entry = next((u for u in data["users"] if u["id"] == user_id), None)
+            if entry is None:
+                raise AuthError(f"Utilisateur inconnu : {user_id}")
+            after = {**entry, **({"roles": roles} if roles is not None else {}),
+                     **({"status": status} if status is not None else {})}
+            # Jamais sans administrateur actif : personne ne pourrait plus gérer les comptes.
+            if not any("administrateur" in u["roles"] and u.get("status") == "active"
+                       for u in [after if u["id"] == user_id else u for u in data["users"]]):
+                raise AuthError("Il doit rester au moins un administrateur actif")
+            entry.update(after)
+            if display_name is not None:
+                entry["display_name"] = display_name
+            if password is not None:
+                entry.update(password_hash=_hasher.hash(password), failed_logins=0, locked_until=None)
+            self._write(data)
+        return next(u for u in self.accounts() if u["id"] == user_id)
 
     def get(self, user_id: str) -> User | None:
         entry = next((u for u in self._read()["users"] if u["id"] == user_id and u.get("status") == "active"), None)

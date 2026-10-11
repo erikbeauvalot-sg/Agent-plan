@@ -292,9 +292,9 @@ Les cinq rôles du document d'architecture :
 | --- | --- |
 | `lecteur` | Lire les investigations partagées, avec graphe et chronologie, sans prompts ni appels d'outils |
 | `operateur` | Poser des questions ; voir en détail, arrêter, partager, corriger et noter les siennes |
-| `superviseur` | Comme l'opérateur, sur toutes les investigations ; arrêt immédiat ; valider ou rejeter les actions proposées et les évolutions de playbooks ; indicateurs et coûts |
-| `administrateur` | Tout voir et tout arrêter ; gérer les utilisateurs ; indicateurs, coûts et journal d'accès ; ne valide pas |
-| `auditeur` | Tout lire, prompts et journal d'accès compris, sans rien piloter |
+| `superviseur` | Comme l'opérateur, sur toutes les investigations ; arrêt immédiat ; valider ou rejeter les actions proposées et les évolutions de playbooks ; modifier playbooks, prompts et jeu d'évaluation ; indicateurs et coûts |
+| `administrateur` | Tout voir et tout arrêter ; gérer les comptes ; modifier catalogue, modèles, paramètres et rôles de sous-agents ; indicateurs, coûts et journal d'accès ; ne valide pas |
+| `auditeur` | Tout lire, prompts, configuration et journal d'accès compris, sans rien piloter |
 
 Une investigation partagée (bouton **Partager**) devient lisible par tout utilisateur connecté, mais
 seuls son auteur et les rôles qui voient tout en ont le détail. L'écran **Administration** regroupe,
@@ -302,6 +302,37 @@ selon le rôle : les actions à valider, les indicateurs par catégorie, les pro
 coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'équipe, un Superviseur voit
 tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
 15 min après 5 échecs) ; journal d'accès dans `audit/`.
+
+### Modifier la configuration depuis l'interface
+
+La section **Configuration** de l'écran Administration ouvre chaque fichier qui règle l'agent dans
+un éditeur. Le Superviseur modifie le contenu du diagnostic, l'Administrateur la plateforme ; les deux,
+et l'Auditeur, lisent tout et l'historique.
+
+| Fichiers | Modifiés par |
+| --- | --- |
+| `catalog/sources/*.yaml`, `catalog/glossary.yaml`, `catalog/relations.yaml`, `config/models.yaml`, `config/poc.yaml`, `agents/*.yaml` | Administrateur |
+| `playbooks/*.yaml`, `prompts/*.md`, `eval/cases*.yaml` | Superviseur |
+
+- **Vérifier** relit le contenu avec les règles de l'orchestrateur, sans rien écrire : syntaxe YAML,
+  champs obligatoires, `id` (ou `role`) égal au nom du fichier, rôles et fournisseurs connus, budgets
+  positifs, variables d'un prompt (`{now}`, `{catalog}`… ; une accolade littérale s'écrit `{{`).
+- **Enregistrer** demande un commentaire et refuse un fichier invalide, ou modifié par quelqu'un d'autre
+  depuis son ouverture (409). L'écriture est atomique. Chaque version est gardée dans `config-history/`
+  avec son auteur, son commentaire et son empreinte (la version d'origine au premier enregistrement), et
+  une entrée `config_changed` va dans le journal d'accès.
+- **Historique** : l'écart d'une version avec le fichier actuel, et **Reprendre cette version** pour
+  revenir en arrière (c'est un nouvel enregistrement, tracé).
+- **Nouveau fichier** : une fiche de source, un rôle de sous-agent, un playbook ou un jeu de cas.
+  Les prompts et les fichiers de la plateforme ne se créent pas.
+
+Une modification vaut pour les investigations lancées ensuite. Après un changement de playbook ou de
+prompt, rejouer le jeu d'évaluation (`diagagent eval`) dit s'il a fait régresser le diagnostic.
+
+La section **Comptes** (Administrateur) crée un compte, change ses rôles, le désactive ou lui donne un
+nouveau mot de passe ; `auth/users.yaml` ne s'édite jamais en texte, et les empreintes de mot de passe
+ne sortent pas de la passerelle. Le dernier administrateur actif ne peut être ni retiré ni désactivé.
+Restent hors de l'interface : le code, `.env` et les secrets, `runs/`, `audit/` et `knowledge/`.
 
 ![Investigation en cours](../docs/images/poc-interface-en-cours.png)
 
