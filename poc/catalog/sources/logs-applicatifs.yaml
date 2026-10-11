@@ -4,6 +4,8 @@ demo: true                     # source de démonstration, désactivée par DIAG
 description: >
   Journaux applicatifs et système des serveurs de production, une ligne par message.
   À utiliser pour trouver des erreurs, leur fréquence et leur chronologie. Filtrer par host et par niveau.
+  Les erreurs sont aux niveaux ERROR et FATAL (PostgreSQL et systemd écrivent FATAL) : chercher les deux,
+  ou ne pas filtrer le niveau.
 backend: {type: file, path: demo_data/logs.jsonl}
 time_field: "@timestamp"
 entity_keys: {host: host, service: service}

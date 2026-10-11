@@ -89,6 +89,33 @@ cases:
     assert (tmp_path / "results").glob("*.json")
 
 
+def test_eval_alternatives_and_kinds(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DIAGAGENT_RUNS_DIR", str(tmp_path / "runs"))
+    cases = tmp_path / "cases.yaml"
+    cases.write_text("""
+defaults: {now: "2026-10-07T06:00:00Z"}
+cases:
+  - {id: latence, kind: simple, question: "Latence max ?", must_mention: [["3897", "3 898"]]}
+  - {id: priorite, kind: simple, question: "Priorité ?", must_mention: [P2]}
+  - {id: cause, kind: incident, question: "Pourquoi ?", must_mention: [CHG0034567]}
+""")
+    replies = {"Latence max ?": "Pic à 3 898 ms.", "Priorité ?": "P3", "Pourquoi ?": "CHG0034567"}
+
+    def lead(request):
+        return answer(replies[request.messages[0].content])
+
+    report = asyncio.run(run_eval(cases, providers=lambda role: (ScriptedProvider([lead]), {}),
+                                  out_dir=tmp_path / "results"))
+    assert report["results"][0]["checks"][1] == {"check": "mentionne « 3897 » ou « 3 898 »", "ok": True}
+    assert report["summary"]["kinds"] == {"simple": {"cases": 2, "passed": 1}, "incident": {"cases": 1, "passed": 1}}
+    cli.print_eval(report)
+    out = " ".join(capsys.readouterr().out.split())
+    assert "questions simples 1/2 critère non atteint" in out and "incidents 1/1 critère atteint" in out
+    only = asyncio.run(run_eval(cases, providers=lambda role: (ScriptedProvider([lead]), {}),
+                                out_dir=tmp_path / "results", kind="incident"))
+    assert [r["id"] for r in only["results"]] == ["cause"]
+
+
 def test_eval_repeat_reports_pass_rate(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
     cases = tmp_path / "cases.yaml"
@@ -148,3 +175,8 @@ def test_action_values_are_matched_without_case_or_accents():
     from diagagent.orchestrator import validate_action
     action = validate_action({**ACTION, "type": "Remediation", "risk": "Élevé"})
     assert (action["type"], action["risk"]) == ("remédiation", "élevé")
+
+
+def test_answer_normalization_ignores_unicode_hyphens_and_spaces():
+    from diagagent.evaluation import normalize
+    assert "db-pay-02" in normalize("dépend de **db‑pay‑02**") and "rhel 9" in normalize("RHEL 9")

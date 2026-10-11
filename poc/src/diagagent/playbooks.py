@@ -25,6 +25,12 @@ from .llm import LLMProvider, LLMRequest, Message
 STATUSES = ("active", "draft", "retired")
 CONFIDENCES = ("low", "medium", "high")
 FALLBACK = "autre"
+# Une entité indispensable peut être donnée sous une autre forme : un host nommé désigne le composant
+# en cause (« la latence de srv-pay-01 »), comme le ferait un service.
+ENTITY_ALIASES = {"service": ("host", "ci")}
+GENERIC_NAMES = {"site", "site web", "site internet", "application", "appli", "app", "application web",
+                 "service", "serveur", "outil", "logiciel", "système", "plateforme", "réseau", "base",
+                 "base de données", "appli web", "programme"}
 REQUIRED_KEYS = ("id", "version", "status", "description", "steps", "stop_when", "output", "owner")
 
 
@@ -111,6 +117,9 @@ Réponds uniquement par un objet JSON, sans texte autour :
   "reason": "<une phrase>"}}
 
 - category : la catégorie qui décrit le mieux la demande ; {fallback} si aucune ne convient.
+  Une question factuelle à réponse courte (priorité, statut ou résolution d'un ticket, heure d'une
+  alerte, valeur d'une métrique, propriétaire) est information, même si elle cite un numéro INC ou une
+  alerte : analyser, expliquer ou chercher une cause, c'est une autre catégorie.
 - alternative : une deuxième catégorie seulement si elle est presque aussi plausible.
 - entities : seulement les entités écrites dans la demande, sans rien deviner.
 - missing : les entités indispensables de la catégorie (liste « indispensable » ci-dessus) que la
@@ -140,7 +149,7 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     match = re.search(r"\{.*\}", text or "", re.S)
     if not match:
         raise PlaybookError("pas d'objet JSON dans la réponse du classifieur")
-    data = json.loads(match.group(0))
+    data = lenient_json(match.group(0))
     active = {k for k, b in books.items() if b["status"] == "active"}
     category, alternative = _known(data.get("category"), books), _known(data.get("alternative"), books)
     draft_match = None
@@ -155,10 +164,51 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     confidence = data.get("confidence") if data.get("confidence") in CONFIDENCES else "low"
     entities = {k: str(v) for k, v in (data.get("entities") or {}).items() if v not in (None, "", [])}
     required = books[category].get("required_entities") or {}
-    missing = [m for m in data.get("missing") or [] if m in required and m not in entities]
+    # « Mon site web » n'identifie rien : l'entité est écartée, et manquante si la catégorie l'exige.
+    vague = [k for k, v in entities.items() if is_vague(v)]
+    for k in vague:
+        del entities[k]
+
+    def present(m: str) -> bool:
+        return m in entities or any(a in entities for a in ENTITY_ALIASES.get(m, ()))
+
+    missing = [m for m in dict.fromkeys([*(data.get("missing") or []), *vague]) if m in required and not present(m)]
     return Classification(category, confidence, alternative, entities, missing,
                           [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
                           draft_match=draft_match)
+
+
+def lenient_json(text: str) -> dict[str, Any]:
+    """Objet JSON du classifieur, même un peu abîmé : gpt-oss écrit \\' dans une chaîne, ou oublie le
+    guillemet qui ferme la dernière (« …non précisé.} »). Les champs utiles sont alors relevés un à un ;
+    seule une réponse sans catégorie reste illisible."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first:
+        try:
+            return json.loads(text.replace("\\'", "'"))
+        except json.JSONDecodeError:
+            pass
+        data: dict[str, Any] = {}
+        for key in ("category", "confidence", "alternative", "reason"):
+            if m := re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)', text):
+                data[key] = m.group(1)
+        for key, pattern in (("entities", r"\{[^{}]*\}"), ("missing", r"\[[^\[\]]*\]"), ("choices", r"\[[^\[\]]*\]")):
+            if m := re.search(rf'"{key}"\s*:\s*({pattern})', text):
+                try:
+                    data[key] = json.loads(m.group(1).replace("\\'", "'"))
+                except json.JSONDecodeError:
+                    pass
+        if "category" not in data:
+            raise first
+        return data
+
+
+def is_vague(value: str) -> bool:
+    """Nom générique, sans rien qui désigne un objet précis : « mon site web », « l'application »."""
+    words = re.sub(r"\b(?:mon|ma|mes|notre|nos|votre|vos|le|la|les|l'|un|une|des|ce|cet|cette)\s*", " ",
+                   value.strip().lower().replace("’", "'"))
+    return " ".join(words.split()) in GENERIC_NAMES
 
 
 def _known(value: Any, books: dict[str, dict[str, Any]]) -> Any:

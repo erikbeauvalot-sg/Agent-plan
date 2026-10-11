@@ -98,7 +98,7 @@ def test_filter_values_absent_from_the_source_are_reported():
     res = catalog.search("incidents", filters={"affected_ci.hostname": "srv-pay-01",
                                                "state": ["Ouvert", "New", "Assigned"]})
     assert res["unknown_values"] == {"state": {"absentes": ["Ouvert", "Assigned"],
-                                               "présentes": ["Closed", "In Progress", "New"]}}
+                                               "présentes": ["Closed", "In Progress", "New", "Resolved"]}}
     assert "absente(s) du champ state" in res["note"]
     assert "unknown_values" not in catalog.search("incidents", filters={"state": "in progress"},
                                                    time_from="2026-10-01T00:00:00Z")

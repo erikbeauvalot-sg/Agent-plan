@@ -28,12 +28,22 @@ def _events(run_dir: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
 
+HYPHENS = dict.fromkeys(map(ord, "‐‑‒–—−"), "-")
+SPACES = dict.fromkeys(map(ord, "    "), " ")
+
+
+def normalize(text: str) -> str:
+    """Les modèles écrivent volontiers db‑pay‑02 (trait d'union insécable) ou RHEL 9 (espace insécable) :
+    la réponse est juste, la comparaison ne doit pas échouer sur ces caractères."""
+    return text.translate(HYPHENS).translate(SPACES).lower()
+
+
 def check_case(case: dict[str, Any], status: str, answer: str, run_dir: Path) -> list[dict[str, Any]]:
     events = _events(run_dir)
     subagents = sum(1 for e in events if e["type"] == "agent_spawned")
     actions = sum(1 for e in events if e["type"] == "action_proposed")
     tool_errors = sum(1 for e in events if e["type"] == "tool_call_ended" and e["data"].get("is_error"))
-    text = answer.lower()
+    text = normalize(answer)
     checks = [{"check": "status", "ok": status in case.get("status", ["completed"]), "detail": status}]
     if "category" in case:
         # Catégorie rendue par le classifieur, avant toute requalification par l'agent principal.
@@ -42,9 +52,12 @@ def check_case(case: dict[str, Any], status: str, answer: str, run_dir: Path) ->
         checks.append({"check": f"catégorie {' ou '.join(expected)}", "ok": found in expected,
                        "detail": found, "kind": "category"})
     for s in case.get("must_mention", []):
-        checks.append({"check": f"mentionne « {s} »", "ok": s.lower() in text})
+        # Une liste vaut « l'une de ces écritures » : un nombre s'écrit 3897,8, 3 898 ms ou 3,9 s.
+        options = s if isinstance(s, list) else [s]
+        checks.append({"check": f"mentionne « {' » ou « '.join(map(str, options))} »",
+                       "ok": any(normalize(str(o)) in text for o in options)})
     for s in case.get("must_not_mention", []):
-        checks.append({"check": f"ne mentionne pas « {s} »", "ok": s.lower() not in text})
+        checks.append({"check": f"ne mentionne pas « {s} »", "ok": normalize(s) not in text})
     if "min_subagents" in case:
         checks.append({"check": f"≥ {case['min_subagents']} sous-agents", "ok": subagents >= case["min_subagents"],
                        "detail": subagents})
@@ -61,9 +74,12 @@ def check_case(case: dict[str, Any], status: str, answer: str, run_dir: Path) ->
 
 
 async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
-                   only: list[str] | None = None, out_dir: Path | None = None, repeat: int = 1) -> dict[str, Any]:
+                   only: list[str] | None = None, out_dir: Path | None = None, repeat: int = 1,
+                   kind: str | None = None) -> dict[str, Any]:
     """repeat > 1 joue chaque cas plusieurs fois : avec un modèle local, un seul passage ne dit pas grand-chose
-    (le même code a donné 7 puis 4 cas réussis sur 9). Le résumé donne alors un taux de réussite par cas."""
+    (le même code a donné 7 puis 4 cas réussis sur 9). Le résumé donne alors un taux de réussite par cas.
+    kind ne joue que les cas d'une famille (simple, incident) ; le résumé compte chaque famille à part,
+    pour les critères de sortie du document d'architecture."""
     from .cli import ask
 
     spec = yaml.safe_load(cases_path.read_text(encoding="utf-8"))
@@ -72,9 +88,9 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
     saved = {k: os.environ.get(k) for k in ("DIAGAGENT_NOW",)}
     try:
         for case in spec["cases"]:
-            if only and case["id"] not in only:
-                continue
             case = {**defaults, **case}
+            if (only and case["id"] not in only) or (kind and case.get("kind") != kind):
+                continue
             _set_env("DIAGAGENT_NOW", case.get("now"))
             # sources: du cas (demo, maison, demo,maison) ; l'ancien demo: false vaut « maison ».
             sources = case.get("sources") or ("maison" if case.get("demo") is False else None)
@@ -83,7 +99,8 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
                 started = time.monotonic()
                 log, status, answer = await ask(case["question"], providers=providers, user="eval", sources=sources)
                 checks = check_case(case, status, answer, log.dir)
-                results.append({"id": case["id"], "attempt": attempt, "question": case["question"],
+                results.append({"id": case["id"], "kind": case.get("kind"), "attempt": attempt,
+                                "question": case["question"],
                                 "run_id": log.run_id, "passed": all(c["ok"] for c in checks), "checks": checks,
                                 "duration_s": round(time.monotonic() - started, 1),
                                 "usage": log.manifest.get("usage", {}),
@@ -102,6 +119,14 @@ async def run_eval(cases_path: Path, providers: ProviderFactory | None = None,
             rates.setdefault(r["id"], []).append(r["passed"])
         summary["repeat"] = repeat
         summary["pass_rate"] = {k: f"{sum(v)}/{len(v)}" for k, v in rates.items()}
+    kinds: dict[str, dict[str, int]] = {}
+    for r in results:
+        if r["kind"]:
+            k = kinds.setdefault(r["kind"], {"cases": 0, "passed": 0})
+            k["cases"] += 1
+            k["passed"] += r["passed"]
+    if kinds:
+        summary["kinds"] = kinds
     category_checks = [c for r in results for c in r["checks"] if c.get("kind") == "category"]
     if category_checks:
         summary["categories"] = {"cases": len(category_checks), "correct": sum(c["ok"] for c in category_checks)}

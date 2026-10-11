@@ -257,3 +257,31 @@ def test_lead_doing_everything_itself_is_reminded_of_the_waves_early(tmp_path, m
     assert len(reminders) == 1 and "1. mesure (metrics, host" in reminders[0]["data"]["reason"]
     assert "8 appels aux sources" in lead.requests[8].messages[-1].content
     assert lead.requests[7].messages[-1].role == "tool"
+
+
+def test_vague_entity_is_missing_and_host_counts_as_service():
+    books = playbooks.load_playbooks()
+    vague = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "Mon site web"}, "missing": []}', books)
+    assert vague.missing == ["service"] and vague.entities == {}
+    assert playbooks.decide(vague, books).mode == "clarify"
+    named = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "le portail client"}}', books)
+    assert named.missing == [] and named.entities == {"service": "le portail client"}
+    host = playbooks.parse_classification(
+        '{"category": "performance", "confidence": "high", "entities": {"host": "srv-pay-01"}, "missing": ["service"]}', books)
+    assert host.missing == [] and playbooks.decide(host, books).mode == "playbook"
+
+
+def test_damaged_classifier_json_is_still_read():
+    # Réponses réelles de gpt-oss:20b : \' dans une chaîne, guillemet final oublié.
+    books = playbooks.load_playbooks()
+    escaped = ('{"category":"information","confidence":"high","alternative":null,"entities":{"host":"db-pay-02"},'
+               '"missing":[],"choices":[],"reason":"demande d\\\'exposer les erreurs d\\\'un hôte."}')
+    assert playbooks.parse_classification(escaped, books).entities == {"host": "db-pay-02"}
+    unterminated = ('{"category":"indisponibilite","confidence":"high","alternative":null,"entities":{"service":"site web"},'
+                    '"missing":["service"],"choices":[],"reason":"le nom exact du service est non précisé.}')
+    c = playbooks.parse_classification(unterminated, books)
+    assert (c.category, c.missing) == ("indisponibilite", ["service"])
+    with pytest.raises(json.JSONDecodeError):
+        playbooks.parse_classification('{"confidence": "high", "reason": "sans catégorie}', books)

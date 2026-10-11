@@ -178,10 +178,32 @@ def _load_rows(path: str) -> tuple[dict[str, Any], ...]:
 
 
 def rows(source_id: str) -> tuple[dict[str, Any], ...]:
-    backend = get_source(source_id)["backend"]
+    card = get_source(source_id)
+    backend = card["backend"]
     if backend["type"] != "file":
         raise NotImplementedError(f"Backend {backend['type']} pas encore disponible dans le POC")
-    return _load_rows(backend["path"])
+    return as_of(card, _load_rows(backend["path"]))
+
+
+def as_of(card: dict[str, Any], docs: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    """Documents tels qu'ils étaient à l'heure de référence : rien d'horodaté après elle (time_field),
+    et un document daté d'un état futur (`as_of` de la fiche : un incident résolu plus tard, une alerte
+    fermée plus tard) rendu dans son état d'alors. Sans cela, un incident passé rejoué dans le jeu
+    d'évaluation montrerait sa résolution."""
+    time_field, transitions = card.get("time_field"), card.get("as_of", [])
+    if not time_field and not transitions:
+        return docs
+    ref = now()
+    out = []
+    for doc in docs:
+        if time_field and (t := field_value(doc, time_field)) and parse_time(t) > ref:
+            continue
+        for tr in transitions:
+            if (t := doc.get(tr["field"])) and parse_time(t) > ref:
+                doc = {k: v for k, v in doc.items() if k != tr["field"] and k not in tr.get("hide", [])}
+                doc.update(tr.get("before", {}))
+        out.append(doc)
+    return tuple(out)
 
 
 def field_value(doc: dict[str, Any], dotted: str) -> Any:

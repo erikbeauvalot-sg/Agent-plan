@@ -2,10 +2,12 @@ id: metrics-demo
 kind: metrics
 demo: true                     # source de démonstration, désactivée par DIAGAGENT_DEMO=0
 description: >
-  Séries de métriques à pas de 5 minutes (CPU, mémoire, latence HTTP, connexions base).
+  Séries de métriques à pas de 5 minutes (CPU, mémoire, disque, réseau, latence et erreurs HTTP, base
+  de données, files de messages, horloge). La liste dépend du host : list_metrics la donne.
   Interroger via list_metrics et query_metric, qui renvoient un résumé et les ruptures détectées.
 backend: {type: file, path: demo_data/metrics.jsonl}   # POC : fichier ; cible : Druid, Prometheus, ELK
-coverage: {hosts: [srv-pay-01, db-pay-02, srv-web-03]}
+coverage: {hosts: [srv-pay-01, db-pay-02, srv-web-03, lb-front-01, srv-crm-01, db-crm-01, srv-api-02, mq-01,
+                   srv-auth-01, dns-01, srv-batch-01, nfs-01]}
 step: 5m
 retention: 30 jours
 owner: équipe Supervision

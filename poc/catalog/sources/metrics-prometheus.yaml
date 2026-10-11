@@ -34,6 +34,6 @@ containers:
   container.cpu_pct: {promql: 'max by (name) (rate(container_cpu_usage_seconds_total{{name!="",{sel}}}[5m])) * 100'}
   container.oom_events: {promql: 'sum by (name) (increase(container_oom_events_total{{name!="",{sel}}}[5m]))'}
 step_min: 60s
-retention: selon la configuration de Prometheus (15 jours par défaut)
+retention: 90 jours, plafonnés à 50 Go (Prometheus maison, depuis le 11 octobre 2026 ; 15 jours par défaut)
 limits: {max_range: 7 jours, max_series: 10}
 owner: Erik

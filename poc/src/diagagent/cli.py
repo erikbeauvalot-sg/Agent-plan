@@ -141,6 +141,12 @@ def print_eval(report: dict[str, Any]) -> bool:
         print("\nTaux de réussite par cas (" + str(s["repeat"]) + " passages) :")
         for case_id, rate in s["pass_rate"].items():
             print(f"  {case_id:<22} {rate}")
+    # Critères de sortie : toutes les questions simples justes, une majorité d'incidents bien diagnostiqués.
+    targets = {"simple": ("questions simples", lambda k: k["passed"] == k["cases"]),
+               "incident": ("incidents", lambda k: k["passed"] * 2 > k["cases"])}
+    for kind, k in s.get("kinds", {}).items():
+        label, met = targets.get(kind, (kind, lambda k: k["passed"] == k["cases"]))
+        print(f"  {label:<22} {k['passed']}/{k['cases']}  " + ("critère atteint" if met(k) else "critère non atteint"))
     categories = (f" · catégorie juste {s['categories']['correct']}/{s['categories']['cases']}"
                   if "categories" in s else "")
     print(f"\n{s['passed']}/{s['cases']} cas réussis{categories} · {s['tokens']} tokens · rapport : {report['path']}")
@@ -235,6 +241,7 @@ def main(argv: list[str] | None = None) -> None:
     p_eval.add_argument("--cases", default="eval/cases.yaml")
     p_eval.add_argument("--only", action="append", help="Identifiant de cas (répétable)")
     p_eval.add_argument("--repeat", type=int, default=1, help="Jouer chaque cas N fois (taux de réussite par cas)")
+    p_eval.add_argument("--kind", choices=["simple", "incident"], help="Ne jouer qu'une famille de cas")
     p_replay = sub.add_parser("replay", help="Rejouer une investigation sans appeler le modèle")
     p_replay.add_argument("run_id")
     p_serve = sub.add_parser("serve", help="Lancer l'interface web")
@@ -261,7 +268,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "check":
         check_model()
     elif args.cmd == "eval":
-        sys.exit(0 if print_eval(asyncio.run(run_eval(catalog.home() / args.cases, only=args.only, repeat=args.repeat))) else 1)
+        sys.exit(0 if print_eval(asyncio.run(run_eval(catalog.home() / args.cases, only=args.only, repeat=args.repeat,
+                                                    kind=args.kind))) else 1)
     elif args.cmd == "replay":
         sys.exit(0 if print_replay(asyncio.run(replay_run(args.run_id))) else 1)
     elif args.cmd == "serve":
