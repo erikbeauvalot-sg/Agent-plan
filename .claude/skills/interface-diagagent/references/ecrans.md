@@ -50,6 +50,15 @@ agent** ; message adapté quand le rôle ne voit pas le détail.
 **Administration** (selon droits) : actions à valider, indicateurs par catégorie, propositions
 d'évolution des catégories et playbooks (accepter, rejeter, avec commentaire), coûts (tokens par jour,
 utilisateur, modèle), journal d'accès (200 dernières entrées).
+- **Configuration** : liste des fichiers modifiables selon le rôle (catalogue, modèles, paramètres et
+  rôles de sous-agents pour l'Administrateur ; playbooks, prompts et jeux d'évaluation pour le
+  Superviseur ; lecture seule pour l'Auditeur), éditeur, **Vérifier** (sans écrire), **Enregistrer**
+  avec commentaire obligatoire (refus si invalide ou modifié entre-temps, 409), annulation des
+  modifications, **historique** avec écart et « Reprendre cette version », **Nouveau fichier** (source,
+  rôle de sous-agent, playbook, jeu de cas).
+- **Comptes** (Administrateur) : liste, création (identifiant, nom, rôles, mot de passe de 12 caractères
+  minimum), changement de rôles, désactivation, nouveau mot de passe ; jamais d'empreinte affichée ; le
+  dernier administrateur actif ne peut être ni retiré ni désactivé.
 
 ## Ce que voit chaque rôle
 
@@ -62,9 +71,9 @@ arrivent dans `/api/me` (`me.permissions`) et, pour une investigation, dans `can
 | --- | --- | --- | --- | --- | --- | --- |
 | Lecteur | non | investigations partagées | non | non | non | non |
 | Opérateur | oui | les siennes | les siennes | les siennes | non | non |
-| Superviseur | oui | toutes | toutes | toutes, et arrêt immédiat | oui | indicateurs, coûts |
-| Administrateur | oui | toutes | toutes | toutes, et arrêt immédiat | non | indicateurs, coûts, journal, utilisateurs |
-| Auditeur | non | toutes | toutes | non | non | indicateurs, coûts, journal |
+| Superviseur | oui | toutes | toutes | toutes, et arrêt immédiat | oui | indicateurs, coûts, configuration du diagnostic |
+| Administrateur | oui | toutes | toutes | toutes, et arrêt immédiat | non | indicateurs, coûts, journal, comptes, configuration de la plateforme |
+| Auditeur | non | toutes | toutes | non | non | indicateurs, coûts, journal, configuration en lecture |
 
 Un Lecteur n'a pas de zone de question : son accueil devient une liste des investigations partagées.
 L'**arrêt immédiat** (`POST /api/runs/{id}/agents/lead/stop?kill=true`, permission `kill`) existe dans
@@ -137,8 +146,14 @@ tiroir (`←` `→` ou `[` `]`).
 ### Administration
 
 Onglets dans l'ordre de l'urgence : **À valider** (avec compteur), **Propositions**, **Indicateurs**,
-**Coûts**, **Journal**. Tableaux denses, en-têtes collants, tri par colonne, chiffres alignés à droite en
+**Configuration**, **Comptes**, **Coûts**, **Journal**. Tableaux denses, en-têtes collants, tri par colonne, chiffres alignés à droite en
 chiffres tabulaires.
+
+L'éditeur de configuration est un outil d'expert : police mono, numéros de ligne, liste des fichiers
+groupée par dossier à gauche, badge « lecture seule » ou « modifiable », modifications non enregistrées
+signalées (point sur le fichier, avertissement en quittant), résultat de **Vérifier** affiché sous
+l'éditeur avec la ligne en cause, écart d'historique coloré (ajouts, suppressions). Aucune bibliothèque
+d'éditeur chargée depuis Internet.
 
 ### Connexion
 

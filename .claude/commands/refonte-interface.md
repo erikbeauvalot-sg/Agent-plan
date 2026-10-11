@@ -31,7 +31,8 @@ Lot demandé : **$ARGUMENTS** (si rien n'est indiqué, propose le prochain lot n
    confiance, actions proposées (risque, retour arrière, copier, validation Superviseur), catégorie
    corrigeable en popover, avis, précision, plan, relance.
 4. **Tiroir, administration, connexion** : tiroir à onglets avec navigation entre agents, écran
-   d'administration à onglets et tableaux triables, écran de connexion.
+   d'administration à onglets et tableaux triables (dont l'éditeur de configuration et les comptes), écran
+   de connexion.
 5. **Finitions** : passe complète de la checklist qualité sur tous les écrans, accessibilité (axe-core),
    performances avec une grosse investigation, cohérence des textes, captures pour `docs/images/` et
    mise à jour de `poc/README.md`.

@@ -23,6 +23,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 16. Relancer une demande | Bouton « Relancer… » : nouvelle demande préremplie (question, modèle, données, catégorie), lancée après modification des options ; choix de la catégorie sur l'accueil ; lien `rerun_of` vers l'investigation d'origine | Fait (PR #28) |
 | 17. Rappel précoce des vagues | Après 8 appels directs de l'agent principal sans sous-agent spécialisé (`early_wave_reminder`), rappel des étapes du playbook, une fois | Fait (PR #29) |
 | 18. Contrôle des faits et des actions | `propose_action` refuse une limite mémoire sous le pic de mémoire de travail + 20 % (peak_mb du cgroup compte le cache), une règle d'alerte refusée par Prometheus, sur des métriques sans série ou recopiant une règle existante ; réponse finale relancée si elle prête à un conteneur une taille que ses mesures n'atteignent pas | En cours (PR #30) |
+| 19. Configuration depuis l'interface | Écran Administration : édition des fiches du catalogue, modèles, paramètres, rôles de sous-agents (Administrateur), playbooks, prompts et jeu d'évaluation (Superviseur) ; validation par les règles de l'orchestrateur, refus d'une version périmée, historique avec auteur et commentaire, écart et retour arrière, journal `config_changed` ; comptes gérés par formulaire | En cours (PR #31) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
@@ -80,4 +81,5 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-10 : PR #27 fusionnée (vagues rappelées) ; PR #28 ouverte (relancer une demande avec d'autres options).
 - 2026-10-10 : PR #28 fusionnée (relancer une demande) ; PR #29 ouverte (rappel précoce des vagues : 6 sous-agents spécialisés lancés, dont web, sur SwapUsageHigh).
 - 2026-10-11 : PR #29 fusionnée (rappel précoce) ; PR #30 ouverte (contrôle des actions et des tailles : sur la trace SwapUsageHigh, limite de 1 Go refusée pour radarr, pic de 1020 Mo ; en direct sur gpt-oss, limites de qbittorrent tirées de peak_mb, cache compris, refusées, règle sur une métrique inexistante refusée).
-- 2026-10-11 : PR #30 fusionnée (contrôle des actions et des faits) ; PR ouverte : skill Claude Code `interface-diagagent`, commande `/refonte-interface` et [recherche UX](interface-recherche-ux.md) pour la refonte de l'interface web en six lots.
+- 2026-10-11 : PR #31 ouverte (configuration et comptes modifiables depuis l'interface, document d'architecture complété).
+- 2026-10-11 : PR #32 ouverte : skill Claude Code `interface-diagagent`, commande `/refonte-interface` et [recherche UX](interface-recherche-ux.md) pour la refonte de l'interface web en six lots.
