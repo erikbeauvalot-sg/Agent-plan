@@ -18,10 +18,8 @@ pour le graphe, bundle versionné.
   (View Transitions, `popover`, positionnement par ancre, `@starting-style`) s'utilisent en amélioration
   progressive : l'écran reste correct sans elles (`@supports`, test de `document.startViewTransition`).
 - **Empaquetage** : `pyproject.toml` déclare `diagagent = ["web/static/**/*"]` (sous-dossiers compris).
-- **Transition (lots 0a et 0b)** : la nouvelle interface est servie sur `/nouvelle`, l'actuelle
-  (`static/index.html`, `app.js`, `app.css`) reste sur `/` jusqu'à la bascule du lot 0b ; les liens vers des
-  vues pas encore portées ouvrent l'interface actuelle (`legacyRunHref`, `legacyAdminHref` dans
-  `lib/route.ts`).
+- **Une seule interface** : depuis les lots 0a et 0b (PR #37), `/` sert `static/dist/index.html` ;
+  l'ancienne interface en JavaScript natif est supprimée.
 
 ## Structure du front
 
@@ -36,10 +34,12 @@ poc/web-ui/
     api/client.ts       # fetch, en-tête X-Diagagent, erreurs, 401 → connexion
     api/types.ts        # contrats de la passerelle
     state/runState.ts   # réduction des événements (reduce), signaux, tokens en direct ; testée (Vitest)
+    state/useRunStream  # flux SSE, événements regroupés par image, reprise (Last-Event-ID)
     lib/                # format (dates fr-FR, durées, tokens), route, theme, storage
-    components/         # TopBar, StateBadge, icons (Lucide)…
-    views/              # Login, Home et home/* ; Run, Admin au lot 0b
-    styles/             # tokens.css, base.css, components.css, views.css (@layer)
+    components/         # TopBar, StateBadge, Markdown, ActionCard, Confirm (<dialog>), ErrorBoundary, icons
+    views/              # Login, Home (home/*), Run (run/* : graphe React Flow, chronologie, tiroir), Admin
+                        # (admin/* : éditeur de configuration, comptes)
+    styles/             # tokens.css, base.css, components.css, views.css, run.css (@layer)
 ```
 
 Développer : `diagagent --now 2026-10-07T06:00:00Z serve` dans un terminal, `cd poc/web-ui && npm run dev`

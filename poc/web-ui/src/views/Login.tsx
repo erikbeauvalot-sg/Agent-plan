@@ -8,7 +8,7 @@ export function Login() {
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
-    if (failed) history.replaceState(null, "", "/nouvelle" + location.hash); // adresse nettoyée, page visée gardée
+    if (failed) history.replaceState(null, "", "/" + location.hash); // adresse nettoyée, page visée gardée
   }, [failed]);
 
   return (
@@ -22,7 +22,6 @@ export function Login() {
         }}
       >
         <input type="hidden" name="next" />
-        <input type="hidden" name="ui" value="nouvelle" />
         <h1 className="brand">
           <Activity size={22} strokeWidth={2} aria-hidden="true" />
           Agent de diagnostic

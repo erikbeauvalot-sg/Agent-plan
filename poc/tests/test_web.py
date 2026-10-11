@@ -350,14 +350,14 @@ def test_rerun_keeps_a_link_to_the_original_run(env):
                           headers=H).status_code == 400
 
 
-def test_new_ui_is_served_with_every_asset(env):
+def test_ui_is_served_with_every_asset(env):
     # Bundle versionné (poc/web-ui, npm run build) : la page et chaque fichier qu'elle référence sont servis,
     # ce qui attrape un oubli d'empaquetage ou un bundle non reconstruit.
     import re
 
     app, _ = env
     c = client(app)
-    page = c.get("/nouvelle")
+    page = c.get("/")
     assert page.status_code == 200 and '<div id="root">' in page.text
     assets = re.findall(r'(?:src|href)="(/static/dist/[^"]+)"', page.text)
     assert any(a.endswith(".js") for a in assets) and any(a.endswith(".css") for a in assets)
@@ -368,12 +368,3 @@ def test_new_ui_is_served_with_every_asset(env):
     assert fonts and all(c.get(f).status_code == 200 for f in fonts)
 
 
-def test_login_form_returns_to_the_new_ui(env):
-    app, _ = env
-    form = {"login": "alice", "password": PWD, "next": "admin", "ui": "nouvelle"}
-    ok = client(app).post("/login", data=form, follow_redirects=False)
-    assert ok.status_code == 303 and ok.headers["location"] == "/nouvelle#admin"
-    bad = client(app).post("/login", data={**form, "password": "mauvais"}, follow_redirects=False)
-    assert bad.headers["location"] == "/nouvelle?echec=1#admin"
-    # Sans le champ ui, l'interface actuelle comme avant.
-    assert client(app).post("/login", data={"login": "alice", "password": PWD}, follow_redirects=False).headers["location"] == "/"

@@ -4,13 +4,13 @@ import type { Category, RunRow } from "../../api/types";
 import { History, LoaderCircle, Search } from "../../components/icons";
 import { StateBadge } from "../../components/StateBadge";
 import { fmtDate, fmtDuration, fmtTokens } from "../../lib/format";
-import { legacyRunHref } from "../../lib/route";
+import { runHref } from "../../lib/route";
 
 function RunItem({ run, showUser, now }: { run: RunRow; showUser: boolean; now: number }) {
   const elapsed = run.status === "running" ? (now - Date.parse(run.started_at)) / 1000 : run.duration_s;
   return (
     <li>
-      <a href={legacyRunHref(run.run_id)}>
+      <a href={runHref(run.run_id)}>
         <span className="q">{run.question}</span>
         <span className="meta">
           <StateBadge state={run.status} />

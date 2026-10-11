@@ -228,15 +228,13 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         field = lambda name: (form.get(name) or [""])[0]  # noqa: E731
         target = field("next")
         anchor = f"#{target}" if target == "admin" or RUN_ID.match(target) else ""
-        # Nouvelle interface (lot 0a du plan d'interface) : retour sur /nouvelle plutôt que sur /.
-        page = "/nouvelle" if field("ui") == "nouvelle" else "/"
         user = users.authenticate(field("login"), field("password"))
         source = request.client.host if request.client else None
         if user is None:
             audit(None, "login_failed", {"login": field("login")}, source)
-            return RedirectResponse(f"{page}?echec=1{anchor}", status_code=303)
+            return RedirectResponse(f"/?echec=1{anchor}", status_code=303)
         audit(user, "login", source=source)
-        response = RedirectResponse(f"{page}{anchor}", status_code=303)
+        response = RedirectResponse(f"/{anchor}", status_code=303)
         set_cookie(response, sessions.issue(user.id))
         return response
 
@@ -714,15 +712,11 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html")
-
-    @app.get("/nouvelle")
-    def new_ui() -> FileResponse:
-        """Nouvelle interface (TypeScript, React), servie à côté de l'actuelle jusqu'à la bascule du lot 0b.
-        Le bundle est versionné (static/dist, construit par poc/web-ui) : aucun Node à l'exécution."""
+        """Interface (TypeScript, React) : bundle versionné dans static/dist, construit par poc/web-ui ;
+        aucun Node à l'exécution."""
         page = STATIC / "dist" / "index.html"
         if not page.exists():
-            raise HTTPException(404, "Nouvelle interface absente : cd poc/web-ui && npm ci && npm run build")
+            raise HTTPException(404, "Interface absente : cd poc/web-ui && npm ci && npm run build")
         return FileResponse(page, headers={"Cache-Control": "no-cache"})
 
     return app

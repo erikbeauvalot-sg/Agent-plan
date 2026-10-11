@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, post } from "../../api/client";
 import type { AskBody, Category, Choice, ModelState, RunDetail, SourcesResponse } from "../../api/types";
-import { legacyRunHref } from "../../lib/route";
+import { runHref } from "../../lib/route";
 import { stored } from "../../lib/storage";
 
 export interface Prefill {
@@ -138,7 +138,7 @@ export function AskForm({ categories, models, modelStates, sources, rerunOf, pre
     };
     try {
       const { run_id } = await post<{ run_id: string }>("/api/runs", body);
-      location.href = legacyRunHref(run_id); // lot 0a : l'investigation s'ouvre dans l'interface actuelle
+      location.hash = run_id;
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -154,7 +154,7 @@ export function AskForm({ categories, models, modelStates, sources, rerunOf, pre
         <p className="banner">
           <span>
             Relance de{" "}
-            <a href={legacyRunHref(rerunOf)} className="mono">
+            <a href={runHref(rerunOf)} className="mono">
               {rerunOf}
             </a>{" "}
             : modifie la question ou les options, puis lance.

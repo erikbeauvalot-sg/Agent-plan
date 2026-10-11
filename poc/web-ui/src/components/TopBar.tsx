@@ -3,7 +3,7 @@ import { useState } from "react";
 import { post } from "../api/client";
 import type { Me } from "../api/types";
 import { fmtDate, fmtUtc } from "../lib/format";
-import { legacyAdminHref } from "../lib/route";
+import { adminHref } from "../lib/route";
 import { applyTheme, effectiveTheme, loadTheme, nextTheme, type ThemeChoice } from "../lib/theme";
 import { Activity, Clock, LogOut, Monitor, Moon, Settings, Sun } from "./icons";
 
@@ -26,7 +26,7 @@ export function TopBar({ me }: { me: Me }) {
   };
   const logout = async () => {
     await post("/api/logout").catch(() => {});
-    location.replace("/nouvelle"); // page rechargée : aucun état de la session précédente
+    location.replace("/"); // page rechargée : aucun état de la session précédente
   };
 
   return (
@@ -59,7 +59,7 @@ export function TopBar({ me }: { me: Me }) {
           <ThemeIcon size={16} aria-hidden="true" />
         </button>
         {canAdmin && (
-          <a className="btn ghost" href={legacyAdminHref}>
+          <a className="btn ghost" href={adminHref}>
             <Settings size={16} aria-hidden="true" />
             <span className="label-long">Administration</span>
           </a>

@@ -303,13 +303,11 @@ coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'éq
 tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
 15 min après 5 échecs) ; journal d'accès dans `audit/`.
 
-### Nouvelle interface (en cours de refonte)
+### Développer l'interface
 
-La refonte de l'interface ([plan](../docs/plan-interface.md)) se fait en TypeScript et React, dans
-`poc/web-ui/`. Pendant la transition, la nouvelle interface est servie sur **`/nouvelle`** (connexion,
-barre du haut, accueil ; thème sombre ou clair selon le système, bascule dans la barre du haut) et
-l'actuelle reste sur `/` ; une investigation ou l'administration ouvertes depuis `/nouvelle` s'affichent
-encore dans l'interface actuelle, jusqu'au lot 0b.
+L'interface est écrite en TypeScript et React (graphe d'agents avec React Flow) dans `poc/web-ui/` ; sa
+refonte suit le [plan de l'interface](../docs/plan-interface.md). Le thème suit le réglage du système
+(sombre ou clair), avec une bascule dans la barre du haut.
 
 Le code compilé (`src/diagagent/web/static/dist/`) est versionné : le POC s'installe et se lance sans
 Node. Pour modifier l'interface (Node 24 ou plus) :

@@ -1,10 +1,12 @@
 """Captures de l'interface pour vérifier un écran (outil de développement, hors dépendances du POC).
 
-    uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8765 --login admin --password …
+    uv run --with playwright playwright install chromium        # une fois
+    uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8080 --login … --password … \
+        --run 20261011T142151Z-dae2
 
-Navigateur : celui de Playwright, ou un Chromium déjà installé (DIAGAGENT_BROWSER=/Applications/Vivaldi.app/
-Contents/MacOS/Vivaldi). Captures dans poc/.snapshots/ (ignoré par git) : connexion et accueil, en 1440, 1024 et
-390 px, thèmes sombre et clair, et une fois en mouvement réduit. Regarder les images avant de conclure.
+Captures dans poc/.snapshots/ (ignoré par git) : connexion, accueil, investigation (--run), tiroir de l'agent
+principal, administration ; en 1440, 1024 et 390 px, thèmes sombre et clair, et l'accueil en mouvement réduit.
+Regarder les images avant de conclure.
 """
 
 from __future__ import annotations
@@ -13,17 +15,27 @@ import argparse
 import os
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
 SIZES = {"1440": (1440, 900), "1024": (1024, 768), "390": (390, 844)}
+
+
+def login(page: Page, base: str, user: str, password: str) -> None:
+    page.goto(base + "/")
+    page.wait_for_selector("form.login-card")
+    page.fill("input[name=login]", user)
+    page.fill("input[name=password]", password)
+    page.click("button[type=submit]")
+    page.wait_for_selector("text=Dernières investigations")
+    page.wait_for_load_state("networkidle")
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--base", default="http://127.0.0.1:8080")
-    p.add_argument("--path", default="/nouvelle")
     p.add_argument("--login", required=True)
     p.add_argument("--password", required=True)
+    p.add_argument("--run", help="investigation terminée à capturer (run_id)")
     p.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / ".snapshots"))
     args = p.parse_args()
     out = Path(args.out)
@@ -35,23 +47,30 @@ def main() -> None:
             for name, (w, h) in SIZES.items():
                 ctx = browser.new_context(viewport={"width": w, "height": h}, color_scheme=scheme, locale="fr-FR")
                 page = ctx.new_page()
-                page.goto(args.base + args.path)
+                page.goto(args.base + "/")
                 page.wait_for_selector("form.login-card")
                 page.screenshot(path=out / f"connexion-{scheme}-{name}.png")
-                page.fill("input[name=login]", args.login)
-                page.fill("input[name=password]", args.password)
-                page.click("button[type=submit]")
-                page.wait_for_selector("text=Dernières investigations")
-                page.wait_for_load_state("networkidle")
+                login(page, args.base, args.login, args.password)
                 page.screenshot(path=out / f"accueil-{scheme}-{name}.png", full_page=True)
+                if args.run:
+                    page.goto(f"{args.base}/#{args.run}")
+                    page.wait_for_selector(".agent-node")
+                    page.wait_for_load_state("networkidle")
+                    page.wait_for_timeout(400)
+                    page.screenshot(path=out / f"investigation-{scheme}-{name}.png", full_page=True)
+                    page.locator(".agent-node").first.click()
+                    page.wait_for_selector(".drawer h3")
+                    page.wait_for_timeout(500)  # fin de l'animation d'ouverture
+                    page.screenshot(path=out / f"tiroir-{scheme}-{name}.png")
+                    page.keyboard.press("Escape")
+                page.goto(f"{args.base}/#admin")
+                page.wait_for_selector("text=Administration")
+                page.wait_for_load_state("networkidle")
+                page.screenshot(path=out / f"administration-{scheme}-{name}.png", full_page=True)
                 ctx.close()
         ctx = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
         page = ctx.new_page()
-        page.goto(args.base + args.path)
-        page.fill("input[name=login]", args.login)
-        page.fill("input[name=password]", args.password)
-        page.click("button[type=submit]")
-        page.wait_for_selector("text=Dernières investigations")
+        login(page, args.base, args.login, args.password)
         page.screenshot(path=out / "accueil-mouvement-reduit.png")
         browser.close()
     print(f"Captures dans {out}")

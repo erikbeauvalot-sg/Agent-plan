@@ -25,9 +25,5 @@ export function useRoute(): Route {
   return route;
 }
 
-/**
- * Lot 0a : l'investigation et l'administration ne sont pas encore portées ; elles s'ouvrent dans
- * l'interface actuelle (servie sur /). Le lot 0b remplacera ces liens par les vues de la nouvelle interface.
- */
-export const legacyRunHref = (runId: string): string => `/#${runId}`;
-export const legacyAdminHref = "/#admin";
+export const runHref = (runId: string): string => `#${runId}`;
+export const adminHref = "#admin";

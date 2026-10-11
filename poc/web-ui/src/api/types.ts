@@ -157,3 +157,170 @@ export interface RunEvent {
   type: string;
   data?: Record<string, unknown>;
 }
+
+// Investigation (GET /api/runs/{id})
+
+export interface FullCategory extends RunCategory {
+  confidence?: string;
+  mode?: string;
+  playbooks?: Record<string, number>;
+  history?: { from: string; to?: string }[];
+  error?: string;
+}
+
+export interface Feedback {
+  by: string;
+  verdict: string;
+  cause?: string;
+}
+
+export interface FullManifest extends Manifest {
+  reference_time?: string | null;
+  rerun_of?: string | null;
+  shared?: boolean;
+  feedback?: Feedback | null;
+  models?: Record<string, { provider: string; model: string }>;
+  usage?: { input_tokens?: number; output_tokens?: number; reasoning_tokens?: number };
+  category?: FullCategory | null;
+}
+
+export interface Action {
+  id: string;
+  status: "proposed" | "validated" | "rejected" | string;
+  title: string;
+  target: string;
+  type: string;
+  rationale: string;
+  evidence?: unknown[];
+  risk: string;
+  risk_explanation?: string;
+  procedure: string;
+  rollback: string;
+  requires_change?: boolean;
+  decision?: { by: string; comment?: string } | null;
+  run_id?: string;
+  question?: string;
+  user?: string;
+}
+
+export interface FullRun {
+  manifest: FullManifest;
+  plan: string | null;
+  analysis: string | null;
+  actions: Action[];
+  can_details: boolean;
+  can_share: boolean;
+  can_stop: boolean;
+}
+
+export interface ToolCallDetail {
+  ref: string;
+  tool: string;
+  input: unknown;
+  is_error: boolean;
+  duration_s: number;
+  output: string;
+}
+
+export interface AgentDetail {
+  agent_id: string;
+  prompt: string | null;
+  system_prompt: string | null;
+  report: unknown;
+  calls: ToolCallDetail[];
+  responses: { ts: string; text: string; tool_calls: string[]; stop_reason: string }[];
+}
+
+// Administration
+
+export interface Indicators {
+  runs: number;
+  autre_share: number | null;
+  draft_matches: Record<string, number>;
+  categories: {
+    category: string;
+    runs: number;
+    share: number | null;
+    corrected_share: number | null;
+    useful_share: number | null;
+    feedback: number;
+    avg_duration_s: number;
+    avg_tool_calls: number;
+  }[];
+}
+
+export interface Proposal {
+  id: string;
+  kind: string;
+  target: string;
+  status: string;
+  rationale: string;
+  evidence?: unknown[];
+  change: unknown;
+  replay?: { before: number; after: number; cases: number; ok: boolean } | null;
+  decision?: { by: string; comment?: string } | null;
+}
+
+export interface CostRow {
+  day: string;
+  user: string;
+  model: string;
+  runs: number;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+}
+
+export interface Costs {
+  rows: CostRow[];
+  total: { runs: number; input_tokens: number; output_tokens: number; reasoning_tokens: number };
+}
+
+export interface AccessEntry {
+  ts: string;
+  user: string | null;
+  action: string;
+  [key: string]: unknown;
+}
+
+export interface ConfigFile {
+  path: string;
+  kind: string;
+  group: string;
+  permission: string;
+  editable: boolean;
+  size?: number;
+  modified?: string;
+}
+
+export interface ConfigList {
+  files: ConfigFile[];
+  creatable: { pattern: string; kind: string; group: string; permission: string }[];
+}
+
+export interface ConfigContent {
+  path: string;
+  kind: string;
+  permission: string;
+  content: string;
+  version: string;
+  editable: boolean;
+}
+
+export interface ConfigVersion {
+  id: string;
+  author: string | null;
+  comment: string;
+  version: string;
+  previous: string | null;
+}
+
+export interface Account {
+  id: string;
+  login: string;
+  display_name: string;
+  roles: string[];
+  status: string;
+  locked_until: string | null;
+  created_at: string;
+}
