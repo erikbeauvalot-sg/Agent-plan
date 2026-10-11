@@ -18,7 +18,7 @@ Lire avant de coder, selon la tâche :
 | [references/direction-visuelle.md](references/direction-visuelle.md) | Toute tâche qui touche au style : jetons de couleur, typographie, espacements, mouvement, moments « whoua » |
 | [references/ecrans.md](references/ecrans.md) | Toute tâche sur un écran : connexion, accueil, investigation, détail d'agent, administration ; visibilité par rôle |
 | [references/ux-agents.md](references/ux-agents.md) | Tout ce qui montre le travail des agents : graphe, chronologie, statut en direct, arrêt, réponse, preuves, actions |
-| [references/technique.md](references/technique.md) | Toute modification de code : contraintes (sans build, sans CDN), structure, flux SSE, sécurité, performances, tests |
+| [references/technique.md](references/technique.md) | Toute modification de code : contraintes (bundle versionné, sans CDN ; à mettre à jour au lot 0a), structure, flux SSE, sécurité, performances, tests |
 | [references/checklist-qualite.md](references/checklist-qualite.md) | Avant de déclarer une tâche finie : accessibilité, états, responsive, performances, captures |
 
 ## Le produit en une phrase
@@ -54,8 +54,10 @@ de nuit). Chaque seconde de compréhension gagnée compte plus qu'une animation.
    arrivent.
 7. **Accessible.** WCAG 2.2 AA : contraste, focus visible et jamais masqué par la barre du haut, cibles
    de 24 × 24 px minimum, tout au clavier, régions `aria-live` pour le statut en direct.
-8. **Sobre techniquement.** Pas de build, pas de framework, pas de CDN : HTML, CSS et JavaScript natifs
-   servis par FastAPI. Les données de production restent dans l'entreprise, polices comprises.
+8. **Sobre techniquement.** TypeScript et React (React Flow pour le graphe), compilés par Vite en un
+   bundle versionné que FastAPI sert tel quel : le POC s'installe sans Node (décision du 11 octobre 2026,
+   [plan](../../../docs/plan-interface.md)). Pas de CDN ni de ressource chargée d'Internet à l'exécution :
+   dépendances empaquetées, polices auto-hébergées ; les données de production restent dans l'entreprise.
 9. **Rien ne régresse.** Toutes les fonctions actuelles restent disponibles (liste dans `ecrans.md`) et
    les droits par rôle sont respectés à l'écran comme dans l'API.
 10. **Interface en français**, tutoiement (comme l'existant), dates `fr-FR` sur 24 h, heure de référence
