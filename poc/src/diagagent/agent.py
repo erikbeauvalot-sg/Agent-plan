@@ -16,7 +16,7 @@ from .tools import ToolHub
 
 MAX_TOOL_RESULT_CHARS = 12_000
 MAX_EMPTY_RETRIES = 2  # réponses vides consécutives relancées avant d'abandonner
-MAX_FINAL_CHECKS = 3  # relances de la réponse finale (vagues, actions, faits), une par motif
+MAX_FINAL_CHECKS = 4  # relances de la réponse finale (vagues, changements, actions, faits), une par motif
 MALFORMED_TOOL_CALL = "error parsing tool call"  # erreur d'Ollama sur un appel d'outil illisible
 TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse au lieu de l'appeler. Appelle "
                    "l'outil, ou rends ta réponse finale en Markdown.")

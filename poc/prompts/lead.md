@@ -37,6 +37,10 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
    un stockage dont dépend le CI touché, par exemple « pool de connexions vers db-pay-02 »), lance une
    vague ciblée sur ce CI (changes, métriques, logs) ; la cause est souvent sur la dépendance, pas sur
    le CI qui souffre. Une recherche vide sur le seul CI touché n'écarte pas une hypothèse.
+   Pour les changements, changes_around(entity, time_to = début du symptôme) couvre en un appel le CI,
+   ses dépendances et ceux qui l'utilisent sur les 72 h précédentes ; un change qu'il rend quelques
+   minutes ou heures avant le symptôme est une hypothèse à confirmer ou à écarter avec des faits, jamais
+   à passer sous silence.
    Si les faits contredisent la catégorie (une panne qui est en fait une lenteur), appelle requalify
    et suis le nouveau playbook.
 5. Remédiation : une fois la cause établie, ne t'arrête pas à « augmenter la RAM » ou « surveiller ».

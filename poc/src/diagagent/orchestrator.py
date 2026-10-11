@@ -261,8 +261,8 @@ class Investigation:
     def _check_final_answer(self, text: str) -> str | None:
         """Relance l'agent principal une fois par motif : vagues du playbook jamais lancées, actions
         décrites dans la réponse sans propose_action, puis tailles contraires aux mesures."""
-        for motive, check in (("waves", self._missing_waves), ("actions", self._unrecorded_actions),
-                              ("facts", self._unsupported_facts)):
+        for motive, check in (("waves", self._missing_waves), ("changes", self._unmentioned_changes),
+                              ("actions", self._unrecorded_actions), ("facts", self._unsupported_facts)):
             if motive not in self.rechecked and (nudge := check(text)):
                 self.rechecked.add(motive)
                 return nudge
@@ -319,6 +319,34 @@ class Investigation:
                 + " ; ".join(missing) + ". Lance maintenant la prochaine étape avec spawn_subagent (toutes ses "
                 "investigations dans la même réponse, puis wait_subagents) en reportant ce que tu as établi ; "
                 "les sous-agents interrogent les sources à ta place.")
+
+    def _unmentioned_changes(self, text: str) -> str | None:
+        """Change rendu par changes_around peu avant le symptôme, absent de la réponse : les modèles le
+        trouvent puis l'oublient dans la synthèse (CHG0034201 sur db-pay-02, CHG0034450 sur le
+        consommateur), alors que c'est la cause."""
+        recent: dict[str, dict[str, Any]] = {}
+        for path in sorted(self.log.dir.glob("**/calls/*.json")):
+            try:
+                call = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if call.get("tool") != "changes_around" or not isinstance(call.get("output"), dict):
+                continue
+            for ch in call["output"].get("changes", []):
+                # Sur le CI et ses dépendances, la veille compte ; sur un CI qui l'utilise, seulement les
+                # dernières heures (sinon chaque mise à jour du portail serait rappelée).
+                horizon = 6 * 60 if ch.get("relation") == "utilise ce CI" else 24 * 60
+                if ch.get("number") and ch.get("minutes_before", 1e9) <= horizon:
+                    recent.setdefault(ch["number"], {**ch, "ref": str(path.relative_to(self.log.dir))})
+        missing = [c for n, c in recent.items() if n not in text]
+        if not missing:
+            return None
+        self.log.event("lead", "changes_unmentioned", {"changes": [c["number"] for c in missing]})
+        lines = [f"- {c['number']} sur {(c.get('ci') or {}).get('hostname')} ({c['relation']}), "
+                 f"{c['minutes_before']} min avant : {c.get('short_description')} [{c['ref']}]" for c in missing]
+        return ("Ta réponse ne parle pas de changements trouvés peu avant le symptôme :\n" + "\n".join(lines)
+                + "\nPour chacun, dis s'il explique le symptôme ou pourquoi tu l'écartes, avec des faits, puis "
+                  "rends la réponse complète.")
 
     def _unsupported_facts(self, text: str) -> str | None:
         """Le modèle écrit volontiers qu'un conteneur « dépasse 1 Go » sans que ses mesures l'atteignent."""

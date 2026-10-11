@@ -78,7 +78,7 @@ def test_lead_plans_spawns_in_parallel_and_consolidates(tmp_path, monkeypatch):
     logs_req = logs.requests[0]
     assert logs_req.messages[0].content.startswith("# Tâche T02-logs-srv-pay-01")
     assert {t.name for t in logs_req.tools} == {"list_sources", "describe_source", "resolve_entity",
-                                                "search", "aggregate", "submit_report"}
+                                                "search", "aggregate", "changes_around", "submit_report"}
     assert 'sous-agent "logs"' in logs_req.system
     # Un rapport invalide revient en erreur au sous-agent, qui corrige.
     assert "ERREUR D'OUTIL" in logs.requests[2].messages[-1].content
