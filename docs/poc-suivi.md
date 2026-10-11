@@ -82,3 +82,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-10 : PR #28 fusionnée (relancer une demande) ; PR #29 ouverte (rappel précoce des vagues : 6 sous-agents spécialisés lancés, dont web, sur SwapUsageHigh).
 - 2026-10-11 : PR #29 fusionnée (rappel précoce) ; PR #30 ouverte (contrôle des actions et des tailles : sur la trace SwapUsageHigh, limite de 1 Go refusée pour radarr, pic de 1020 Mo ; en direct sur gpt-oss, limites de qbittorrent tirées de peak_mb, cache compris, refusées, règle sur une métrique inexistante refusée).
 - 2026-10-11 : PR #31 ouverte (configuration et comptes modifiables depuis l'interface, document d'architecture complété).
+- 2026-10-11 : PR #32 ouverte : skill Claude Code `interface-diagagent`, commande `/refonte-interface` et [recherche UX](interface-recherche-ux.md) pour la refonte de l'interface web en six lots.
