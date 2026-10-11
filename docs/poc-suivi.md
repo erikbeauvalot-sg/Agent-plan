@@ -22,6 +22,7 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 | 15. Vagues imposées | Réponse finale contrôlée : étapes du playbook dont aucun rôle spécialisé n'a été lancé, rappelées une fois à l'agent principal ; valeurs de `propose_action` reconnues sans casse ni accents | Fait (PR #27) |
 | 16. Relancer une demande | Bouton « Relancer… » : nouvelle demande préremplie (question, modèle, données, catégorie), lancée après modification des options ; choix de la catégorie sur l'accueil ; lien `rerun_of` vers l'investigation d'origine | Fait (PR #28) |
 | 17. Rappel précoce des vagues | Après 8 appels directs de l'agent principal sans sous-agent spécialisé (`early_wave_reminder`), rappel des étapes du playbook, une fois | Fait (PR #29) |
+| 18. Contrôle des faits et des actions | `propose_action` refuse une limite mémoire sous le pic de mémoire de travail + 20 % (peak_mb du cgroup compte le cache), une règle d'alerte refusée par Prometheus, sur des métriques sans série ou recopiant une règle existante ; réponse finale relancée si elle prête à un conteneur une taille que ses mesures n'atteignent pas | En cours (PR #30) |
 | CI | Merge automatique de toute PR non brouillon vers `main` dès que les tests passent | Fait (PR #23) |
 
 ## Reste à faire
@@ -29,10 +30,8 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - **Critères de sortie** : le document d'architecture demande 20 questions simples justes et une cause
   correcte sur une majorité de 20 incidents passés ; `eval/cases.yaml` ne compte que 9 cas, tous sur
   la démo. Agrandir le jeu, ajouter des cas maison, mesurer avec `--repeat`.
-- **Contrôles des faits et des actions dans le code** : l'agent affirme encore des chiffres contraires aux
-  mesures (« conteneurs au-delà de 1 Go » pour des pics de 323 et 539 Mo) et propose une limite incohérente
-  avec ce qu'il écrit. À vérifier dans le code : limite mémoire jamais sous le pic mesuré, pas d'alerte qui
-  existe déjà, règle PromQL qui rend des séries.
+- **Faits non vérifiés** : l'étape 18 contrôle les tailles de conteneurs ; les autres affirmations (un
+  « bug Docker 27.2.0 » lu sur le web, des versions, des durées) ne sont pas encore confrontées aux sources.
 - **Industrialisation** (étape 4 du document d'architecture) : connecteur `mcp-elk` réel et Druid,
   branchement Azure OpenAI GPT-5.6 Luna et comparaison de modèles sur le jeu d'évaluation, annuaire
   d'entreprise (OIDC), quotas et coûts Azure, archivage. Elle attend les réponses aux points ouverts du
@@ -80,3 +79,4 @@ utilisable seule. Ce fichier est mis à jour à chaque PR.
 - 2026-10-10 : PR #26 fusionnée (classifieur, écriture atomique des traces) ; PR #27 ouverte (vagues du playbook rappelées à l'agent principal).
 - 2026-10-10 : PR #27 fusionnée (vagues rappelées) ; PR #28 ouverte (relancer une demande avec d'autres options).
 - 2026-10-10 : PR #28 fusionnée (relancer une demande) ; PR #29 ouverte (rappel précoce des vagues : 6 sous-agents spécialisés lancés, dont web, sur SwapUsageHigh).
+- 2026-10-11 : PR #29 fusionnée (rappel précoce) ; PR #30 ouverte (contrôle des actions et des tailles : sur la trace SwapUsageHigh, limite de 1 Go refusée pour radarr, pic de 1020 Mo ; en direct sur gpt-oss, limites de qbittorrent tirées de peak_mb, cache compris, refusées, règle sur une métrique inexistante refusée).

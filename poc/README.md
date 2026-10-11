@@ -142,7 +142,23 @@ par motif (événement `final_answer_rechecked`) :
   lancé (`gpt-oss:20b` fait souvent tout lui-même, ou ne lance que `generic`). L'agent lance les
   étapes manquantes ou dit dans les Limites pourquoi il les saute. Le rôle `generic` et les rôles
   indisponibles ne comptent pas ; après `requalify`, c'est le nouveau playbook qui compte ;
-- **actions non enregistrées** : la réponse décrit des actions sans avoir appelé `propose_action`.
+- **actions non enregistrées** : la réponse décrit des actions sans avoir appelé `propose_action` ;
+- **tailles contraires aux mesures** (`facts_unsupported`) : la réponse dit qu'un conteneur « dépasse
+  1 Go » alors que le plus haut de ses mesures dans l'investigation (`container_memory`, cache compris,
+  ou `container_metrics`) est plus bas.
+
+`propose_action` contrôle aussi l'action avant de l'enregistrer (`src/diagagent/checks.py`). En cas de
+refus, l'erreur revient au modèle (événement `action_rejected`), qui corrige l'action :
+- une **limite mémoire** (`--memory`, `mem_limit`, `memory:` ou « limite … 1 Go ») doit dépasser le pic
+  de mémoire de travail du conteneur (`container_metrics`, `container.mem_mb`) d'au moins
+  `memory_limit_margin_pct` (20 % par défaut, `config/poc.yaml`). Sans cette mesure, l'agent doit
+  d'abord la faire. `peak_mb` de `container_memory` ne compte pas, car il inclut le cache de fichiers :
+  qbittorrent y affiche 8,5 Go pour 381 Mo de mémoire de travail ;
+- une **règle d'alerte** (`expr:` dans la procédure ; si la règle actuelle est citée avant, seule la
+  dernière expression est contrôlée) doit être acceptée par Prometheus, et chacune de
+  ses métriques doit avoir des séries. Elle ne doit pas recopier une règle existante : la même règle à
+  l'identique ne règle rien, et une même expression sous un autre nom fait une alerte en double.
+  Prometheus absent ou injoignable : ce contrôle est sauté (`action_check_skipped`).
 
 Les vagues sont aussi rappelées **en cours de route**, une fois (événement `progress_reminder`) : après
 `early_wave_reminder` appels directs aux sources (8 par défaut, `config/poc.yaml`) sans aucun sous-agent

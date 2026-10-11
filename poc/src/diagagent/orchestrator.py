@@ -17,8 +17,8 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog, knowledge, playbooks
-from .connectors import alertmanager
+from . import catalog, checks, knowledge, playbooks
+from .connectors import alertmanager, metrics
 from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, run_agent
 from .llm import LLMProvider, ToolSpec
 from .llm.base import to_jsonable
@@ -190,6 +190,7 @@ class Investigation:
         self.semaphore = asyncio.Semaphore(orch.get("max_parallel", 6))
         self.early_wave_reminder = orch.get("early_wave_reminder", 8)  # appels directs avant le rappel des vagues
         self.direct_calls = 0
+        self.memory_margin = 1 + orch.get("memory_limit_margin_pct", 20) / 100  # marge d'une limite sur le pic
         self.lead_local_tools: dict[str, LocalTool] = {}
         self.lead_budget = Budget(**poc_cfg.get("budgets", {}).get("lead", {}))
         self.roles = {name: r for name, r in load_roles().items() if self._role_tools(r)}
@@ -258,9 +259,10 @@ class Investigation:
         return provider, cfg
 
     def _check_final_answer(self, text: str) -> str | None:
-        """Relance l'agent principal une fois par motif : vagues du playbook jamais lancées, puis actions
-        décrites dans la réponse sans propose_action."""
-        for motive, check in (("waves", self._missing_waves), ("actions", self._unrecorded_actions)):
+        """Relance l'agent principal une fois par motif : vagues du playbook jamais lancées, actions
+        décrites dans la réponse sans propose_action, puis tailles contraires aux mesures."""
+        for motive, check in (("waves", self._missing_waves), ("actions", self._unrecorded_actions),
+                              ("facts", self._unsupported_facts)):
             if motive not in self.rechecked and (nudge := check(text)):
                 self.rechecked.add(motive)
                 return nudge
@@ -317,6 +319,16 @@ class Investigation:
                 + " ; ".join(missing) + ". Lance maintenant la prochaine étape avec spawn_subagent (toutes ses "
                 "investigations dans la même réponse, puis wait_subagents) en reportant ce que tu as établi ; "
                 "les sous-agents interrogent les sources à ta place.")
+
+    def _unsupported_facts(self, text: str) -> str | None:
+        """Le modèle écrit volontiers qu'un conteneur « dépasse 1 Go » sans que ses mesures l'atteignent."""
+        claims = checks.unsupported_claims(text, checks.measured_peaks(self.log.dir))
+        if not claims:
+            return None
+        self.log.event("lead", "facts_unsupported", {"claims": claims})
+        return ("Ta réponse contient des tailles contraires aux mesures de l'investigation :\n- "
+                + "\n- ".join(claims) + "\nCorrige ces phrases d'après les pics mesurés (avec leur query_ref) "
+                "et vérifie que les actions proposées restent cohérentes, puis rends la réponse complète.")
 
     def _unrecorded_actions(self, text: str) -> str | None:
         """Les modèles décrivent souvent leurs actions dans la réponse sans appeler propose_action : elles
@@ -466,6 +478,7 @@ class Investigation:
 
     async def _propose_action(self, args: dict[str, Any]) -> str:
         action = validate_action(dict(args))
+        await self._check_action(action)
         path = self.log.dir / "actions.json"
         actions = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         # Les modèles rappellent souvent propose_action pour la même action (après un rappel du
@@ -481,6 +494,25 @@ class Investigation:
         self.log.event("lead", "action_proposed", {"id": action["id"], "title": action["title"],
                                                    "risk": action["risk"]})
         return json.dumps({"id": action["id"], "status": "proposed, non exécutée"}, ensure_ascii=False)
+
+    async def _check_action(self, action: dict[str, Any]) -> None:
+        """Contrôles sur les mesures et sur Prometheus ; une erreur revient au modèle, qui corrige l'action.
+        Prometheus absent (démonstration) ou injoignable : le contrôle de la règle est sauté et tracé."""
+        errors = []
+        if error := checks.check_memory_limit(action, checks.measured_peaks(self.log.dir), self.memory_margin):
+            errors.append(error)
+        if rule := checks.proposed_rule(str(action.get("procedure", ""))):
+            prom = metrics.prometheus()
+            try:
+                if prom is None:
+                    raise ValueError("pas de Prometheus")
+                if error := await asyncio.to_thread(checks.check_rule, rule, prom):
+                    errors.append(error)
+            except ValueError as e:
+                self.log.event("lead", "action_check_skipped", {"reason": str(e)[:200], "expr": rule["expr"]})
+        if errors:
+            self.log.event("lead", "action_rejected", {"title": action["title"], "errors": errors})
+            raise LocalToolError("Action non enregistrée :\n- " + "\n- ".join(errors))
 
     async def _write_plan(self, args: dict[str, Any]) -> str:
         (self.log.dir / "plan.md").write_text(args["markdown"].rstrip() + "\n", encoding="utf-8")

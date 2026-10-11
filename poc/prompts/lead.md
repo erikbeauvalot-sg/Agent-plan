@@ -67,8 +67,10 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
   (type, cible, justification, preuves, risque, procédure, retour arrière) ; elle sera revue par un
   humain. Reprends ensuite ces actions dans la réponse finale.
 - Une action est concrète : le paramètre exact, sa valeur, où le changer, et l'effet attendu. « Optimiser
-  la charge applicative » ne suffit pas. Une limite mémoire n'est jamais sous le pic déjà mesuré
-  (peak_mb) ; ne propose pas une alerte qui existe déjà, propose de la régler. Une action tirée
+  la charge applicative » ne suffit pas. Une limite mémoire dépasse d'au moins 20 % le pic de mémoire de
+  travail mesuré par container_metrics (container.mem_mb) ; peak_mb compte le cache de fichiers et ne
+  justifie aucune limite. Ne propose pas une alerte qui existe déjà, propose de la régler. propose_action vérifie
+  ces règles et refuse l'action sinon : corrige-la avec les valeurs données. Une action tirée
   d'une source web cite son URL dans la justification.
 - Une règle PromQL proposée n'utilise que des métriques qui existent : teste-la avec promql avant de
   la proposer (une expression sans série est fausse). Les modèles PromQL des métriques normalisées
