@@ -1,0 +1,25 @@
+// Icônes Lucide (licence ISC), empaquetées dans le bundle : rien n'est chargé d'Internet.
+// Une icône par état (direction-visuelle.md) ; « partiel » est un cercle à moitié plein.
+export {
+  Activity,
+  ArrowUpRight,
+  CircleCheck,
+  CircleHelp,
+  CircleSlash,
+  CircleX,
+  Clock,
+  Contrast as HalfCircle,
+  Eye,
+  EyeOff,
+  History,
+  LoaderCircle,
+  LogOut,
+  Monitor,
+  Moon,
+  RefreshCw,
+  Search,
+  Settings,
+  Square,
+  Sun,
+  TriangleAlert,
+} from "lucide-react";
