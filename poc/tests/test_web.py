@@ -348,3 +348,23 @@ def test_rerun_keeps_a_link_to_the_original_run(env):
     for bad in ("20990101T000000Z-0000", "../../etc"):
         assert alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?", "rerun_of": bad},
                           headers=H).status_code == 400
+
+
+def test_ui_is_served_with_every_asset(env):
+    # Bundle versionné (poc/web-ui, npm run build) : la page et chaque fichier qu'elle référence sont servis,
+    # ce qui attrape un oubli d'empaquetage ou un bundle non reconstruit.
+    import re
+
+    app, _ = env
+    c = client(app)
+    page = c.get("/")
+    assert page.status_code == 200 and '<div id="root">' in page.text
+    assets = re.findall(r'(?:src|href)="(/static/dist/[^"]+)"', page.text)
+    assert any(a.endswith(".js") for a in assets) and any(a.endswith(".css") for a in assets)
+    for asset in assets:
+        assert c.get(asset).status_code == 200, asset
+    css = c.get(next(a for a in assets if a.endswith(".css"))).text
+    fonts = re.findall(r"url\((/static/dist/assets/[^)]+\.woff2)\)", css)
+    assert fonts and all(c.get(f).status_code == 200 for f in fonts)
+
+

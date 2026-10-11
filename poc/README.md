@@ -309,6 +309,22 @@ coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'éq
 tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
 15 min après 5 échecs) ; journal d'accès dans `audit/`.
 
+### Développer l'interface
+
+L'interface est écrite en TypeScript et React (graphe d'agents avec React Flow) dans `poc/web-ui/` ; sa
+refonte suit le [plan de l'interface](../docs/plan-interface.md). Le thème suit le réglage du système
+(sombre ou clair), avec une bascule dans la barre du haut.
+
+Le code compilé (`src/diagagent/web/static/dist/`) est versionné : le POC s'installe et se lance sans
+Node. Pour modifier l'interface (Node 24 ou plus) :
+
+```bash
+cd poc/web-ui && npm ci
+npm run dev        # http://127.0.0.1:5173/static/dist/ ; l'API vient de « diagagent serve » (port 8080)
+npm run check      # types, lint, tests
+npm run build      # met à jour static/dist, à commiter avec les sources (la CI le vérifie)
+```
+
 ### Modifier la configuration depuis l'interface
 
 La section **Configuration** de l'écran Administration ouvre chaque fichier qui règle l'agent dans

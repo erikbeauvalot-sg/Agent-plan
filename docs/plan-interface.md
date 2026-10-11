@@ -73,7 +73,7 @@ Pour l'utilisateur, l'aspect reste proche de l'actuel ; tout ce qui suit en dép
 - Écrans portés à fonctions identiques : connexion (le formulaire `POST /login` sans JavaScript reste
   servi), barre du haut, accueil complet (question et options, relance, en cours, historique, état,
   alertes, chiffres du jour, évaluations, statistiques).
-- La nouvelle interface est servie sur `/nouvelle` ; l'actuelle reste sur `/` jusqu'au lot 0b.
+- Réalisé avec le lot 0b dans la PR #37, sans adresse de transition (demande du 11 octobre).
 - CI : job Node (installation, `tsc --noEmit`, tests Vitest, build, bundle à jour) en plus des tests
   Python.
 - Mise à jour du skill `interface-diagagent` (`references/technique.md` : outillage, structure,

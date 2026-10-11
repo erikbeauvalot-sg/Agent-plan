@@ -28,7 +28,7 @@ diagagent = "diagagent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-diagagent = ["web/static/*"]
+diagagent = ["web/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,157 @@
+// Graphe d'investigation : agent principal en haut, sous-agents en rangées dessous (React Flow). Un nœud par
+// agent, mis à jour par clé ; une liste textuelle équivalente pour les lecteurs d'écran.
+import { Background, type Edge, Handle, type Node, type NodeProps, Position, ReactFlow } from "@xyflow/react";
+import "@xyflow/react/dist/base.css";
+import { memo, useEffect, useState } from "react";
+import { StateBadge } from "../../components/StateBadge";
+import { fmtDuration, fmtTokens, statusLabel } from "../../lib/format";
+import { type AgentState, type RunState, signals } from "../../state/runState";
+
+const NODE_W = 248;
+const GAP_X = 24;
+const ROW_H = 168;
+/** Sous-agents par rangée selon la largeur : 4 sur grand écran, 3 sur tablette, 2 sur téléphone. */
+function perRowFor(width: number): number {
+  return width < 640 ? 2 : width < 1100 ? 3 : 4;
+}
+
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
+}
+
+type AgentNodeData = { agent: AgentState; now: number };
+
+const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<AgentNodeData>>) {
+  const { agent: a, now } = data;
+  const sigs = signals(a, now);
+  const ratio = a.maxTools ? Math.min(1, a.toolCalls / a.maxTools) : 0;
+  const level = ratio >= 1 ? "max" : ratio > 0.8 ? "hi" : "ok";
+  const duration = ((a.end ?? now) - a.start) / 1000;
+  return (
+    <div
+      className="agent-node"
+      data-status={a.status}
+      data-signal={sigs.some((s) => s.bad) ? "bad" : sigs.length ? "warn" : ""}
+    >
+      <Handle type="target" position={Position.Top} isConnectable={false} />
+      <div className="agent-head">
+        <span className="agent-name">{a.id === "lead" ? "Agent principal" : a.id}</span>
+        <StateBadge state={a.status} />
+      </div>
+      {a.objective && <p className="agent-obj">{a.objective}</p>}
+      <p className="agent-stats num">
+        {a.toolCalls}
+        {a.maxTools ? `/${a.maxTools}` : ""} outils · {fmtDuration(duration) || "0 s"} · {fmtTokens(a.tokens)} tokens
+      </p>
+      {a.llm && <p className="agent-llm mono">{a.llm}</p>}
+      <span
+        className="gauge wide"
+        data-level={level === "max" ? "low" : level === "hi" ? "mid" : "high"}
+        aria-hidden="true"
+      >
+        <span style={{ transform: `scaleX(${ratio})` }} />
+      </span>
+      {sigs.length > 0 && (
+        <span className="badges">
+          {sigs.map((s) => (
+            <span key={s.key} className={`badge ${s.bad ? "bad" : ""}`}>
+              {s.text}
+            </span>
+          ))}
+        </span>
+      )}
+      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+    </div>
+  );
+});
+
+const nodeTypes = { agent: AgentNode };
+
+function layoutOf(children: string[], perRow: number): Record<string, { x: number; y: number }> {
+  const width = Math.max(NODE_W, Math.min(children.length, perRow) * (NODE_W + GAP_X) - GAP_X);
+  const pos: Record<string, { x: number; y: number }> = { lead: { x: width / 2 - NODE_W / 2, y: 0 } };
+  children.forEach((id, i) => {
+    const row = Math.floor(i / perRow);
+    const inRow = Math.min(perRow, children.length - row * perRow);
+    const rowWidth = inRow * (NODE_W + GAP_X) - GAP_X;
+    pos[id] = { x: (width - rowWidth) / 2 + (i % perRow) * (NODE_W + GAP_X), y: (row + 1) * ROW_H };
+  });
+  return pos;
+}
+
+interface Props {
+  run: RunState;
+  now: number;
+  onOpen: (agentId: string) => void;
+}
+
+export function AgentGraph({ run, now, onOpen }: Props) {
+  const children = run.order.filter((id) => id !== "lead");
+  const perRow = perRowFor(useViewportWidth());
+  const rows = Math.ceil(children.length / perRow);
+  // La disposition ne dépend que de la liste des agents (calcul léger, mêmes positions à chaque rendu) :
+  // un nœud ne bouge pas quand ses données changent.
+  const layout = layoutOf(children, perRow);
+
+  const nodes: Node<AgentNodeData>[] = run.order
+    .filter((id) => layout[id])
+    .map((id) => ({
+      id,
+      type: "agent",
+      position: layout[id]!,
+      data: { agent: run.agents[id]!, now },
+      draggable: false,
+    }));
+  const edges: Edge[] = (run.agents.lead ? children : []).map((id) => ({
+    id: `lead-${id}`,
+    source: "lead",
+    target: id,
+    animated: run.agents[id]!.status === "running",
+    className: `edge-${run.agents[id]!.status}`,
+  }));
+
+  if (!run.agents.lead) return <p className="muted">En attente du premier événement…</p>;
+  return (
+    <>
+      <div className="graph" style={{ height: 150 + rows * ROW_H }} aria-hidden="true">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodeClick={(_, n) => onOpen(n.id)}
+          fitView
+          fitViewOptions={{ padding: 0.08, maxZoom: 1, minZoom: 0.3 }}
+          minZoom={0.3}
+          nodesConnectable={false}
+          nodesDraggable={false}
+          elementsSelectable={false}
+          zoomOnScroll={false}
+          panOnScroll={false}
+          preventScrolling={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={24} size={1} />
+        </ReactFlow>
+      </div>
+      <ul className="agent-list visually-hidden-focusable" aria-label="Agents de l'investigation">
+        {run.order.map((id) => {
+          const a = run.agents[id]!;
+          return (
+            <li key={id}>
+              <button type="button" className="link" onClick={() => onOpen(id)}>
+                {id === "lead" ? "Agent principal" : id}
+              </button>{" "}
+              : {statusLabel(a.status)}, {a.toolCalls} appels d'outils{a.objective ? `, ${a.objective}` : ""}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}

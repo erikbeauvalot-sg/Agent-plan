@@ -712,6 +712,11 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html")
+        """Interface (TypeScript, React) : bundle versionné dans static/dist, construit par poc/web-ui ;
+        aucun Node à l'exécution."""
+        page = STATIC / "dist" / "index.html"
+        if not page.exists():
+            raise HTTPException(404, "Interface absente : cd poc/web-ui && npm ci && npm run build")
+        return FileResponse(page, headers={"Cache-Control": "no-cache"})
 
     return app

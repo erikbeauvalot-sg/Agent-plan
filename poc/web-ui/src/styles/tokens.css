@@ -1,0 +1,108 @@
+/* Jetons : couleurs en OKLCH (thème sombre principal, vrai thème clair), typographie, espacements,
+   mouvement. Voir .claude/skills/interface-diagagent/references/direction-visuelle.md. */
+@layer tokens, base, components, views;
+
+@layer tokens {
+  :root {
+    --font-sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --fs-1: 0.75rem;
+    --fs-2: 0.8125rem;
+    --fs-3: 0.875rem;
+    --fs-4: 1rem;
+    --fs-5: 1.25rem;
+    --fs-6: 1.5rem;
+    --fs-7: 2rem;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+    --radius-1: 6px;
+    --radius-2: 10px;
+    --radius-pill: 999px;
+    --dur-1: 120ms;
+    --dur-2: 200ms;
+    --dur-3: 320ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --topbar-h: 52px;
+    --content-max: 1440px;
+  }
+
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(0.16 0.012 255);
+    --surface-1: oklch(0.19 0.012 255);
+    --surface-2: oklch(0.22 0.013 255);
+    --surface-3: oklch(0.26 0.014 255);
+    --line: oklch(0.32 0.012 255 / 0.65);
+    --line-strong: oklch(0.42 0.014 255);
+    --text: oklch(0.96 0.005 255);
+    --text-2: oklch(0.78 0.01 255);
+    --text-3: oklch(0.68 0.012 255);
+    --accent: oklch(0.8 0.14 200);
+    --accent-ink: oklch(0.18 0.02 255);
+    --ok: oklch(0.78 0.15 155);
+    --warn: oklch(0.83 0.15 80);
+    --bad: oklch(0.7 0.19 25);
+    --stopped: oklch(0.66 0.02 255);
+    --clarify: oklch(0.76 0.12 300);
+    --llm: oklch(0.72 0.12 260);
+    --tool: oklch(0.62 0.03 255);
+    --shadow: 0 12px 32px oklch(0 0 0 / 0.45);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: oklch(0.985 0.003 255);
+    --surface-1: oklch(1 0 0);
+    --surface-2: oklch(0.965 0.005 255);
+    --surface-3: oklch(1 0 0);
+    --line: oklch(0.9 0.008 255);
+    --line-strong: oklch(0.8 0.01 255);
+    --text: oklch(0.22 0.02 255);
+    --text-2: oklch(0.42 0.02 255);
+    --text-3: oklch(0.5 0.02 255);
+    --accent: oklch(0.52 0.13 215);
+    --accent-ink: oklch(0.99 0 0);
+    --ok: oklch(0.52 0.14 155);
+    --warn: oklch(0.58 0.15 70);
+    --bad: oklch(0.53 0.2 25);
+    --stopped: oklch(0.52 0.02 255);
+    --clarify: oklch(0.5 0.15 300);
+    --llm: oklch(0.58 0.14 260);
+    --tool: oklch(0.7 0.02 255);
+    --shadow: 0 12px 32px oklch(0.3 0.02 255 / 0.16);
+  }
+
+  /* Sans choix forcé, le thème suit le système. */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --bg: oklch(0.985 0.003 255);
+      --surface-1: oklch(1 0 0);
+      --surface-2: oklch(0.965 0.005 255);
+      --surface-3: oklch(1 0 0);
+      --line: oklch(0.9 0.008 255);
+      --line-strong: oklch(0.8 0.01 255);
+      --text: oklch(0.22 0.02 255);
+      --text-2: oklch(0.42 0.02 255);
+      --text-3: oklch(0.5 0.02 255);
+      --accent: oklch(0.52 0.13 215);
+      --accent-ink: oklch(0.99 0 0);
+      --ok: oklch(0.52 0.14 155);
+      --warn: oklch(0.58 0.15 70);
+      --bad: oklch(0.53 0.2 25);
+      --stopped: oklch(0.52 0.02 255);
+      --clarify: oklch(0.5 0.15 300);
+      --llm: oklch(0.58 0.14 260);
+      --tool: oklch(0.7 0.02 255);
+      --shadow: 0 12px 32px oklch(0.3 0.02 255 / 0.16);
+    }
+  }
+}

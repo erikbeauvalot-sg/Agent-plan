@@ -2,57 +2,60 @@
 
 ## Contraintes fixes
 
-- **Pas de build, pas de framework, pas de npm à l'exécution.** HTML, CSS et JavaScript natifs, servis
-  tels quels par FastAPI depuis `poc/src/diagagent/web/static/`. Le POC s'installe avec `pip install -e`
-  et doit le rester.
-- **Aucune ressource chargée depuis Internet** (CDN, Google Fonts, icônes distantes, analytics) :
-  l'agent tourne sur des réseaux fermés et ses données ne sortent pas. Toute bibliothèque tierce est
-  copiée dans `static/vendor/<nom>-<version>/` avec sa licence, et seulement si elle évite beaucoup de
-  code (justifier dans la PR). Le graphe et la chronologie se font en SVG et CSS, sans bibliothèque.
+Décisions du 11 octobre 2026 ([plan](../../../../docs/plan-interface.md)) : TypeScript et React, React Flow
+pour le graphe, bundle versionné.
+
+- **TypeScript strict et React**, compilés par Vite dans `poc/src/diagagent/web/static/dist/`, **versionné**
+  : FastAPI le sert tel quel et le POC s'installe toujours avec `pip install -e`, sans Node. Node n'est
+  nécessaire que pour modifier l'interface. Après toute modification de `poc/web-ui/src/`, lancer
+  `npm run build` et commiter le bundle avec les sources ; la CI le vérifie (`git diff --exit-code`).
+- **Aucune ressource chargée depuis Internet à l'exécution** (CDN, Google Fonts, icônes distantes,
+  analytics) : l'agent tourne sur des réseaux fermés. Les dépendances npm (React, React Flow, Lucide,
+  polices Geist en `@fontsource-variable`) sont empaquetées dans le bundle, leurs licences copiées dans
+  `web-ui/public/licenses/`. Ajouter une dépendance seulement si elle évite beaucoup de code (justifier
+  dans la PR) et noter sa licence.
 - **Navigateurs cibles** : versions récentes de Chrome, Edge, Firefox et Safari. Les fonctions récentes
   (View Transitions, `popover`, positionnement par ancre, `@starting-style`) s'utilisent en amélioration
   progressive : l'écran reste correct sans elles (`@supports`, test de `document.startViewTransition`).
-- **Empaquetage** : `pyproject.toml` déclare `diagagent = ["web/static/*"]`, qui n'inclut **pas** les
-  sous-dossiers. En créant `static/js/`, `static/fonts/`, `static/vendor/`…, passer à
-  `["web/static/**/*"]` et vérifier qu'une installation non éditable sert bien les fichiers.
+- **Empaquetage** : `pyproject.toml` déclare `diagagent = ["web/static/**/*"]` (sous-dossiers compris).
+- **Une seule interface** : depuis les lots 0a et 0b (PR #37), `/` sert `static/dist/index.html` ;
+  l'ancienne interface en JavaScript natif est supprimée.
 
-## Structure cible du front
+## Structure du front
 
 ```
-static/
-  index.html          # squelette des vues, gabarits <template>
-  css/
-    tokens.css        # @layer tokens : couleurs, typo, espacements, mouvement (thèmes clair et sombre)
-    base.css          # @layer base : reset, typographie, focus, liens, formulaires
-    components.css    # @layer components : bouton, puce, carte, nœud, tiroir, palette, toast…
-    views.css         # @layer views : mise en page de chaque écran
-  js/
-    main.js           # démarrage, routage, raccourcis
-    api.js            # fetch, erreurs, 401 → connexion
-    state.js          # réduction des événements (apply), signaux
-    live.js           # EventSource, reconnexion, rattrapage sans animation
-    graph.js          # graphe SVG : nœuds, liens, impulsions
-    timeline.js       # chronologie en cascade
-    views/home.js, views/run.js, views/admin.js, views/login.js
-    ui/palette.js, ui/drawer.js, ui/toast.js, ui/popover.js, ui/dialog.js
-    format.js         # dates fr-FR, durées, tokens, libellés d'états et d'outils
-    md.js             # rendu Markdown minimal et sûr
-  fonts/              # woff2 auto-hébergés + licences
-  icons.svg           # sprite d'icônes
+poc/web-ui/
+  package.json          # npm run dev | build | check (typecheck, lint, test) | format
+  vite.config.ts        # base /static/dist/, sortie versionnée, noms de fichiers fixes, proxy /api en dev
+  public/licenses/      # licences des polices et bibliothèques empaquetées
+  src/
+    main.tsx            # polices, styles, thème, montage
+    App.tsx             # session (/api/me), routage par fragment, vues
+    api/client.ts       # fetch, en-tête X-Diagagent, erreurs, 401 → connexion
+    api/types.ts        # contrats de la passerelle
+    state/runState.ts   # réduction des événements (reduce), signaux, tokens en direct ; testée (Vitest)
+    state/useRunStream  # flux SSE, événements regroupés par image, reprise (Last-Event-ID)
+    lib/                # format (dates fr-FR, durées, tokens), route, theme, storage
+    components/         # TopBar, StateBadge, Markdown, ActionCard, Confirm (<dialog>), ErrorBoundary, icons
+    views/              # Login, Home (home/*), Run (run/* : graphe React Flow, chronologie, tiroir), Admin
+                        # (admin/* : éditeur de configuration, comptes)
+    styles/             # tokens.css, base.css, components.css, views.css, run.css (@layer)
 ```
 
-Modules ES natifs (`<script type="module" src="/static/js/main.js">`), un fichier CSS par couche chargé
-dans l'ordre ou importé avec `@import` en tête de `app.css`. Découper par étapes : on peut garder
-`app.js` et `app.css` pendant la transition et migrer écran par écran.
+Développer : `diagagent --now 2026-10-07T06:00:00Z serve` dans un terminal, `cd poc/web-ui && npm run dev`
+dans un autre (Vite relaie `/api` et `/login` vers le port 8080), puis ouvrir l'adresse donnée par Vite.
+Le formatage suit `.prettierrc` (120 colonnes) ; `npm run check` doit passer avant un commit.
 
 ## Rendu sans tout redessiner
 
-Aujourd'hui `render()` remplace `innerHTML` du graphe à chaque image : aucune animation ni transition ne
-peut survivre, et le focus clavier est perdu à chaque événement. Passer à un **rendu par clé** :
+L'interface actuelle remplace `innerHTML` du graphe à chaque image : aucune animation ne survit et le focus
+clavier est perdu. Dans la nouvelle, l'état vient de `reduce()` (un nouvel objet par événement, l'ancien
+jamais modifié) et React met à jour par clé :
 
-- un élément DOM (ou un groupe SVG) par agent, créé une fois (`data-agent`), puis **mis à jour** champ
-  par champ (classe d'état, texte, largeur de jauge via `transform: scaleX()`, badges) ;
-- regrouper les mises à jour dans `requestAnimationFrame` (déjà fait par `scheduleRender`) ;
+- un nœud React Flow par agent (`id` = `agent_id`), dont seules les données changent (état, texte, jauge
+  via `transform: scaleX()`, badges) ; composants de nœud mémorisés (`memo`) ;
+- regrouper les événements reçus dans une même image (`requestAnimationFrame`) avant de mettre à jour
+  l'état, pour ne pas rendre 50 fois par seconde pendant un rattrapage ;
 - ne recalculer la disposition du graphe que quand un agent naît ou disparaît ;
 - tenir 60 images/s avec 20 agents et 2 000 événements : pas de lecture de mise en page (`offsetWidth`,
   `getBoundingClientRect`) entre deux écritures, pas d'ombres animées, `contain: layout paint` sur les
@@ -75,12 +78,12 @@ de petits cercles SVG animés le long du chemin (`getPointAtLength` calculé une
 
 ## Sécurité
 
-- **Tout texte venant du modèle, des sources ou des utilisateurs est échappé** (`esc()`), y compris
-  dans les attributs. Le rendu Markdown (`md()`) échappe d'abord, puis n'introduit que des balises
-  connues ; garder ce principe, ne jamais insérer de HTML produit par le modèle.
-- Préférer `textContent` et la création d'éléments à `innerHTML` pour les nouveaux composants.
-- Les requêtes passent par `api()` qui envoie l'en-tête `X-Diagagent` (protection CSRF côté serveur) ;
-  ne pas contourner.
+- **Tout texte venant du modèle, des sources ou des utilisateurs passe par React** (texte des éléments,
+  attributs), qui l'échappe. Jamais de `dangerouslySetInnerHTML` sur du contenu produit par le modèle :
+  le rendu Markdown construit des éléments React à partir d'un petit sous-ensemble connu (titres, listes,
+  gras, code, preuves), comme `md()` de l'interface actuelle.
+- Les requêtes passent par `api()` / `post()` de `api/client.ts`, qui envoient l'en-tête `X-Diagagent`
+  (protection CSRF côté serveur) ; ne pas contourner.
 - Pas de données sensibles dans `localStorage` : seulement des préférences (thème, dernier modèle,
   dernières données, onglets).
 - Les droits sont vérifiés par le serveur ; l'écran masque, il ne protège pas.
@@ -103,9 +106,16 @@ investigation enregistrée, ou les jeux d'évaluation avec l'adaptateur `scripte
 
 ## Captures automatiques
 
-Pour vérifier un écran, utiliser Playwright (Python : `pip install playwright` ; navigateur Chromium
-déjà présent ou `playwright install chromium`) dans un script de développement, hors des dépendances du
-POC, par exemple `poc/tools/ui_snapshots.py` :
+`poc/tools/ui_snapshots.py` (Playwright, hors des dépendances du POC) capture la connexion et l'accueil ;
+l'étendre aux nouvelles vues au fil des lots :
+
+```bash
+uv run --with playwright playwright install chromium        # une fois (cache utilisateur, hors dépôt)
+uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8080 --login … --password …
+```
+
+Pour ne pas toucher aux vrais comptes, lancer le serveur sur une copie de la configuration
+(`DIAGAGENT_HOME`) avec un compte de test. Objectif à tenir :
 
 - se connecter, ouvrir l'accueil, une investigation terminée, une investigation en cours (démo en
   direct), le tiroir d'un agent, l'administration ;
