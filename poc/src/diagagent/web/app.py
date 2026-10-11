@@ -22,12 +22,12 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from diagagent import catalog, dashboard, knowledge, learning, playbooks
+from diagagent import catalog, config_files, dashboard, knowledge, learning, playbooks
 from diagagent.llm import model_profiles
 from diagagent.orchestrator import Investigation, ProviderFactory
 from diagagent.runlog import RunLog, _append, _dump, _ts
 
-from .auth import AuthProvider, FileUserStore, Sessions, User, audit
+from .auth import AuthError, AuthProvider, FileUserStore, Sessions, User, audit
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "diagagent_session"
@@ -116,6 +116,27 @@ class ShareBody(BaseModel):
 class DecisionBody(BaseModel):
     accept: bool
     comment: str = Field(default="", max_length=2000)
+
+
+class ConfigBody(BaseModel):
+    path: str = Field(max_length=200)
+    content: str = Field(max_length=500_000)
+    version: str | None = None  # empreinte de la version lue ; None pour un nouveau fichier
+    comment: str = Field(default="", max_length=2000)
+
+
+class NewUserBody(BaseModel):
+    login: str = Field(min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    display_name: str | None = Field(default=None, max_length=120)
+    roles: list[str]
+    password: str = Field(max_length=200)
+
+
+class UserBody(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    roles: list[str] | None = None
+    status: str | None = None
+    password: str | None = Field(default=None, max_length=200)
 
 
 def runs_dir() -> Path:
@@ -583,6 +604,109 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
                 break
         audit(user, "read_access_log", {})
         return out[:max(1, min(limit, 1000))]
+
+    # Configuration depuis l'interface (document d'architecture, « Configuration depuis l'interface »)
+
+    def config_rule(rel: str) -> tuple[str, str]:
+        try:
+            kind, permission, _ = config_files.rule_of(rel)
+        except config_files.ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+        return kind, permission
+
+    @app.get("/api/config")
+    def config_list(user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "view_config")
+        return {"files": [{**f, "editable": user.can(f["permission"])} for f in config_files.list_files()],
+                "creatable": [c for c in config_files.creatable() if user.can(c["permission"])]}
+
+    @app.get("/api/config/file")
+    def config_read(path: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "view_config")
+        _, permission = config_rule(path)
+        try:
+            f = config_files.read(path)
+        except FileNotFoundError as e:
+            raise HTTPException(404, f"Fichier inconnu : {path}") from e
+        return {**f, "editable": user.can(permission)}
+
+    @app.post("/api/config/validate")
+    def config_validate(body: ConfigBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        _, permission = config_rule(body.path)
+        require(user, permission)
+        try:
+            config_files.validate(body.path, body.content)
+        except config_files.ConfigError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
+
+    @app.post("/api/config/file")
+    def config_save(body: ConfigBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        _, permission = config_rule(body.path)
+        require(user, permission)
+        try:
+            saved = config_files.save(body.path, body.content, body.version, user.login, body.comment)
+        except config_files.ConflictError as e:
+            raise HTTPException(409, str(e)) from e
+        except config_files.ConfigError as e:
+            raise HTTPException(422, str(e)) from e
+        audit(user, "config_changed", {"path": body.path, "comment": saved["comment"],
+                                       "before": saved["previous"], "after": saved["version"]})
+        return saved
+
+    @app.get("/api/config/history")
+    def config_history(path: str, user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        require(user, "view_config")
+        config_rule(path)
+        return config_files.history(path)
+
+    @app.get("/api/config/version")
+    def config_version(path: str, id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Une version de l'historique et son écart avec le fichier actuel."""
+        require(user, "view_config")
+        config_rule(path)
+        try:
+            old = config_files.version_text(path, id)
+            current = config_files.read(path)["content"]
+        except (FileNotFoundError, config_files.ConfigError) as e:
+            raise HTTPException(404, str(e)) from e
+        return {"path": path, "id": id, "content": old,
+                "diff": config_files.diff(old, current, f"{path} ({id})", f"{path} (actuel)")}
+
+    # Comptes : formulaire, jamais le fichier brut (les empreintes de mot de passe restent ici)
+
+    def store() -> FileUserStore:
+        if not isinstance(users, FileUserStore):
+            raise HTTPException(501, "Les comptes sont gérés par l'annuaire d'entreprise")
+        return users
+
+    @app.get("/api/users")
+    def users_list(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        require(user, "manage_users")
+        return store().accounts()
+
+    @app.post("/api/users")
+    def users_create(body: NewUserBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "manage_users")
+        try:
+            created = store().add(body.login, body.password, body.roles, body.display_name)
+        except AuthError as e:
+            raise HTTPException(422, str(e)) from e
+        audit(user, "user_created", {"login": created.login, "roles": created.roles})
+        return next(u for u in store().accounts() if u["id"] == created.id)
+
+    @app.post("/api/users/{user_id}")
+    def users_update(user_id: str, body: UserBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        require(user, "manage_users")
+        try:
+            updated = store().update(user_id, body.roles, body.status, body.password, body.display_name)
+        except AuthError as e:
+            raise HTTPException(422, str(e)) from e
+        changes = [k for k in ("display_name", "roles", "status") if getattr(body, k) is not None]
+        audit(user, "user_updated", {"login": updated["login"], "changes": changes,
+                                     "roles": updated["roles"], "status": updated["status"],
+                                     "password_reset": body.password is not None})
+        return updated
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

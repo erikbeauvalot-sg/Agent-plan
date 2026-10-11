@@ -62,7 +62,7 @@ async function boot() {
   $("ref-time").hidden = !me.reference_time;
   if (me.reference_time) $("ref-time").textContent = `Heure de référence figée : ${fmtDate(me.reference_time)} (UTC ${me.reference_time})`;
   $("ask-form").hidden = !me.permissions.includes("ask");
-  $("open-admin").hidden = !["review", "view_indicators", "view_costs", "view_access_log"].some(can);
+  $("open-admin").hidden = !["review", "view_indicators", "view_costs", "view_access_log", "view_config", "manage_users"].some(can);
   categories = await api("/api/categories");
   const options = categories.map((c) => `<option value="${esc(c.id)}" title="${esc(c.description)}">${esc(c.id)}</option>`).join("");
   $("runs-filter").innerHTML = '<option value="">Toutes catégories</option>' + options;
@@ -487,7 +487,177 @@ async function openAdmin() {
   }
   $("proposals-box").hidden = !(can("review") || can("view_indicators"));
   if (!$("proposals-box").hidden) renderProposals(await api("/api/proposals"));
+  $("config-box").hidden = !can("view_config");
+  if (can("view_config")) loadConfigList();
+  $("users-box").hidden = !can("manage_users");
+  if (can("manage_users")) loadUsers();
 }
+
+// ---- Configuration : un éditeur par fichier, validé côté passerelle, versionné et tracé
+
+let configFile = null;   // { path, version, content, editable, isNew }
+
+async function loadConfigList() {
+  const { files, creatable } = await api("/api/config");
+  const groups = {};
+  for (const f of files) (groups[f.group] ||= []).push(f);
+  $("config-files").innerHTML = Object.entries(groups).map(([g, list]) => `<h3>${esc(g)}</h3><ul>${list.map((f) =>
+    `<li><a href="#admin" data-path="${esc(f.path)}" class="${configFile?.path === f.path ? "active" : ""}">${esc(f.path)}</a>
+      ${f.editable ? "" : '<span class="muted">lecture</span>'}</li>`).join("")}</ul>`).join("");
+  $("config-new").hidden = !creatable.length;
+  $("config-create-dir").innerHTML = creatable.map((c) => `<option value="${esc(c.pattern)}">${esc(c.pattern)}</option>`).join("");
+}
+
+function configDirty() {
+  return configFile && configFile.editable && $("config-text").value !== configFile.content;
+}
+
+async function openConfig(path) {
+  if (configDirty() && !confirm("Abandonner les modifications non enregistrées ?")) return;
+  const f = await api(`/api/config/file?path=${encodeURIComponent(path)}`);
+  configFile = { ...f, isNew: false };
+  showConfigEditor();
+  loadConfigList();
+}
+
+function showConfigEditor() {
+  const f = configFile;
+  $("config-editor").hidden = false;
+  $("config-path").textContent = f.isNew ? "Nouveau fichier" : f.path;
+  $("config-mode").textContent = f.editable ? "modifiable" : "lecture seule";
+  $("config-create").hidden = !f.isNew;
+  $("config-text").value = f.content;
+  $("config-text").readOnly = !f.editable;
+  for (const id of ["config-comment", "config-check", "config-save", "config-reset"]) $(id).hidden = !f.editable;
+  $("config-comment").value = "";
+  $("config-msg").textContent = "";
+  $("config-diff").hidden = true;
+  $("config-history-box").hidden = f.isNew;
+  if (!f.isNew) loadConfigHistory();
+}
+
+async function loadConfigHistory() {
+  const list = await api(`/api/config/history?path=${encodeURIComponent(configFile.path)}`);
+  $("config-history").innerHTML = list.map((v) => `<li data-id="${esc(v.id)}">
+    <span>${esc(fmtDate(v.id.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)\d*Z$/, "$1-$2-$3T$4:$5:$6Z")))}</span>
+    <strong>${esc(v.author || "origine")}</strong> <span>${esc(v.comment)}</span>
+    <button type="button" class="link" data-diff="1">Écart avec l'actuel</button>
+    ${configFile.editable ? '<button type="button" class="link" data-restore="1">Reprendre cette version</button>' : ""}
+  </li>`).join("") || '<li class="muted">Jamais modifié depuis l\'interface.</li>';
+}
+
+function configTarget() {
+  if (!configFile.isNew) return configFile.path;
+  const dir = $("config-create-dir").value.replace(/\/[^/]*$/, "");
+  return `${dir}/${$("config-create-name").value.trim()}`;
+}
+
+function configMessage(text, error = false) {
+  $("config-msg").textContent = text;
+  $("config-msg").className = error ? "error" : "muted";
+}
+
+$("config-files").addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-path]");
+  if (!a) return;
+  e.preventDefault();
+  openConfig(a.dataset.path).catch((err) => alert(err.message));
+});
+$("config-new").addEventListener("click", () => {
+  if (configDirty() && !confirm("Abandonner les modifications non enregistrées ?")) return;
+  configFile = { path: "", version: null, content: "", editable: true, isNew: true };
+  showConfigEditor();
+  $("config-create-name").focus();
+});
+$("config-reset").addEventListener("click", () => { $("config-text").value = configFile.content; configMessage(""); });
+$("config-check").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/config/validate", { method: "POST",
+      body: JSON.stringify({ path: configTarget(), content: $("config-text").value }) });
+    configMessage(r.ok ? "Fichier valide." : r.error, !r.ok);
+  } catch (err) { configMessage(err.message, true); }
+});
+$("config-save").addEventListener("click", async () => {
+  try {
+    const path = configTarget();
+    const saved = await api("/api/config/file", { method: "POST", body: JSON.stringify({ path,
+      content: $("config-text").value, version: configFile.version, comment: $("config-comment").value }) });
+    configFile = { ...configFile, path, isNew: false, version: saved.version, content: $("config-text").value };
+    showConfigEditor();
+    configMessage("Enregistré. Les prochaines investigations utiliseront cette version.");
+    loadConfigList();
+  } catch (err) { configMessage(err.message, true); }
+});
+$("config-history").addEventListener("click", async (e) => {
+  const li = e.target.closest("li[data-id]");
+  if (!li) return;
+  try {
+    const v = await api(`/api/config/version?path=${encodeURIComponent(configFile.path)}&id=${encodeURIComponent(li.dataset.id)}`);
+    if (e.target.dataset.diff) {
+      $("config-diff").hidden = false;
+      $("config-diff").textContent = v.diff || "Identique au fichier actuel.";
+    } else if (e.target.dataset.restore) {
+      $("config-text").value = v.content;
+      $("config-comment").value = `Retour à la version du ${li.querySelector("span").textContent}`;
+      configMessage("Version reprise dans l'éditeur : vérifie puis enregistre pour la rétablir.");
+    }
+  } catch (err) { configMessage(err.message, true); }
+});
+window.addEventListener("beforeunload", (e) => { if (configDirty()) e.preventDefault(); });
+
+// ---- Comptes
+
+const ROLE_NAMES = ["lecteur", "operateur", "superviseur", "administrateur", "auditeur"];
+
+function roleBoxes(selected = []) {
+  return ROLE_NAMES.map((r) => `<label class="check"><input type="checkbox" value="${r}" ${selected.includes(r) ? "checked" : ""}> ${r}</label>`).join(" ");
+}
+
+async function loadUsers() {
+  const list = await api("/api/users");
+  $("user-new-roles").innerHTML = roleBoxes(["operateur"]);
+  $("users").innerHTML = `<table><thead><tr><th>Identifiant</th><th>Nom</th><th>Rôles</th><th>État</th><th></th></tr></thead><tbody>
+    ${list.map((u) => `<tr data-id="${esc(u.id)}"><td>${esc(u.login)}</td><td>${esc(u.display_name)}</td>
+      <td class="roles">${roleBoxes(u.roles)} <button type="button" class="link" data-roles="1">Enregistrer les rôles</button></td>
+      <td>${u.status === "active" ? "actif" : "désactivé"}${u.locked_until ? ` <span class="muted">(verrouillé jusqu'à ${esc(fmtDate(u.locked_until))})</span>` : ""}</td>
+      <td><button type="button" class="link" data-status="${u.status === "active" ? "disabled" : "active"}">${u.status === "active" ? "Désactiver" : "Réactiver"}</button>
+        <button type="button" class="link" data-password="1">Nouveau mot de passe…</button></td></tr>`).join("")}</tbody></table>`;
+}
+
+function usersMessage(text, error = false) {
+  $("users-msg").textContent = text;
+  $("users-msg").className = error ? "error" : "muted";
+}
+
+$("users").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  const row = e.target.closest("tr[data-id]");
+  if (!btn || !row) return;
+  let body = null;
+  if (btn.dataset.roles) body = { roles: [...row.querySelectorAll(".roles input:checked")].map((i) => i.value) };
+  else if (btn.dataset.status) body = { status: btn.dataset.status };
+  else if (btn.dataset.password) {
+    const password = prompt("Nouveau mot de passe (12 caractères minimum) :");
+    if (!password) return;
+    body = { password };
+  }
+  try {
+    await api(`/api/users/${row.dataset.id}`, { method: "POST", body: JSON.stringify(body) });
+    usersMessage("Compte mis à jour.");
+    loadUsers();
+  } catch (err) { usersMessage(err.message, true); }
+});
+$("user-new").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  try {
+    await api("/api/users", { method: "POST", body: JSON.stringify({ login: form.login.value, display_name: form.display_name.value || null,
+      roles: [...$("user-new-roles").querySelectorAll("input:checked")].map((i) => i.value), password: form.password.value }) });
+    form.reset();
+    usersMessage("Compte créé.");
+    loadUsers();
+  } catch (err) { usersMessage(err.message, true); }
+});
 
 const KINDS = { add_examples: "ajout d'exemples", add_hypotheses: "ajout d'hypothèses", update_description: "nouvelle description",
                 new_category: "nouvelle catégorie (en observation)", activate: "activation d'une catégorie" };
