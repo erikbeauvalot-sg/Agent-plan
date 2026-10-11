@@ -31,7 +31,7 @@ ENTITY_ALIASES = {"service": ("host", "ci"),
                   # Un événement sur un host ou un service nommé se retrouve dans les incidents et les
                   # alertes : l'agent cherche le ticket lui-même plutôt que de le demander.
                   "ticket": ("host", "service", "ci")}
-GENERIC_NAMES = {"site", "site web", "site internet", "application", "appli", "app", "application web",
+GENERIC_NAMES = {"site", "site web", "site internet", "web", "internet", "application", "appli", "app", "application web",
                  "service", "serveur", "outil", "logiciel", "système", "plateforme", "réseau", "base",
                  "base de données", "appli web", "programme"}
 REQUIRED_KEYS = ("id", "version", "status", "description", "steps", "stop_when", "output", "owner")
@@ -176,6 +176,27 @@ def parse_classification(text: str, books: dict[str, dict[str, Any]]) -> Classif
     return Classification(category, confidence, alternative, entities, missing,
                           [str(c) for c in data.get("choices") or []][:6], str(data.get("reason") or ""),
                           draft_match=draft_match)
+
+
+FACTUAL_START = re.compile(r"^\s*(?:quel(?:le)?s?\b|à quelle (?:heure|date)\b|qui\b|combien\b|comment a été\b|"
+                           r"quand\b)", re.I)
+NOT_FACTUAL = re.compile(r"\b(?:pourquoi|cause|causes|explique|expliquer|analyse|analyser|lent|lente|lents|"
+                         r"lenteurs?|panne|ne fonctionne|indisponible|erreurs?|échou\w*|plante|impact\w*|"
+                         r"probl[eè]me|faire|corriger|résoudre)\b", re.I)
+FACTUAL_FROM = ("performance", "analyse-evenement", "indisponibilite")
+
+
+def factual_override(c: Classification, question: str, books: dict[str, dict[str, Any]]) -> Classification:
+    """Une question qui demande une valeur (« Quelle a été la latence maximale… », « Comment a été résolu
+    INC… ») est information, même classée performance ou analyse : le classifieur réagit au mot
+    « latence » ou au numéro de ticket et lance une investigation complète pour une réponse d'une ligne.
+    Rien ne change si la question parle de cause, de panne ou d'erreur."""
+    if c.category not in FACTUAL_FROM or "information" not in books or books["information"]["status"] != "active":
+        return c
+    if not FACTUAL_START.search(question) or NOT_FACTUAL.search(question):
+        return c
+    return Classification("information", c.confidence, None, dict(c.entities), [], [], c.reason,
+                           draft_match=c.draft_match)
 
 
 def glossary_service(question: str) -> str | None:

@@ -303,3 +303,16 @@ def test_service_named_by_glossary_alias_needs_no_clarification():
         '{"category":"indisponibilite","confidence":"high","entities":{},"missing":["service"]}', books)
     playbooks.complete_entities(site, "Mon site web ne fonctionne pas")
     assert site.missing == ["service"]
+
+
+def test_factual_question_is_information_but_not_a_diagnosis():
+    books = playbooks.load_playbooks()
+    perf = playbooks.Classification("performance", "medium", entities={"host": "srv-pay-01"})
+    factual = playbooks.factual_override(perf, "Quelle a été la latence p95 maximale de srv-pay-01 hier ?", books)
+    assert factual.category == "information" and factual.entities == {"host": "srv-pay-01"}
+    event = playbooks.Classification("analyse-evenement", "high", entities={"ticket": "INC0097012"})
+    assert playbooks.factual_override(event, "Comment a été résolu l'incident INC0097012 ?", books).category == "information"
+    for question in ("Pourquoi srv-pay-01 est-il lent ?", "Quelle est la cause de l'incident INC0098765 ?",
+                     "Quel a été l'impact du change CHG0034567 ?", "Quelles erreurs bloquent les paiements ?"):
+        c = playbooks.Classification("performance", "medium")
+        assert playbooks.factual_override(c, question, books) is c, question

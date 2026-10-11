@@ -1,5 +1,5 @@
 id: information
-version: 2
+version: 3
 status: active
 description: >
   Demande de renseignements sur un objet nommé (host, CI, application, service, équipe, ticket, alerte) :
@@ -14,6 +14,7 @@ examples:
   - "Quel est le statut de l'incident INC0090001 ?"
   - "Comment a été résolu l'incident INC0091234 ?"
   - "Quelle est la valeur actuelle de la mémoire de srv-web-03 ?"
+  - "Quel a été le pic de CPU de db-pay-02 cette nuit ?"
 required_entities: {}
 hypotheses: []
 steps:

@@ -109,3 +109,10 @@ def test_filter_on_an_object_field_names_its_subfields():
         catalog.search("changes", filters={"ci": ["CI0012345", "CI0012400"]})
     res = catalog.search("changes", filters={"ci.id": ["CI0012345", "CI0012400"]}, time_from="2026-10-05T00:00:00Z")
     assert "CHG0034567" in [h["number"] for h in res["hits"]]
+
+
+def test_filters_ignore_case_and_text_fields_match_words():
+    # Recherches réelles de gpt-4.1-mini qui revenaient vides.
+    assert catalog.search("events", filters={"severity": ["MAJOR", "MINOR"], "status": "open"})["total"] == 2
+    hits = catalog.search("events", filters={"host": "srv-pay-01", "message": "latence"})["hits"]
+    assert [h["@timestamp"] for h in hits] == ["2026-10-06T22:12:00Z"]

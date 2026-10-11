@@ -386,6 +386,9 @@ class Investigation:
                 completed = playbooks.complete_entities(c, self.question, names)
                 if completed:
                     self.log.event("lead", "entities_completed", {m: c.entities[m] for m in completed})
+            if (factual := playbooks.factual_override(c, self.question, self.books)) is not c:
+                self.log.event("lead", "factual_question", {"from": c.category, "to": factual.category})
+                c = factual
             source = "classifier"
         decision = playbooks.decide(c, self.books)
         self._set_category(c, decision, source)

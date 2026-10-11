@@ -287,17 +287,24 @@ def _clean(doc: dict[str, Any], exclude: list[str]) -> dict[str, Any]:
     return out
 
 
+def _text_fields(card: dict[str, Any]) -> frozenset[str]:
+    return frozenset(k for k, f in (card.get("fields") or {}).items() if isinstance(f, dict) and f.get("type") == "text")
+
+
 def _matches(doc: dict[str, Any], filters: dict[str, Any] | None, text: str | None,
-             exclude: list[str] | None = None) -> bool:
+             exclude: list[str] | None = None, text_fields: set[str] | frozenset[str] = frozenset()) -> bool:
+    """Filtres sans tenir compte de la casse (« MAJOR » vaut « major », valeur seule ou liste) ; sur un champ
+    de type text (message, short_description), le filtre cherche le mot dans le texte, comme ELK."""
     for key, expected in (filters or {}).items():
         actual = field_value(doc, key)
-        if isinstance(expected, list):
-            if actual not in expected:
+        wanted = [str(e).lower() for e in (expected if isinstance(expected, list) else [expected])]
+        if key in text_fields:
+            if not any(w in str(actual or "").lower() for w in wanted):
                 return False
         elif isinstance(actual, list):
-            if expected not in actual:
+            if not any(str(a).lower() in wanted for a in actual):
                 return False
-        elif str(actual).lower() != str(expected).lower():
+        elif str(actual).lower() not in wanted:
             return False
     # La recherche texte ne porte pas sur les champs masqués : sinon un résultat non vide confirmerait
     # une valeur cachée (adresse de l'appelant, par exemple) sans jamais l'afficher.
@@ -315,7 +322,7 @@ def search(source_id: str, filters: dict[str, Any] | None = None, text: str | No
     time_field = card.get("time_field")
     _check_filters(source_id, filters)
     exclude = limits.get("exclude_fields", [])
-    matching = [d for d in rows(source_id) if _matches(d, filters, text, exclude)]
+    matching = [d for d in rows(source_id) if _matches(d, filters, text, exclude, _text_fields(card))]
     hits, window = matching, None
     if time_field:
         start, end = time_window(time_from, time_to)
@@ -353,7 +360,7 @@ def aggregate(source_id: str, field: str, filters: dict[str, Any] | None = None,
     time_field = card.get("time_field")
     _check_fields(source_id, [field])
     _check_filters(source_id, filters)
-    docs = [d for d in rows(source_id) if _matches(d, filters, None)]
+    docs = [d for d in rows(source_id) if _matches(d, filters, None, text_fields=_text_fields(card))]
     window = None
     if time_field:
         start, end = time_window(time_from, time_to)
