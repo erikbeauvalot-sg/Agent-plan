@@ -25,7 +25,9 @@ scopes:
       État global, sans demande de précision : alertes en cours (list_alerts si Alertmanager est là,
       search sur events avec status open), sources et machines injoignables (list_hosts : cibles down,
       erreurs), incidents ouverts (search sur incidents), changements des dernières 24 h (search sur
-      changes), puis une synthèse par service : ce qui va bien, ce qui ne va pas.
+      changes), puis une synthèse par service : ce qui va bien, ce qui ne va pas. Pour une panne
+      (« la prod est en panne ») : la même recherche limitée à la dernière heure, logs en erreur compris,
+      puis le détail des services ou hosts touchés.
     aliases: [SI, "système d'information", "systèmes d'information", "le SI", "l'ensemble du SI", "tout le SI",
               prod, production, "la prod", "toute la prod", "toute la production", "environnement de production",
               infra, infrastructure, "l'infra", "toute l'infra", "toute l'infrastructure",

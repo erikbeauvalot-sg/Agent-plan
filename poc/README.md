@@ -135,7 +135,7 @@ l'orchestrateur relit la demande : un numéro `INC` ou `CHG`, ou le nom exact d'
 Une **portée globale** (« le SI », « le système d'information », « la prod », « l'infra » : section
 `scopes` de `catalog/glossary.yaml`) n'est ni un service ni un host : l'entité devient `scope: global`,
 aucune précision n'est demandée (événement `global_scope`), `resolve_entity` rend `scope: global` et
-l'agent principal fait un état global (étape `etat-global` du playbook `information`). Dans une phrase,
+l'agent principal fait un état global (étape `etat-global` du playbook `information`). Pour une panne (« la prod est en panne », playbook `indisponibilite`), il cherche d'abord tout ce qui ne fonctionne pas ou a mal fonctionné dans la dernière heure (étape `panne-globale` : alertes, cibles injoignables, incidents, logs en erreur, changements), puis creuse chaque service ou host touché. Ces étapes portent `scope: global` et n'apparaissent dans le playbook que pour une portée globale. Dans une phrase,
 « SI » n'est reconnu qu'en majuscules : « que faire si le disque est plein » n'est pas une portée.
 
 En cours de route, l'agent principal peut appeler `requalify` si les faits contredisent la catégorie ;

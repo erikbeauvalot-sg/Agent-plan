@@ -337,6 +337,28 @@ def test_global_scope_is_not_a_service_and_needs_no_precision():
     assert down.entities == {"scope": "global"} and playbooks.decide(down, books).mode == "playbook"
 
 
+def test_global_outage_looks_at_the_last_hour_first():
+    books = playbooks.load_playbooks()
+    down = playbooks.parse_classification(
+        '{"category": "indisponibilite", "confidence": "high", "entities": {"service": "la prod"}, "missing": ["service"]}',
+        books)
+    text = playbooks.lead_section(playbooks.decide(down, books), down, books, {"events", "host", "logs"})
+    assert "Commence par l'étape panne-globale" in text
+    assert "1. panne-globale (portée globale)" in text and "dernière heure" in text and "2. deja-connu" in text
+    # Pour un service nommé, l'étape globale n'apparaît pas.
+    pay = playbooks.Classification("indisponibilite", "high", entities={"service": "Paiement"})
+    text = playbooks.lead_section(playbooks.decide(pay, books), pay, books, set())
+    assert "panne-globale" not in text and "1. deja-connu" in text
+    info = playbooks.Classification("information", "high", entities={"host": "srv-pay-01"})
+    assert "etat-global" not in playbooks.lead_section(playbooks.decide(info, books), info, books, set())
+
+
+def test_step_scope_is_validated():
+    book = {**playbooks.load_playbooks()["autre"], "steps": [{"name": "x", "direct": "y", "scope": "local"}]}
+    with pytest.raises(playbooks.PlaybookError, match="scope"):
+        playbooks.validate(book)
+
+
 @pytest.mark.parametrize("question", ["Quel est l'état du SI ?", "Fais-moi un bilan du système d'information",
                                       "Est-ce que tout va bien en production ?", "Quel est l'état de la prod ?",
                                       "état de toute l'infrastructure"])
