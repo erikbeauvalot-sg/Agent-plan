@@ -72,6 +72,8 @@ def validate(book: dict[str, Any], stem: str | None = None, roles: set[str] | No
         if "name" not in step or not (step.get("parallel") or step.get("direct")):
             raise PlaybookError(f"{book['id']} : chaque étape a un name et des investigations (parallel) "
                                 f"ou une consigne (direct)")
+        if step.get("scope") not in (None, "global"):
+            raise PlaybookError(f"{book['id']}/{step['name']} : scope ne peut valoir que global")
         for inv in step.get("parallel", []):
             if not inv.get("role") or not inv.get("objective"):
                 raise PlaybookError(f"{book['id']}/{step['name']} : role et objective obligatoires")
@@ -364,7 +366,14 @@ def decide(c: Classification, books: dict[str, dict[str, Any]]) -> Decision:
 
 # Rendu pour l'agent principal
 
-def render(book: dict[str, Any], available_roles: set[str]) -> str:
+def global_steps(book: dict[str, Any]) -> list[str]:
+    """Étapes réservées à une portée globale (« le SI », « la prod ») : `scope: global` dans le playbook."""
+    return [s["name"] for s in book["steps"] if s.get("scope") == "global"]
+
+
+def render(book: dict[str, Any], available_roles: set[str], global_scope: bool = False) -> str:
+    """Playbook tel que le lit l'agent principal. Les étapes `scope: global` n'apparaissent que pour une
+    portée globale, et passent alors en premier."""
     """Le playbook en Markdown, pour le prompt de l'agent principal. Une investigation dont le rôle
     n'est pas disponible (source absente) est marquée, pour que l'agent la saute en le disant."""
     lines = [f"### Playbook {book['id']} (version {book['version']})", " ".join(book["description"].split())]
@@ -372,8 +381,11 @@ def render(book: dict[str, Any], available_roles: set[str]) -> str:
         lines.append("Hypothèses à tester en priorité :")
         lines += [f"- {h['id']} : {h['signal']}" for h in book["hypotheses"]]
     lines.append("Étapes (les investigations d'une même étape sont lancées en parallèle) :")
-    for i, step in enumerate(book["steps"], 1):
-        lines.append(f"{i}. {step['name']}")
+    steps = [s for s in book["steps"] if s.get("scope") != "global"]
+    if global_scope:
+        steps = [s for s in book["steps"] if s.get("scope") == "global"] + steps
+    for i, step in enumerate(steps, 1):
+        lines.append(f"{i}. {step['name']}" + (" (portée globale)" if step.get("scope") == "global" else ""))
         if step.get("direct"):
             lines.append(f"   - {step['direct']}")
         for item in step.get("collect", []):
@@ -395,14 +407,19 @@ def lead_section(decision: Decision, c: Classification, books: dict[str, dict[st
     head = f"Catégorie : {', '.join(decision.categories)} (confiance {c.confidence})."
     if c.entities:
         head += " Entités repérées : " + ", ".join(f"{k} = {v}" for k, v in c.entities.items()) + "."
-    if c.entities.get("scope") == "global":
-        head += (" Portée globale : tout le système d'information. Fais un état global (alertes, sources "
-                 "injoignables, incidents ouverts, changements récents, synthèse par service), sans demander "
-                 "de précision.")
+    scoped = c.entities.get("scope") == "global"
+    if scoped:
+        named = [n for cat in decision.categories for n in global_steps(books[cat])]
+        head += (" Portée globale : tout le système d'information, sans demander de précision. "
+                 + (f"Commence par l'étape {', '.join(named)} ; les étapes suivantes, qui parlent d'un service, "
+                    "s'appliquent à chaque service ou host touché que tu y trouves."
+                    if named else
+                    "Fais un état global (alertes, sources injoignables, incidents ouverts, changements récents, "
+                    "synthèse par service), puis creuse ce qui ne va pas."))
     if decision.mode == "combined":
         head += (" Deux catégories sont plausibles : commence par les étapes communes aux deux playbooks, "
                  "puis tranche avec les faits et appelle requalify pour retenir la bonne.")
-    body = "\n\n".join(render(books[cat], available_roles) for cat in decision.categories)
+    body = "\n\n".join(render(books[cat], available_roles, scoped) for cat in decision.categories)
     return f"{head}\n\n{body}"
 
 

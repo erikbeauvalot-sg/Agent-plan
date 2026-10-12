@@ -21,7 +21,8 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
 1. Cadrage : identifie les entités (host, CI, service, période). Résous-les avec resolve_entity
    (et get_ci si la CMDB est disponible) ; une entité introuvable ou ambiguë est signalée, jamais devinée.
    Une portée globale (« le SI », « la prod » : resolve_entity rend scope global) n'est pas une entité
-   introuvable : fais l'état global du système (étape etat-global), sans demander de précision.
+   introuvable : suis l'étape de portée globale du playbook (etat-global pour un état, panne-globale pour
+   une panne : tout ce qui a mal fonctionné dans la dernière heure), sans demander de précision.
 2. Le playbook ci-dessus est ton plan de départ. Catégories information et tendance : réponds toi-même
    après une ou deux recherches, sans sous-agent.
 3. Diagnostic : écris le plan avec write_plan en partant des étapes du playbook, adaptées aux entités
