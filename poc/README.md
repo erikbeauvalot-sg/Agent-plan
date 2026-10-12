@@ -258,17 +258,26 @@ alors hors période, et l'agent doit élargir lui-même ses recherches. Pour jou
 `diagagent eval`, lancer le serveur avec `--now 2026-10-07T06:00:00Z` ; l'heure figée s'affiche dans la
 barre du haut, et l'heure de référence de chaque investigation sous sa question.
 
-- **Accueil** : la question avec le choix du **modèle** (profils de `config/models.yaml`) et des
-  **données** (démo, maison ou les deux). Une option indisponible reste visible, grisée, avec la raison ;
-  le navigateur retient le dernier choix, sinon le défaut du serveur (`DIAGAGENT_MODELS`,
-  `DIAGAGENT_SOURCES` dans `.env`). Puis : investigations en cours et dernières investigations
-  (recherche, filtre par catégorie, modèle, durée, tokens), **état** des modèles et des sources
-  (Ollama interrogé, clés présentes, cibles Prometheus up, alertes ; aucun appel payant), chiffres du
-  jour, dernier résultat d'éval par modèle, alertes Alertmanager en cours (« Investiguer » préremplit la
-  question), et **statistiques** sur 1, 7 ou 30 jours : réussite par catégorie, par agent (principal et
-  sous-agents par rôle) et par modèle, évaluations exclues sauf demande. Le détail d'une investigation
-  s'ouvre au clic (`#<run_id>`, partageable) ; « ← Accueil » y revient. Le choix **catégorie**
-  (automatique par défaut) impose un playbook sans passer par le classifieur.
+- **Accueil** : la question en grand (`Entrée` lance, `Maj+Entrée` passe à la ligne), avec en puces le
+  choix du **modèle** (profils de `config/models.yaml`), des **données** (démo, maison ou les deux) et de
+  la **catégorie** (automatique par défaut ; une catégorie imposée choisit le playbook sans passer par le
+  classifieur). Une option indisponible reste visible, grisée, avec la raison ; le navigateur retient le
+  dernier choix, sinon le défaut du serveur (`DIAGAGENT_MODELS`, `DIAGAGENT_SOURCES` dans `.env`). Champ
+  vide : suggestions (alertes en cours, tes dernières questions, exemples des playbooks). Dessous : les
+  investigations **en cours** en cartes (mini-graphe des agents, ligne de statut, relues toutes les
+  3 s), puis l'**historique filtrable** : période, utilisateur (rôles qui voient tout), catégorie, statut,
+  host et texte de la question, filtres combinables gardés dans l'adresse (`#?periode=7j&statut=partial`,
+  partageable) et appliqués par l'API (`GET /api/runs?since=…&until=…&user=…&category=…&status=…&host=…&q=…`).
+  À droite : **état** des modèles et des sources (Ollama interrogé, clés présentes, cibles Prometheus up ;
+  aucun appel payant), alertes Alertmanager en cours (« Investiguer » préremplit la question) et chiffres
+  du jour. **Statistiques et évaluations** sont repliées en bas : dernier résultat d'éval par modèle,
+  réussite sur 1, 7 ou 30 jours par catégorie, par agent et par modèle, évaluations exclues sauf demande.
+  Le détail d'une investigation s'ouvre au clic (`#<run_id>`, partageable). Un Lecteur voit les
+  investigations partagées, sans zone de question.
+- **Palette de commandes** (`Ctrl+K` ou `⌘K`, partout, ou le bouton de la barre du haut) : poser une
+  question (le texte tapé devient la question), ouvrir une investigation récente, investiguer une alerte,
+  relancer l'investigation affichée, aller à l'administration, changer de thème, se déconnecter.
+  Raccourcis : `/` va à la question, `g h` à l'accueil, `g a` à l'administration, `?` ouvre la palette.
 - **Relancer…** (sur une investigation) : prépare une nouvelle demande sur l'accueil, préremplie avec la
   question, le modèle, les données et la catégorie imposée ou corrigée de l'investigation d'origine, **sans
   la lancer** : on change la question ou les options, puis « Lancer l'investigation ». La nouvelle

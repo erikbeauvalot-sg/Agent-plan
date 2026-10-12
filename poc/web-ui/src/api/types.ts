@@ -14,6 +14,7 @@ export interface Me {
 export interface Category {
   id: string;
   description: string;
+  examples?: string[];
 }
 
 export interface Choice {
@@ -73,6 +74,7 @@ export interface RunRow {
   label?: string | null;
   tokens?: number | null;
   user: string;
+  live?: LiveSummary;
 }
 
 export type StatusCounts = Partial<Record<RunStatus, number>>;
@@ -323,4 +325,19 @@ export interface Account {
   status: string;
   locked_until: string | null;
   created_at: string;
+}
+
+/** Investigation en cours vue de l'accueil : état de chaque agent et dernière activité. */
+export interface LiveSummary {
+  agents: { id: string; parent: string | null; state: string }[];
+  activity: string;
+  activity_at: string | null;
+}
+
+/** Valeurs proposées par les filtres de l'historique. */
+export interface RunFacets {
+  users: string[];
+  categories: string[];
+  statuses: string[];
+  hosts: string[];
 }

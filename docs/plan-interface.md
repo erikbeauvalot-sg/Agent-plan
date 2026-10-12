@@ -103,6 +103,10 @@ Pour l'utilisateur, l'aspect reste proche de l'actuel ; tout ce qui suit en dép
   filtre sur `GET /api/runs` (aujourd'hui tout est filtré dans le navigateur sur 100 lignes).
 - Colonne d'état : sources, alertes, chiffres du jour ; statistiques repliées.
 - Accueil du Lecteur : investigations partagées seulement ; état vide du premier lancement.
+- Réalisé dans la PR #39 : `GET /api/runs` filtre côté serveur (`since`, `until`, `user`, `category`,
+  `status`, `host`, `q`, `offset`) et porte l'état des agents des investigations en cours (`live`) ;
+  `GET /api/runs/facets` donne les valeurs des filtres. Reporté au lot 2 : le titre de l'investigation
+  dans la barre du haut et la transition de vue de la question vers ce titre.
 
 ### Lot 2 : investigation en direct et signaux
 

@@ -368,3 +368,23 @@ def test_ui_is_served_with_every_asset(env):
     assert fonts and all(c.get(f).status_code == 200 for f in fonts)
 
 
+
+
+def test_history_is_filtered_by_the_api(env):
+    app, script = env
+    script["lead"] = ScriptedProvider([answer("## Synthèse\nok"), answer("## Synthèse\nok")])
+    alice = client(app, "alice")
+    first = alice.post("/api/runs", json={"question": "Qui est srv-pay-01 ?"}, headers=H).json()["run_id"]
+    wait_status(alice, first)
+    second = alice.post("/api/runs", json={"question": "Tout va bien ?"}, headers=H).json()["run_id"]
+    wait_status(alice, second)
+    ids = lambda q: [r["run_id"] for r in alice.get("/api/runs" + q).json()]  # noqa: E731
+    assert ids("") == [second, first]
+    assert ids("?host=pay") == [first] and ids("?q=tout") == [second]
+    assert ids("?status=completed&user=alice&since=2000-01-01") == [second, first]
+    assert ids("?status=failed") == [] and ids("?until=2000-01-01") == []
+    assert ids("?limit=1&offset=1") == [first]
+    facets = alice.get("/api/runs/facets").json()
+    assert "srv-pay-01" in facets["hosts"] and facets["statuses"] == ["completed"]
+    assert facets["users"] == []  # un Opérateur ne voit que ses investigations : pas de filtre utilisateur
+    assert client(app, "admin").get("/api/runs/facets").json()["users"] == ["alice"]

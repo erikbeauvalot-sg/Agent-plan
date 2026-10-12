@@ -218,3 +218,84 @@ def last_evals(results_dir: Path, manifest_of_run: Callable[[str], dict[str, Any
         if len(seen) >= limit:
             break
     return list(seen.values())
+
+
+# Historique filtrable et investigations en cours (accueil).
+
+RUN_FILTERS = ("since", "until", "user", "category", "status", "host", "q")
+
+
+def _agent_name(agent_id: str) -> str:
+    return "Agent principal" if agent_id == "lead" else agent_id.split("-", 1)[0]
+
+
+def _target(agent_id: str) -> str | None:
+    """Cible d'un sous-agent d'après son identifiant (T01-host-mq-01 → mq-01)."""
+    parts = agent_id.split("-", 2)
+    return parts[2] if len(parts) == 3 else None
+
+
+def hosts_of(row: dict[str, Any], manifest: dict[str, Any], known: set[str]) -> list[str]:
+    """Hosts concernés par une investigation : host repéré par le classifieur, hosts connus cités dans la
+    question ou visés par un sous-agent."""
+    entities = (manifest.get("category") or {}).get("entities") or {}
+    found = {str(v) for k in ("host", "hosts") for v in ([entities[k]] if isinstance(entities.get(k), str)
+                                                          else entities.get(k) or [])}
+    text = row.get("question", "").lower()
+    found |= {h for h in known if h.lower() in text}
+    found |= {t for t in map(_target, (manifest.get("subagents") or {})) if t in known}
+    return sorted(found)
+
+
+def run_matches(row: dict[str, Any], filters: dict[str, str], hosts: Callable[[], list[str]]) -> bool:
+    """Filtres de l'historique, combinés : période (dates ISO, bornes comprises), utilisateur, catégorie,
+    statut (plusieurs séparés par des virgules), host (partie du nom) et texte de la question."""
+    day = row.get("started_at", "")[:10]
+    if filters.get("since") and day < filters["since"][:10]:
+        return False
+    if filters.get("until") and day > filters["until"][:10]:
+        return False
+    if filters.get("user") and row.get("user") != filters["user"]:
+        return False
+    if filters.get("category") and row.get("category") != filters["category"]:
+        return False
+    if filters.get("status") and row.get("status") not in filters["status"].split(","):
+        return False
+    if filters.get("q") and filters["q"].strip().lower() not in row.get("question", "").lower():
+        return False
+    if filters.get("host"):
+        needle = filters["host"].strip().lower()
+        return any(needle in h.lower() for h in hosts())
+    return True
+
+
+def live_summary(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Aperçu d'une investigation en cours : état de chaque agent (mini-graphe) et ligne de statut tirée du
+    dernier événement parlant."""
+    agents: dict[str, dict[str, Any]] = {}
+    line, at = "Démarrage", None
+    for e in events:
+        aid, kind, d = e.get("agent_id", "lead"), e.get("type"), e.get("data") or {}
+        a = agents.setdefault(aid, {"id": aid, "parent": e.get("parent_id"), "state": "pending"})
+        who = _agent_name(aid)
+        if kind == "agent_started":
+            a["state"] = "running"
+        elif kind == "agent_ended":
+            a["state"] = d.get("status") or "completed"
+        elif kind == "stop_requested" and d.get("scope") == "agent":
+            a["state"] = "stopping"
+        text = {
+            "classification_started": "Classement de la demande",
+            "request_classified": f"Demande classée : {d.get('category')}" if d.get("category") else None,
+            "agent_spawned": f"{who} lancé : {d.get('objective')}" if d.get("objective") else f"{who} lancé",
+            "llm_call_started": f"{who} réfléchit",
+            "tool_call_started": f"{who} appelle {d.get('tool')}"
+                                 + (f" ({(d.get('arguments') or {}).get('source')})"
+                                    if isinstance(d.get("arguments"), dict) and d["arguments"].get("source") else ""),
+            "report_submitted": f"{who} a rendu son rapport",
+            "agent_ended": f"{who} terminé",
+            "plan_written": "Plan d'investigation écrit",
+        }.get(kind or "")
+        if text:
+            line, at = text, e.get("ts")
+    return {"agents": list(agents.values()), "activity": line, "activity_at": at}

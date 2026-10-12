@@ -4,6 +4,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/views.css";
+import "./styles/home.css";
 import "./styles/run.css";
 
 import { StrictMode } from "react";

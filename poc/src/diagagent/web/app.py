@@ -338,7 +338,8 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     @app.get("/api/categories")
     def categories(user: User = Depends(current_user)) -> list[dict[str, Any]]:
-        return [{"id": b["id"], "version": b["version"], "description": " ".join(b["description"].split())}
+        return [{"id": b["id"], "version": b["version"], "description": " ".join(b["description"].split()),
+                 "examples": list(b.get("examples") or [])}
                 for b in playbooks.load_playbooks().values()]
 
     @app.post("/api/runs/{run_id}/category")
@@ -413,16 +414,58 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         return p
 
     @app.get("/api/runs")
-    def list_runs(limit: int = 100, user: User = Depends(current_user)) -> list[dict[str, Any]]:
-        """Investigations visibles, les plus récentes d'abord, avec modèles, durée et tokens."""
-        rows = visible_runs(user)[:max(1, min(limit, 1000))]
+    def list_runs(request: Request, limit: int = 100, offset: int = 0,
+                  user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        """Investigations visibles, les plus récentes d'abord, avec modèles, durée et tokens. Filtres
+        combinables en paramètres : since, until, user, category, status, host, q (voir run_matches).
+        Une investigation en cours porte l'état de ses agents et sa ligne de statut (live)."""
+        filters = {k: v for k in dashboard.RUN_FILTERS if (v := request.query_params.get(k))}
+        rows = [r for r in visible_runs(user)
+                if dashboard.run_matches(r, filters, lambda r=r: run_hosts(r))]
         out = []
-        for r in rows:
+        for r in rows[max(0, offset):max(0, offset) + max(1, min(limit, 1000))]:
             if r["status"] != "running":
-                r = dashboard.enrich(r, lambda row: read_json(runs_dir() / row["path"] / "manifest.json") or {})
+                r = dashboard.enrich(r, manifest_of)
+            elif (live := manager.live.get(r["run_id"])) is not None:
+                r = {**r, "live": dashboard.live_summary(live_events(live.log.dir))}
             out.append({**r, "label": dashboard.label(r), "duration_s": dashboard._duration(r),
                         "tokens": dashboard._tokens(r)})
         return out
+
+    @app.get("/api/runs/facets")
+    def run_facets(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Valeurs proposées par les filtres de l'historique, d'après les investigations visibles."""
+        rows = visible_runs(user)
+        return {"users": sorted({r["user"] for r in rows}) if user.can("view_all") else [],
+                "categories": sorted({r["category"] for r in rows if r.get("category")}),
+                "statuses": sorted({r["status"] for r in rows}),
+                "hosts": sorted({h for r in rows for h in run_hosts(r)})}
+
+    def manifest_of(row: dict[str, Any]) -> dict[str, Any]:
+        return read_json(runs_dir() / row["path"] / "manifest.json") or {}
+
+    def live_events(path: Path) -> list[dict[str, Any]]:
+        file = path / "events.jsonl"
+        lines = file.read_text(encoding="utf-8").splitlines() if file.exists() else []
+        return [json.loads(line) for line in lines if line.strip()]
+
+    hosts_cache: dict[str, list[str]] = {}
+
+    def run_hosts(row: dict[str, Any]) -> list[str]:
+        """Hosts d'une investigation terminée, gardés en mémoire (une trace terminée ne change plus)."""
+        if row["status"] == "running" or "path" not in row:
+            live = manager.live.get(row["run_id"])
+            manifest = live.log.manifest if live else {}
+            return dashboard.hosts_of(row, manifest, known_hosts())
+        if row["run_id"] not in hosts_cache:
+            hosts_cache[row["run_id"]] = dashboard.hosts_of(row, manifest_of(row), known_hosts())
+        return hosts_cache[row["run_id"]]
+
+    def known_hosts() -> set[str]:
+        try:
+            return {str(c["hostname"]) for c in catalog.rows("cmdb") if c.get("hostname")}
+        except Exception:  # CMDB absente du catalogue : seuls les hosts repérés par le classifieur comptent
+            return set()
 
     def visible_runs(user: User) -> list[dict[str, Any]]:
         index = runs_dir() / "index.jsonl"

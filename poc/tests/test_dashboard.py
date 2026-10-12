@@ -77,3 +77,43 @@ def test_models_status_never_calls_a_paid_api(monkeypatch):
     assert not status["openai"]["ok"] and "OPENAI_API_KEY absente" in status["openai"]["detail"]
     assert not status["gros"]["ok"] and "qwen3:32b" in status["gros"]["detail"]
     assert all(c.startswith("http://localhost") for c in calls)  # seul le serveur local est interrogé
+
+
+def test_history_filters_combine():
+    r = {**row("a", NOW, "completed", category="diagnostic"), "question": "Pourquoi srv-pay-01 est lent ?"}
+    hosts = lambda: ["srv-pay-01"]  # noqa: E731
+    assert dashboard.run_matches(r, {}, hosts)
+    assert dashboard.run_matches(r, {"since": "2026-10-10", "until": "2026-10-10T23:00", "user": "alice",
+                                     "category": "diagnostic", "status": "partial,completed",
+                                     "host": "PAY", "q": "LENT"}, hosts)
+    for f in ({"since": "2026-10-11"}, {"until": "2026-10-09"}, {"user": "bob"}, {"category": "information"},
+              {"status": "failed"}, {"host": "crm"}, {"q": "disque"}):
+        assert not dashboard.run_matches(r, f, hosts), f
+
+
+def test_hosts_of_an_investigation():
+    manifest = {"category": {"entities": {"host": "srv-db-02"}},
+                "subagents": {"T01-host-mq-01": {}, "T02-service-paiement": {}}}
+    known = {"srv-pay-01", "mq-01", "srv-crm-01"}
+    assert dashboard.hosts_of({"question": "srv-pay-01 et le reste ?"}, manifest, known) == \
+        ["mq-01", "srv-db-02", "srv-pay-01"]
+
+
+def test_live_summary_gives_agent_states_and_status_line():
+    ev = lambda aid, kind, data=None, parent=None: {"agent_id": aid, "parent_id": parent, "type": kind,  # noqa: E731
+                                                    "data": data or {}, "ts": "2026-10-10T12:00:00Z"}
+    summary = dashboard.live_summary([
+        ev("lead", "classification_started"), ev("lead", "agent_started"),
+        ev("T01-metrics-srv-pay-01", "agent_spawned", {"objective": "latence"}, "lead"),
+        ev("T01-metrics-srv-pay-01", "agent_started", parent="lead"),
+        ev("T02-logs-srv-pay-01", "agent_spawned", {"objective": "erreurs"}, "lead"),
+        ev("T02-logs-srv-pay-01", "agent_started", parent="lead"),
+        ev("T02-logs-srv-pay-01", "agent_ended", {"status": "completed"}, "lead"),
+        ev("T01-metrics-srv-pay-01", "tool_call_started", {"tool": "query_metrics",
+                                                           "arguments": {"source": "prometheus"}}, "lead"),
+        ev("T01-metrics-srv-pay-01", "tool_call_ended", {"tool": "query_metrics"}, "lead"),
+    ])
+    assert [(a["id"], a["parent"], a["state"]) for a in summary["agents"]] == [
+        ("lead", None, "running"), ("T01-metrics-srv-pay-01", "lead", "running"),
+        ("T02-logs-srv-pay-01", "lead", "completed")]
+    assert summary["activity"] == "T01 appelle query_metrics (prometheus)"

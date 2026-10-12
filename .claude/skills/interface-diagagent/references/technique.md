@@ -35,11 +35,13 @@ poc/web-ui/
     api/types.ts        # contrats de la passerelle
     state/runState.ts   # réduction des événements (reduce), signaux, tokens en direct ; testée (Vitest)
     state/useRunStream  # flux SSE, événements regroupés par image, reprise (Last-Event-ID)
-    lib/                # format (dates fr-FR, durées, tokens), route, theme, storage
-    components/         # TopBar, StateBadge, Markdown, ActionCard, Confirm (<dialog>), ErrorBoundary, icons
+    lib/                # format (dates fr-FR, durées, tokens), route, theme, storage, history (filtres de
+                        # l'historique dans l'adresse), fuzzy (recherche de la palette), prefill (question préremplie)
+    components/         # TopBar, CommandPalette (Ctrl+K), Popover (puces et menus), MiniGraph, StateBadge,
+                        # Markdown, ActionCard, Confirm (<dialog>), ErrorBoundary, icons
     views/              # Login, Home (home/*), Run (run/* : graphe React Flow, chronologie, tiroir), Admin
                         # (admin/* : éditeur de configuration, comptes)
-    styles/             # tokens.css, base.css, components.css, views.css, run.css (@layer)
+    styles/             # tokens.css, base.css, components.css, views.css, home.css, run.css (@layer)
 ```
 
 Développer : `diagagent --now 2026-10-07T06:00:00Z serve` dans un terminal, `cd poc/web-ui && npm run dev`
