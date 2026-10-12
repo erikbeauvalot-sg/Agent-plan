@@ -4,7 +4,7 @@
     uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8080 --login … --password … \
         --run 20261011T142151Z-dae2
 
-Captures dans poc/.snapshots/ (ignoré par git) : connexion, accueil, investigation (--run), tiroir de l'agent
+Captures dans poc/.snapshots/ (ignoré par git) : connexion, accueil, palette de commandes, investigation (--run), tiroir de l'agent
 principal, administration ; en 1440, 1024 et 390 px, thèmes sombre et clair, et l'accueil en mouvement réduit.
 Regarder les images avant de conclure.
 """
@@ -26,7 +26,7 @@ def login(page: Page, base: str, user: str, password: str) -> None:
     page.fill("input[name=login]", user)
     page.fill("input[name=password]", password)
     page.click("button[type=submit]")
-    page.wait_for_selector("text=Dernières investigations")
+    page.wait_for_selector("#runs-title, #welcome-title")
     page.wait_for_load_state("networkidle")
 
 
@@ -52,6 +52,11 @@ def main() -> None:
                 page.screenshot(path=out / f"connexion-{scheme}-{name}.png")
                 login(page, args.base, args.login, args.password)
                 page.screenshot(path=out / f"accueil-{scheme}-{name}.png", full_page=True)
+                page.keyboard.press("Control+k")
+                page.wait_for_selector(".palette[open] .palette-item")
+                page.wait_for_timeout(250)
+                page.screenshot(path=out / f"palette-{scheme}-{name}.png")
+                page.keyboard.press("Escape")
                 if args.run:
                     page.goto(f"{args.base}/#{args.run}")
                     page.wait_for_selector(".agent-node")

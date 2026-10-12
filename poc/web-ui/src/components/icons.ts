@@ -2,7 +2,12 @@
 // Une icône par état (direction-visuelle.md) ; « partiel » est un cercle à moitié plein.
 export {
   Activity,
+  ArrowUp,
   ArrowUpRight,
+  ChevronDown,
+  Command,
+  CornerDownLeft,
+  Lightbulb,
   CircleCheck,
   CircleHelp,
   CircleSlash,
@@ -16,10 +21,13 @@ export {
   LogOut,
   Monitor,
   Moon,
+  Play,
   RefreshCw,
   Search,
   Settings,
   Square,
   Sun,
   TriangleAlert,
+  UserRound,
+  X,
 } from "lucide-react";
