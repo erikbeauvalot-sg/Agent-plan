@@ -1,13 +1,15 @@
 id: indisponibilite
-version: 1
+version: 2
 status: active
 description: >
   Un service ou une fonction ne répond plus ou renvoie des erreurs pour les utilisateurs. On part du
-  service métier et on descend la chaîne de dépendances.
+  service métier et on descend la chaîne de dépendances. Pour une panne globale (« la prod est en
+  panne »), on cherche d'abord tout ce qui ne fonctionne pas ou a mal fonctionné dans la dernière heure.
 examples:
   - "Mon site web ne fonctionne pas"
   - "L'application Paiement renvoie des erreurs 500"
   - "Impossible de se connecter à l'extranet"
+  - "La prod est en panne"
 required_entities:
   service: "De quel site ou application parles-tu ?"
 hypotheses:
@@ -20,6 +22,19 @@ hypotheses:
   - id: certificat-expire
     signal: "erreurs TLS ou date d'expiration dépassée"
 steps:
+  - name: panne-globale
+    scope: global
+    direct: >
+      Portée globale (« la prod est en panne ») : l'agent principal cherche lui-même tout ce qui ne
+      fonctionne pas ou a mal fonctionné dans la dernière heure avant l'heure de référence, sans
+      demander de service.
+    collect:
+      - "Alertes en cours ou déclenchées depuis 1 h : list_alerts si Alertmanager est présent, sinon search sur events"
+      - "Sources et machines injoignables : list_hosts (cibles down, erreurs de collecte)"
+      - "Incidents ouverts ou créés depuis 1 h : search sur incidents"
+      - "Erreurs dans les logs depuis 1 h, par host : search sur les logs (niveau error ou fatal)"
+      - "Changements terminés, échoués ou en cours depuis 1 h : search sur changes"
+      - "Puis les étapes suivantes, en parallèle, sur chaque service ou host touché ; rien de touché : le dire, avec ce qui a été vérifié"
   - name: deja-connu
     parallel:
       - {role: events,  objective: "alertes ouvertes sur le service et ses CI"}

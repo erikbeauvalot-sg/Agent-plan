@@ -488,7 +488,8 @@ class Investigation:
                              playbooks={target: self.books[target]["version"]})
         self.log.update_manifest(category=self.category)
         self.log.event("lead", "category_changed", {"from": previous, "to": target, "reason": args.get("reason", "")})
-        return playbooks.render(self.books[target], set(self.roles))
+        scoped = (self.category.get("entities") or {}).get("scope") == "global"
+        return playbooks.render(self.books[target], set(self.roles), scoped)
 
     def _lead_tools(self) -> dict[str, LocalTool]:
         role_names = list(self.roles)

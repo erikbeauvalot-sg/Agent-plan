@@ -1,5 +1,5 @@
 id: information
-version: 4
+version: 5
 status: active
 description: >
   Demande de renseignements sur un objet nommé (host, CI, application, service, équipe, ticket, alerte) :
@@ -26,9 +26,10 @@ steps:
       - "Résoudre l'objet nommé (resolve_entity, fiche CMDB)"
       - "Selon la question : dépendances, propriétaires, incidents ou changements ouverts ou récents, alertes"
   - name: etat-global
+    scope: global
     direct: >
-      Seulement pour une portée globale (entité scope = global, ou resolve_entity rend scope global) :
-      l'agent principal répond lui-même, sans sous-agent et sans demander de précision.
+      Portée globale (entité scope = global, ou resolve_entity rend scope global) : l'agent principal
+      répond lui-même, sans sous-agent et sans demander de précision.
     collect:
       - "Alertes en cours : list_alerts si Alertmanager est présent, sinon search sur events (status open)"
       - "Sources et machines injoignables : list_hosts (cibles down, erreurs de collecte)"
