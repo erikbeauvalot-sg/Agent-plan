@@ -15,7 +15,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { StateBadge } from "../../components/StateBadge";
 import { fmtDuration, fmtTokens, statusLabel } from "../../lib/format";
 import { type AgentState, type RunState, signals } from "../../state/runState";
@@ -38,10 +38,16 @@ function useViewportWidth(): number {
   return width;
 }
 
-type AgentNodeData = { agent: AgentState; now: number; fromServer: boolean; born: boolean; hover: boolean };
+type AgentNodeData = {
+  agent: AgentState;
+  now: number;
+  fromServer: boolean;
+  born: boolean;
+  onHover: (agentId: string | null) => void;
+};
 
 const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<AgentNodeData>>) {
-  const { agent: a, now, fromServer, born, hover } = data;
+  const { agent: a, now, fromServer, born, onHover } = data;
   const sigs = signals(a, now, fromServer);
   const working = a.status === "running" && a.current;
   const ratio = a.maxTools ? Math.min(1, a.toolCalls / a.maxTools) : 0;
@@ -53,7 +59,8 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<AgentNodeData
       data-status={a.status}
       data-signal={sigs.some((s) => s.bad) ? "bad" : sigs.length ? "warn" : ""}
       data-born={born ? "" : undefined}
-      data-hover={hover ? "" : undefined}
+      onMouseEnter={() => onHover(a.id)}
+      onMouseLeave={() => onHover(null)}
     >
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <div className="agent-head">
@@ -145,13 +152,19 @@ const edgeTypes = { pulse: PulseEdge };
 
 /** Recadre le graphe quand un agent naît (ou que la largeur change le nombre de nœuds par rangée). */
 function FitOnGrowth({ count, perRow }: { count: number; perRow: number }) {
+  // fitView change d'identité à chaque rendu : en dépendance, le moindre survol recadrait le graphe et le
+  // nœud se dérobait sous la souris (clic perdu). On le garde dans une référence.
   const { fitView } = useReactFlow();
+  const fit = useRef(fitView);
+  useEffect(() => {
+    fit.current = fitView;
+  }, [fitView]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      void fitView({ padding: 0.08, maxZoom: 1, minZoom: 0.3, duration: REDUCED ? 0 : 200 });
+      void fit.current({ padding: 0.08, maxZoom: 1, minZoom: 0.3, duration: REDUCED ? 0 : 200 });
     });
     return () => cancelAnimationFrame(frame);
-  }, [count, perRow, fitView]);
+  }, [count, perRow]);
   return null;
 }
 
@@ -188,6 +201,44 @@ export function AgentGraph({ run, now, onOpen, fromServer, liveSince, hover, onH
   const contentWidth = Math.max(NODE_W, Math.min(children.length, perRow) * (NODE_W + GAP_X) - GAP_X) + 40;
   const scale = Math.max(0.3, Math.min(1, (viewport - 72) / contentWidth));
   const height = Math.max(180, Math.round((200 + rows * ROW_H) * scale));
+  if (!run.agents.lead) return <p className="muted">En attente du premier événement…</p>;
+  // Le survol n'est qu'une règle CSS ciblant le nœud et son lien : le graphe (mémorisé) n'est pas redessiné.
+  // Redonner des nœuds neufs à React Flow à chaque survol lui faisait perdre le pointeur (survol, clic).
+  const target = hover ? hover.replace(/["\\]/g, "") : null;
+  return (
+    <>
+      {target && (
+        <style>{`.graph .react-flow__node[data-id="${target}"] .agent-node{background:var(--surface-2);border-color:var(--accent)}
+.graph .react-flow__edge[data-id="lead-${target}"] .react-flow__edge-path{stroke:var(--accent);stroke-width:2.5}`}</style>
+      )}
+      <div className="graph" style={{ height }} aria-hidden="true">
+        <Flow
+          run={run}
+          now={now}
+          perRow={perRow}
+          fromServer={fromServer}
+          liveSince={liveSince}
+          onOpen={onOpen}
+          onHover={onHover}
+        />
+      </div>
+      <AgentList run={run} onOpen={onOpen} />
+    </>
+  );
+}
+
+interface FlowProps {
+  run: RunState;
+  now: number;
+  perRow: number;
+  fromServer: boolean;
+  liveSince: number | null;
+  onOpen: (agentId: string) => void;
+  onHover: (agentId: string | null) => void;
+}
+
+const Flow = memo(function Flow({ run, now, perRow, fromServer, liveSince, onOpen, onHover }: FlowProps) {
+  const children = run.order.filter((id) => id !== "lead");
   // La disposition ne dépend que de la liste des agents (calcul léger, mêmes positions à chaque rendu) :
   // un nœud ne bouge pas quand ses données changent.
   const layout = layoutOf(children, perRow);
@@ -203,62 +254,62 @@ export function AgentGraph({ run, now, onOpen, fromServer, liveSince, hover, onH
         now,
         fromServer,
         born: liveSince !== null && run.agents[id]!.start >= liveSince,
-        hover: hover === id,
+        onHover,
       },
       draggable: false,
     }));
-  const edges: Edge[] = (run.agents.lead ? children : []).map((id) => ({
+  const edges: Edge[] = children.map((id) => ({
     id: `lead-${id}`,
     source: "lead",
     target: id,
     type: "pulse",
-    className: `edge-${run.agents[id]!.status}${hover === id ? " edge-hover" : ""}`,
+    className: `edge-${run.agents[id]!.status}`,
     data: {
       pulses: run.agents[id]!.toolCalls + Object.keys(run.agents[id]!.calls).length,
       animate: liveSince !== null,
     },
   }));
 
-  if (!run.agents.lead) return <p className="muted">En attente du premier événement…</p>;
   return (
-    <>
-      <div className="graph" style={{ height }} aria-hidden="true">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodeClick={(_, n) => onOpen(n.id)}
-          onNodeMouseEnter={(_, n) => onHover(n.id)}
-          onNodeMouseLeave={() => onHover(null)}
-          fitView
-          fitViewOptions={{ padding: 0.08, maxZoom: 1, minZoom: 0.3 }}
-          minZoom={0.3}
-          nodesConnectable={false}
-          nodesDraggable={false}
-          elementsSelectable={false}
-          zoomOnScroll={false}
-          panOnScroll={false}
-          preventScrolling={false}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={24} size={1} />
-          <FitOnGrowth count={nodes.length} perRow={perRow} />
-        </ReactFlow>
-      </div>
-      <ul className="agent-list visually-hidden-focusable" aria-label="Agents de l'investigation">
-        {run.order.map((id) => {
-          const a = run.agents[id]!;
-          return (
-            <li key={id}>
-              <button type="button" className="link" onClick={() => onOpen(id)}>
-                {id === "lead" ? "Agent principal" : id}
-              </button>{" "}
-              : {statusLabel(a.status)}, {a.toolCalls} appels d'outils{a.objective ? `, ${a.objective}` : ""}
-            </li>
-          );
-        })}
-      </ul>
-    </>
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
+      onNodeClick={(_, n) => onOpen(n.id)}
+      minZoom={0.3}
+      nodesConnectable={false}
+      nodesDraggable={false}
+      elementsSelectable={false}
+      zoomOnScroll={false}
+      panOnScroll={false}
+      // Pas de déplacement à la souris : le graphe se cadre seul, et le glisser du fond capturait le
+      // pointeur posé sur un nœud (non déplaçable), si bien que le clic n'ouvrait plus le tiroir.
+      panOnDrag={false}
+      preventScrolling={false}
+      proOptions={{ hideAttribution: true }}
+    >
+      <Background gap={24} size={1} />
+      <FitOnGrowth count={nodes.length} perRow={perRow} />
+    </ReactFlow>
+  );
+});
+
+/** Équivalent textuel du graphe pour les lecteurs d'écran. */
+function AgentList({ run, onOpen }: { run: RunState; onOpen: (agentId: string) => void }) {
+  return (
+    <ul className="agent-list visually-hidden-focusable" aria-label="Agents de l'investigation">
+      {run.order.map((id) => {
+        const a = run.agents[id]!;
+        return (
+          <li key={id}>
+            <button type="button" className="link" onClick={() => onOpen(id)}>
+              {id === "lead" ? "Agent principal" : id}
+            </button>{" "}
+            : {statusLabel(a.status)}, {a.toolCalls} appels d'outils{a.objective ? `, ${a.objective}` : ""}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

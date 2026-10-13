@@ -204,6 +204,72 @@ def test_stop_subagent_from_the_interface(env):
     assert stop["data"] == {"by": "alice", "scope": "agent"}
 
 
+def test_pilot_running_agents_instruction_budget_restart(env, tmp_path):
+    """Consigne remise à l'agent principal avant son prochain appel, budget relevé par un Superviseur,
+    sous-agent relancé avec un prompt corrigé dont le rapport est remis à l'agent principal."""
+    app, script = env
+    sub_go, lead_go = threading.Event(), threading.Event()
+    final_request = {}
+
+    def sub_blocked(request):
+        assert sub_go.wait(20)
+        return tools(("submit_report", {"status": "completed", "summary": "cpu normal", "findings": []}))
+
+    def lead_blocked(request):
+        assert lead_go.wait(20)
+        return tools(("list_sources", {}))
+
+    def lead_final(request):
+        final_request["messages"] = [m.content for m in request.messages if m.role == "user"]
+        return answer("## Synthèse\nok")
+
+    script["lead"] = ScriptedProvider([
+        tools(("spawn_subagent", {"role": "metrics", "entity": "srv-pay-01", "objective": "CPU", "period": "24 h"})),
+        tools(("wait_subagents", {"task_ids": ["T01-metrics-srv-pay-01"]})),
+        lead_blocked, lead_final])
+    script["metrics"] = ScriptedProvider([sub_blocked, tools(("submit_report", {
+        "status": "completed", "summary": "relance : mémoire saturée", "findings": []}))])
+    alice, bob, admin = client(app, "alice"), client(app, "bob"), client(app, "admin")
+    run_id = alice.post("/api/runs", json={"question": "Lenteurs ?"}, headers=H).json()["run_id"]
+    base = f"/api/runs/{run_id}"
+
+    def events(kind):  # lus sur disque : le flux SSE ne se termine qu'avec l'investigation
+        path = next((tmp_path / "runs").glob(f"**/{run_id}/events.jsonl"), None)
+        lines = path.read_text().splitlines() if path else []
+        return [e for e in map(json.loads, lines) if e["type"] == kind]
+
+    def until(cond):
+        deadline = time.time() + 20
+        while not cond():
+            assert time.time() < deadline
+            time.sleep(0.05)
+
+    budget_url = f"{base}/agents/T01-metrics-srv-pay-01/budget"
+    until(lambda: events("agent_started") and any(e["agent_id"].startswith("T01") for e in events("agent_started")))
+    assert alice.post(budget_url, json={"max_tool_calls": 30}, headers=H).status_code == 403  # opérateur
+    assert admin.post(budget_url, json={"max_tool_calls": 30}, headers=H).status_code == 200
+    assert events("budget_changed")[0]["data"]["max_tool_calls"] == 30
+
+    sub_go.set()  # T01 rend son rapport ; l'agent principal repart et se bloque au tour suivant
+    until(lambda: events("report_submitted"))
+    assert bob.post(f"{base}/instructions", json={"text": "x"}, headers=H).status_code == 404
+    assert alice.post(f"{base}/instructions", json={"text": "Regarde aussi db-pay-02"}, headers=H).status_code == 200
+    restarted = alice.post(f"{base}/agents/T01-metrics-srv-pay-01/restart", json={"prompt": "# Tâche\nMémoire"},
+                           headers=H)
+    assert restarted.json() == {"task_id": "T02-metrics-srv-pay-01"}
+    until(lambda: len(events("report_submitted")) == 2)
+    lead_go.set()
+    data = wait_status(alice, run_id)
+    assert data["manifest"]["status"] == "completed"
+    joined = "\n".join(final_request["messages"])
+    assert "Regarde aussi db-pay-02" in joined and "relance : mémoire saturée" in joined
+    spawned = [e for e in events("agent_spawned") if e["agent_id"].startswith("T02")][0]
+    assert spawned["data"]["restart_of"] == "T01-metrics-srv-pay-01" and spawned["data"]["prompt_changed"] is True
+    assert alice.post(f"{base}/instructions", json={"text": "trop tard"}, headers=H).status_code == 409
+    log = "\n".join(p.read_text() for p in (tmp_path / "audit").glob("**/*") if p.is_file())
+    assert '"instruction"' in log and '"restart_agent"' in log and '"budget"' in log
+
+
 def test_category_is_shown_corrected_and_forced(env, tmp_path):
     app, script = env
     script["lead"] = ScriptedProvider([answer("## Synthèse\nok"), answer("## Synthèse\nok")])

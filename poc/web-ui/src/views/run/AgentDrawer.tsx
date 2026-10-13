@@ -8,6 +8,7 @@ import { Markdown } from "../../components/Markdown";
 import { StateBadge } from "../../components/StateBadge";
 import { fmtDate } from "../../lib/format";
 import type { AgentState } from "../../state/runState";
+import { BudgetControl, RestartPanel } from "./Pilot";
 
 interface Props {
   runId: string;
@@ -16,13 +17,27 @@ interface Props {
   agent: AgentState | undefined;
   canDetails: boolean;
   canStop: boolean;
+  /** Ajuster le budget (Superviseur, Administrateur) d'un agent en cours. */
+  canBudget: boolean;
   onStop: (agentId: string) => void;
+  onRestarted: (taskId: string) => void;
   onClose: () => void;
 }
 
 const n = (v: number) => v.toLocaleString("fr-FR");
 
-export function AgentDrawer({ runId, agentId, focusRef, agent, canDetails, canStop, onStop, onClose }: Props) {
+export function AgentDrawer({
+  runId,
+  agentId,
+  focusRef,
+  agent,
+  canDetails,
+  canStop,
+  canBudget,
+  onStop,
+  onRestarted,
+  onClose,
+}: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -87,7 +102,18 @@ export function AgentDrawer({ runId, agentId, focusRef, agent, canDetails, canSt
             {agent.llm && <>{agent.llm} · </>}
             {n(agent.tokensIn)} tokens en entrée, {n(agent.tokensOut)} en sortie
             {agent.tokensReasoning ? `, dont ${n(agent.tokensReasoning)} de raisonnement` : ""}
+            {agent.restartOf && <> · relance de {agent.restartOf}</>}
           </p>
+        )}
+        {agent && <BudgetControl runId={runId} agent={agent} canAdjust={canBudget && canStop} />}
+        {agent && canStop && agentId !== "lead" && agent.status !== "running" && agent.status !== "stopping" && (
+          <RestartPanel
+            key={detail?.prompt ?? ""}
+            runId={runId}
+            agentId={agentId}
+            prompt={detail?.prompt}
+            onRestarted={onRestarted}
+          />
         )}
         {!canDetails ? (
           <p className="muted">

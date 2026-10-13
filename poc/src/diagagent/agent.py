@@ -83,6 +83,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
                     final_tools: tuple[str, ...] = (), parent_id: str | None = None,
                     final_check: Callable[[str], str | None] | None = None,
                     progress_check: Callable[[list[str]], str | None] | None = None,
+                    inbox: Callable[[], list[str]] | None = None,
                     budget_message: str = "Budget d'appels d'outils atteint : rends maintenant ta réponse "
                                           "finale avec ce que tu as, en indiquant ce qui manque.") -> AgentResult:
     cancel = cancel or CancelToken()
@@ -97,10 +98,18 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
                                            "tools": [t.name for t in all_tools],
                                            "max_tool_calls": budget.max_tool_calls}, parent_id=parent_id)
 
-    for turn in range(1, budget.max_turns + 1):
+    turn = 0
+    while turn < budget.max_turns:  # relu à chaque tour : un Superviseur peut relever le budget en cours
+        turn += 1
         if cancel.cancelled:
             result.status = "stopped"
             break
+        # Consignes de l'opérateur et rapports remis depuis l'interface, avant l'appel au modèle.
+        delivered = inbox() if inbox else []
+        for text in delivered:
+            messages.append(Message("user", text))
+        if delivered:
+            log.event(agent_id, "instruction_delivered", {"count": len(delivered)}, parent_id=parent_id)
         wrapping_up = cancel.wrapping_up
         out_of_budget = wrapping_up or result.tool_calls >= budget.max_tool_calls or turn == budget.max_turns
         if wrapping_up:

@@ -24,6 +24,7 @@ export {
   Play,
   RefreshCw,
   Search,
+  Send,
   Settings,
   Square,
   Sun,

@@ -36,7 +36,9 @@ SESSION_MAX_S = 8 * 3600
 #   view_shared    lire une investigation partagée (tous les rôles)
 #   view_own/all   lire ses investigations / toutes, avec graphe et chronologie en direct
 #   details_*      prompts, transcripts et appels d'outils (le Lecteur ne les voit pas)
-#   stop_*         arrêt propre d'un sous-agent ou d'une investigation ; kill : arrêt immédiat
+#   stop_*         arrêt propre d'un sous-agent ou d'une investigation ; kill : arrêt immédiat ; les
+#                  mêmes droits envoient une consigne à l'agent principal et relancent un sous-agent
+#   adjust_budget  relever ou baisser le budget d'un agent en cours (Superviseur, Administrateur)
 #   share_own      partager ses investigations avec les Lecteurs
 #   review         valider ou rejeter une action proposée, une évolution de catégorie ou de playbook
 #   view_costs, view_access_log, view_indicators, manage_users
@@ -44,7 +46,7 @@ SESSION_MAX_S = 8 * 3600
 #   edit_platform   catalogue, modèles, paramètres, rôles de sous-agents (Administrateur)
 #   edit_diagnostic playbooks, prompts, jeu d'évaluation (Superviseur)
 _OWN = {"view_shared", "ask", "view_own", "details_own", "stop_own", "share_own"}
-_ALL = {"view_all", "details_all", "stop_all", "kill", "share_all"}
+_ALL = {"view_all", "details_all", "stop_all", "kill", "share_all", "adjust_budget"}
 PERMISSIONS = {
     "lecteur": {"view_shared"},
     "operateur": _OWN,

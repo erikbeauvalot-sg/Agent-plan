@@ -124,6 +124,10 @@ class SignalMonitor:
                                 used=a.tool_calls, max=a.max_tools)
             elif type_ == "llm_call_ended":
                 self._model(agent_id, a, data)
+            elif type_ == "budget_changed":
+                a.max_tools = data.get("max_tool_calls") or a.max_tools
+                if a.max_tools and a.tool_calls / a.max_tools <= self.t.budget_ratio:
+                    self._clear(agent_id, "budget")
             elif type_ in ENDED:
                 a.running = False
                 for kind in sorted(a.raised):
