@@ -7,6 +7,7 @@ import "./styles/views.css";
 import "./styles/home.css";
 import "./styles/run.css";
 import "./styles/live.css";
+import "./styles/pilot.css";
 import "./styles/answer.css";
 
 import { StrictMode } from "react";

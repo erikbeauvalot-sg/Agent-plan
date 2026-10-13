@@ -327,6 +327,18 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
   « Arrêter l'investigation » demande à l'agent principal une synthèse partielle. **Arrêt immédiat**
   (permission `kill`, Superviseur et Administrateur) coupe tout sans synthèse, après confirmation.
+- **Piloter en cours de route** (droits de l'arrêt : l'auteur, ou qui voit tout) :
+  - **consigne** à l'agent principal, depuis le champ sous la ligne de statut (`POST
+    /api/runs/{id}/instructions`) : remise avant son prochain appel au modèle (`instruction_received`, puis
+    `instruction_delivered`) ;
+  - **relance d'un sous-agent** terminé ou arrêté, depuis son tiroir, avec son prompt d'origine ou corrigé
+    (`POST /api/runs/{id}/agents/{agent}/restart`) : un nouveau sous-agent (`T08-…`, `restart_of` dans
+    `agent_spawned`) dont le rapport est remis à l'agent principal ;
+  - **budget** d'un agent en cours (permission `adjust_budget`, Superviseur et Administrateur), depuis la
+    jauge du tiroir : +5, +10 ou un plafond (`POST /api/runs/{id}/agents/{agent}/budget`,
+    `budget_changed`), pris en compte au prochain tour. Chaque sous-agent a désormais son propre budget.
+
+  Les trois commandes sont tracées dans `events.jsonl` et dans le journal d'accès.
 - **Démonstration en direct sans modèle** : `uv run python tools/demo_live.py <run_id> --speed 2` rejoue
   une investigation enregistrée sous un nouvel identifiant, au rythme d'origine, signaux recalculés ;
   ouvrir l'adresse affichée (le serveur doit lire le même dossier `runs/`).

@@ -172,6 +172,11 @@ dans `events.jsonl` et dans le journal d'accès.
   `POST /api/runs/{id}/agents/{agent}/budget` ; nouveau plafond pris en compte au prochain appel.
 - Tests : unitaires de l'orchestrateur (consigne reçue au bon moment, budget relevé, relance rattachée)
   et de la passerelle (droits par rôle, journal).
+- Réalisé dans la PR #43 : boîte de messages de l'agent principal (`inbox`, lue avant chaque appel au
+  modèle), budget propre à chaque sous-agent et boucle de tours relue à chaque tour, permission
+  `adjust_budget` ; consigne sous la ligne de statut, jauge et relance dans le tiroir. Corrigé au passage :
+  un clic sur un nœud du graphe n'ouvrait plus le tiroir (glisser du fond qui capturait le pointeur, et
+  recadrage à chaque survol).
 
 ### Lot 6 : question de suivi
 

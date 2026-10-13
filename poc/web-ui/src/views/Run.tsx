@@ -14,6 +14,7 @@ import { AgentDrawer } from "./run/AgentDrawer";
 import { AgentGraph } from "./run/AgentGraph";
 import { Answer } from "./run/Answer";
 import { ActivityFeed, StatusLine } from "./run/LiveActivity";
+import { InstructionBox } from "./run/Pilot";
 import { CategoryBar, FeedbackForm, PrecisionForm } from "./run/RunPanels";
 import { Timeline } from "./run/Timeline";
 
@@ -271,6 +272,7 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
       )}
 
       <StatusLine run={run} ended={ended} />
+      {data.can_stop && !ended && <InstructionBox runId={runId} />}
       {data.analysis && answerCard}
 
       <section className="card" aria-labelledby="graph-title">
@@ -337,7 +339,9 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
           agent={run.agents[drawer.agentId]}
           canDetails={data.can_details}
           canStop={data.can_stop}
+          canBudget={can("adjust_budget")}
           onStop={stop}
+          onRestarted={(taskId) => setDrawer({ agentId: taskId })}
           onClose={closeDrawer}
         />
       )}

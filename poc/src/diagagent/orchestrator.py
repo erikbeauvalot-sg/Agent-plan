@@ -126,6 +126,8 @@ class SubAgent:
     task: asyncio.Task[AgentResult] | None = None
     report: dict[str, Any] | None = None
     status: str = "running"
+    budget: Budget | None = None  # propre à ce sous-agent : un Superviseur peut le relever en cours
+    restart_of: str | None = None  # sous-agent relancé à sa place
 
 
 def load_roles() -> dict[str, Role]:
@@ -206,8 +208,72 @@ class Investigation:
         self.category: dict[str, Any] = {}
         self.decision: playbooks.Decision | None = None
         self.rechecked: set[str] = set()  # motifs de relance déjà utilisés (une relance par motif)
+        # Messages pour l'agent principal, remis avant son prochain appel au modèle : consignes de
+        # l'opérateur, rapports des sous-agents relancés depuis l'interface.
+        self.inbox: list[str] = []
+        self.lead_running = False
 
     # Pilotage (utilisé par l'interface web à l'étape 3)
+
+    def instruct(self, text: str, by: str | None = None) -> bool:
+        """Consigne de l'opérateur pour l'agent principal, lue avant son prochain appel au modèle."""
+        if not self.lead_running:
+            return False
+        self.inbox.append(f"Consigne de l'opérateur ({by or 'opérateur'}), à prendre en compte maintenant : "
+                          f"{text.strip()}")
+        self.log.event("lead", "instruction_received", {"by": by, "text": text.strip()[:2000]})
+        return True
+
+    def _drain_inbox(self) -> list[str]:
+        messages, self.inbox = self.inbox, []
+        return messages
+
+    def set_budget(self, agent_id: str, max_tool_calls: int, by: str | None = None) -> bool:
+        """Nouveau plafond d'appels d'outils d'un agent en cours, pris en compte à son prochain tour."""
+        if agent_id == "lead":
+            budget = self.lead_budget if self.lead_running else None
+        else:
+            sub = self.subagents.get(agent_id)
+            budget = sub.budget if sub is not None and sub.status == "running" else None
+        if budget is None:
+            return False
+        previous = budget.max_tool_calls
+        budget.max_tool_calls = max_tool_calls
+        budget.max_turns = max(budget.max_turns, max_tool_calls + 6)  # le plafond de tours ne bloque pas
+        self.log.event(agent_id, "budget_changed", {"by": by, "max_tool_calls": max_tool_calls,
+                                                    "previous": previous},
+                       parent_id=None if agent_id == "lead" else "lead")
+        return True
+
+    def restart_subagent(self, task_id: str, prompt: str | None = None, by: str | None = None) -> str:
+        """Nouveau sous-agent à la place d'un sous-agent terminé ou arrêté, avec son prompt d'origine ou
+        un prompt corrigé ; son rapport est remis à l'agent principal (inbox). Rend le nouvel identifiant."""
+        old = self.subagents.get(task_id)
+        if old is None or old.status == "running":
+            raise LocalToolError("Seul un sous-agent terminé ou arrêté se relance")
+        if not self.lead_running:
+            raise LocalToolError("L'agent principal a terminé : lance plutôt une nouvelle investigation")
+        if len(self.subagents) >= self.max_subagents:
+            raise LocalToolError(f"Plafond de {self.max_subagents} sous-agents atteint pour cette question")
+        role = self.roles[old.role]
+        original = (self.log.agent_dir(task_id) / "prompt.md").read_text(encoding="utf-8")
+        text = prompt.strip() + "\n" if prompt and prompt.strip() else original
+        new_id = f"T{len(self.subagents) + 1:02d}-{task_id.split('-', 1)[1]}"
+        sub = SubAgent(new_id, role.name, old.objective, restart_of=task_id, budget=Budget(**vars(role.budget)))
+        self.subagents[new_id] = sub
+        self.log.write_text(new_id, "prompt.md", text)
+        self.log.event(new_id, "agent_spawned", {"role": role.name, "objective": old.objective,
+                                                 "restart_of": task_id, "by": by,
+                                                 "prompt_changed": text != original}, parent_id="lead")
+
+        async def run_and_deliver() -> AgentResult:
+            result = await self._run_subagent(sub, role, text)
+            self.inbox.append(f"Rapport du sous-agent {new_id}, relancé par {by or 'un opérateur'} à la place de "
+                              f"{task_id} : " + json.dumps(sub.report, ensure_ascii=False))
+            return result
+
+        sub.task = asyncio.create_task(run_and_deliver())
+        return new_id
 
     def stop_agent(self, agent_id: str, by: str | None = None) -> bool:
         """Arrêt propre : un sous-agent rend un rapport partiel ; "lead" arrête toute l'investigation,
@@ -257,12 +323,16 @@ class Investigation:
             return AgentResult(status="needs_clarification", answer=self._clarification_text(decision))
         provider, role_cfg = self._provider("lead")
         self.lead_local_tools = self._lead_tools()
-        result = await run_agent(
-            agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
-            user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
-            budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
-            local_tools=self.lead_local_tools, final_check=self._check_final_answer,
-            progress_check=self._check_progress, stream_answer=True)
+        self.lead_running = True
+        try:
+            result = await run_agent(
+                agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
+                user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
+                budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
+                local_tools=self.lead_local_tools, final_check=self._check_final_answer, inbox=self._drain_inbox,
+                progress_check=self._check_progress, stream_answer=True)
+        finally:
+            self.lead_running = False
         await self._close_pending()
         return result
 
@@ -610,6 +680,7 @@ class Investigation:
         prompt = self._task_prompt(task_id, role, args)
         sub = SubAgent(task_id, role.name, args["objective"])
         self.subagents[task_id] = sub
+        sub.budget = Budget(**vars(role.budget))
         self.log.write_text(task_id, "prompt.md", prompt)
         self.log.event(task_id, "agent_spawned", {"role": role.name, "objective": args["objective"]},
                        parent_id="lead")
@@ -673,7 +744,8 @@ class Investigation:
                 result = await run_agent(
                     agent_id=sub.task_id, provider=provider, system=self._subagent_system(role),
                     user_message=prompt, tools=self._role_tools(role), hub=self.hub, log=self.log,
-                    budget=role.budget, reasoning=role_cfg.get("reasoning"), cancel=sub.cancel,
+                    budget=sub.budget or Budget(**vars(role.budget)), reasoning=role_cfg.get("reasoning"),
+                    cancel=sub.cancel,
                     local_tools=local, final_tools=("submit_report",), parent_id="lead",
                     budget_message="Budget atteint : appelle submit_report maintenant avec status "
                                    "\"partial\" et ce que tu as trouvé.")
