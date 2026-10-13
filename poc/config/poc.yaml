@@ -21,3 +21,11 @@ orchestration:
   memory_limit_margin_pct: 20  # une limite mémoire proposée dépasse le pic mesuré du conteneur d'au moins 20 %
 
 runs_dir: runs
+
+# Signaux d'exécution affichés sur les agents (document d'architecture, « Détection visuelle »).
+signals:
+  stuck_s: 120        # bloqué : aucun événement depuis
+  loop_repeats: 3     # boucle : même outil, mêmes paramètres
+  error_streak: 3     # erreurs d'outil consécutives
+  budget_ratio: 0.8   # part du budget d'appels d'outils
+  slow_tool_s: 10     # source lente : appel d'outil au-delà

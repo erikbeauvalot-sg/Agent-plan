@@ -99,11 +99,12 @@ diagagent --now 2026-10-07T06:00:00Z serve                  # http://127.0.0.1:8
 ```
 
 Une investigation réelle demande un modèle (profil `ollama` local par défaut, ou `openai`, `azure`).
-Pour travailler l'aspect **en direct sans modèle**, créer si besoin (lot de fondations) un petit outil
-de démonstration, par exemple `diagagent demo-live <run_id>` ou `poc/tools/demo_live.py`, qui recopie
-une investigation existante de `runs/` dans une nouvelle, en réécrivant `events.jsonl` ligne par ligne
-au rythme des horodatages d'origine (accéléré ou ralenti), le manifest restant `running` jusqu'à la
-fin. Pour obtenir une première investigation sans modèle payant : `diagagent replay <run_id>` sur une
+Pour travailler l'aspect **en direct sans modèle** : `cd poc && uv run python tools/demo_live.py <run_id>
+--speed 2` recopie une investigation de `runs/` sous un nouvel identifiant et réécrit `events.jsonl` au
+rythme des horodatages d'origine, signaux de l'orchestrateur recalculés, le manifest restant `running`
+jusqu'à la fin (pas d'ajout à `index.jsonl`). Les signaux viennent de `src/diagagent/signals.py` et
+arrivent dans le flux (`signal_raised`, `signal_cleared`) : le navigateur ne les recalcule que pour les
+traces sans `manifest.signals`. Pour obtenir une première investigation sans modèle payant : `diagagent replay <run_id>` sur une
 investigation enregistrée, ou les jeux d'évaluation avec l'adaptateur `scripted` des tests.
 
 ## Captures automatiques

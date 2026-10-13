@@ -122,6 +122,10 @@ Pour l'utilisateur, l'aspect reste proche de l'actuel ; tout ce qui suit en dép
 - Arrêt d'un agent et de l'investigation avec portée explicite ; **arrêt immédiat** pour qui a la
   permission `kill` (API existante), avec confirmation.
 - Transition de vue accueil → investigation (View Transitions en amélioration progressive).
+- Réalisé dans la PR #41 : moniteur `src/diagagent/signals.py` (seuils `signals` de `config/poc.yaml`),
+  `manifest.signals = "orchestrator"` pour que le navigateur ne recalcule plus ; outil `tools/demo_live.py`
+  (rejeu en direct sans modèle) ; titre de l'investigation dans la barre du haut (reporté du lot 1). Le
+  signal de budget porte sur les appels d'outils : le POC n'a pas de budget de tokens par agent.
 
 ### Lot 3 : réponse au fil de l'eau et décision
 

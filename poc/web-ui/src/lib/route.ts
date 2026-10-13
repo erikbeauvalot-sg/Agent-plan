@@ -1,6 +1,7 @@
 // Routage par fragment, comme l'interface actuelle : # accueil, #<run_id> investigation, #admin,
 // #relance/<run_id> accueil prérempli avec les choix d'une investigation (bouton « Relancer… »).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 export type Route =
   { view: "home" } | { view: "rerun"; runId: string } | { view: "run"; runId: string } | { view: "admin" };
@@ -15,10 +16,29 @@ export function parseRoute(hash: string): Route {
   return { view: "home" };
 }
 
+/** Changement de vue animé (View Transitions) quand le navigateur le permet et que le mouvement n'est pas
+ * réduit : la question de l'accueil se transforme en titre de l'investigation. Sinon, changement immédiat. */
+function transition(update: () => void): void {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (!doc.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) return update();
+  doc.startViewTransition(() => flushSync(update));
+}
+
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(location.hash));
+  const shown = useRef(route);
   useEffect(() => {
-    const onChange = () => setRoute(parseRoute(location.hash));
+    shown.current = route;
+  }, [route]);
+  useEffect(() => {
+    const onChange = () => {
+      const next = parseRoute(location.hash);
+      const prev = shown.current;
+      // Seuls l'ouverture et la fermeture d'une investigation sont animées (pas un filtre, pas une relance).
+      const runChanged = (next.view === "run" ? next.runId : null) !== (prev.view === "run" ? prev.runId : null);
+      if (runChanged) transition(() => setRoute(next));
+      else setRoute(next);
+    };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);

@@ -6,11 +6,13 @@ import { ActionCard } from "../components/ActionCard";
 import { useConfirm } from "../components/Confirm";
 import { Markdown } from "../components/Markdown";
 import { StateBadge } from "../components/StateBadge";
+import { setCurrentRun } from "../lib/currentRun";
 import { ENDED, fmtDate } from "../lib/format";
 import { liveUsage } from "../state/runState";
 import { useRunStream } from "../state/useRunStream";
 import { AgentDrawer } from "./run/AgentDrawer";
 import { AgentGraph } from "./run/AgentGraph";
+import { ActivityFeed, StatusLine } from "./run/LiveActivity";
 import { CategoryBar, FeedbackForm, PrecisionForm } from "./run/RunPanels";
 import { Timeline } from "./run/Timeline";
 
@@ -25,6 +27,8 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmElement, confirm] = useConfirm();
   const [now, setNow] = useState(() => Date.now());
+  const [openedAt] = useState(() => Date.now());
+  const [hover, setHover] = useState<string | null>(null);
   const can = (p: string) => me.permissions.includes(p);
 
   const load = useCallback(
@@ -43,6 +47,14 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
 
   const { state: run, status: stream } = useRunStream(runId, load);
   const ended = stream === "ended";
+
+  // Titre court et état dans la barre du haut, le temps que la vue est affichée.
+  const question = data?.manifest.question;
+  const runStatus = data?.manifest.status;
+  useEffect(() => {
+    if (question && runStatus) setCurrentRun({ question, status: runStatus });
+  }, [question, runStatus]);
+  useEffect(() => () => setCurrentRun(null), []);
 
   // Catégorie, action proposée… : la synthèse se relit, regroupée sur 300 ms.
   useEffect(() => {
@@ -76,6 +88,9 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
 
   const m = data.manifest;
   const isOwner = m.user === me.login;
+  const fromServer = m.signals === "orchestrator" || run.serverSignals;
+  // Animations seulement pour ce qui arrive en direct ; un rattrapage s'affiche sans mouvement.
+  const liveSince = !ended && run.lastTs !== null && run.lastTs > openedAt - 5000 ? openedAt - 5000 : null;
   const clock = ended ? (run.lastTs ?? now) : Math.max(now, run.lastTs ?? 0);
   const usage =
     ended && m.usage
@@ -98,6 +113,22 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
       ...body,
     });
     location.hash = run_id;
+  };
+
+  const kill = async () => {
+    const ok = await confirm({
+      title: "Arrêt immédiat de l'investigation ?",
+      body: "Tous les agents sont coupés tout de suite, sans synthèse : à réserver à un agent qui surcharge une source. Pour garder une synthèse partielle, utilise plutôt « Arrêter l'investigation ».",
+      confirm: "Couper immédiatement",
+      danger: true,
+    });
+    if (!ok) return;
+    setActionError(null);
+    try {
+      await post(`/api/runs/${runId}/agents/lead/stop?kill=true`);
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
   };
 
   const stop = async (agentId: string) => {
@@ -184,8 +215,23 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
             </a>
           )}
           {data.can_stop && (
-            <button type="button" className="btn danger" onClick={() => stop("lead")}>
+            <button
+              type="button"
+              className="btn danger"
+              onClick={() => stop("lead")}
+              title="Tous les agents s'arrêtent ; l'agent principal rend une synthèse partielle"
+            >
               Arrêter l'investigation
+            </button>
+          )}
+          {data.can_stop && can("kill") && (
+            <button
+              type="button"
+              className="btn ghost danger-text"
+              onClick={kill}
+              title="Coupure sans synthèse, quand un agent surcharge une source"
+            >
+              Arrêt immédiat
             </button>
           )}
         </div>
@@ -196,15 +242,39 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
         </p>
       )}
 
+      <StatusLine run={run} ended={ended} />
+
       <section className="card" aria-labelledby="graph-title">
         <h2 id="graph-title">Graphe d'investigation</h2>
-        <AgentGraph run={run} now={clock} onOpen={openAgent} />
+        <AgentGraph
+          run={run}
+          now={clock}
+          onOpen={openAgent}
+          fromServer={fromServer}
+          liveSince={liveSince}
+          hover={hover}
+          onHover={setHover}
+        />
       </section>
 
-      <section className="card" aria-labelledby="timeline-title">
-        <h2 id="timeline-title">Chronologie</h2>
-        <Timeline run={run} now={clock} ended={ended} onOpen={openAgent} />
-      </section>
+      <div className="run-grid">
+        <section className="card" aria-labelledby="timeline-title">
+          <h2 id="timeline-title">Chronologie</h2>
+          <Timeline
+            run={run}
+            now={clock}
+            ended={ended}
+            onOpen={openAgent}
+            liveSince={liveSince}
+            hover={hover}
+            onHover={setHover}
+          />
+        </section>
+        <section className="card" aria-labelledby="feed-title">
+          <h2 id="feed-title">Fil d'activité</h2>
+          <ActivityFeed run={run} onOpen={openAgent} />
+        </section>
+      </div>
 
       {data.actions.length > 0 && (
         <section className="card" aria-labelledby="actions-title">

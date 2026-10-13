@@ -23,11 +23,13 @@ from .agent import AgentResult, Budget, CancelToken, LocalTool, LocalToolError, 
 from .llm import LLMProvider, ToolSpec
 from .llm.base import to_jsonable
 from .runlog import RunLog
+from .signals import SignalMonitor, Thresholds
 from .tools import ToolHub
 
 ProviderFactory = Callable[[str], tuple[LLMProvider, dict[str, Any]]]
 
 REPORT_STATUSES = ("completed", "partial", "failed")
+SIGNAL_TICK_S = 5  # contrôles des signaux liés au temps (bloqué, source lente)
 CONFIDENCES = ("low", "medium", "high")
 
 REPORT_SCHEMA: dict[str, Any] = {
@@ -193,6 +195,10 @@ class Investigation:
         self.memory_margin = 1 + orch.get("memory_limit_margin_pct", 20) / 100  # marge d'une limite sur le pic
         self.lead_local_tools: dict[str, LocalTool] = {}
         self.lead_budget = Budget(**poc_cfg.get("budgets", {}).get("lead", {}))
+        # Signaux d'exécution (bloqué, boucle, erreurs, budget, modèle, source lente) écrits dans la trace.
+        self.monitor = SignalMonitor(log.event, Thresholds.from_config(poc_cfg.get("signals")))
+        log.monitor = self.monitor
+        log.manifest["signals"] = "orchestrator"  # l'interface affiche ces signaux au lieu de les recalculer
         self.roles = {name: r for name, r in load_roles().items() if self._role_tools(r)}
         self.subagents: dict[str, SubAgent] = {}
         self.lead_cancel = CancelToken()
@@ -233,6 +239,18 @@ class Investigation:
     # Agent principal
 
     async def run(self) -> AgentResult:
+        ticker = asyncio.create_task(self._tick_signals())
+        try:
+            return await self._run()
+        finally:
+            ticker.cancel()
+
+    async def _tick_signals(self) -> None:
+        while True:
+            await asyncio.sleep(SIGNAL_TICK_S)
+            self.monitor.tick()
+
+    async def _run(self) -> AgentResult:
         decision, section = await self.categorize()
         self.decision = decision
         if decision.mode == "clarify":
