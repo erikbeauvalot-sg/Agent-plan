@@ -1,12 +1,14 @@
-// Tiroir d'un agent : modèle et tokens, prompt reçu, rapport, appels d'outils (ouverture sur l'appel cité),
-// réponses du modèle, arrêt de cet agent. Échap ferme ; le focus revient sur l'élément d'origine.
+// Tiroir d'un agent, en onglets : résumé (objectif, modèle, jauges, rapport, relance), appels d'outils (ouverture
+// sur l'appel cité), échanges avec le modèle, prompt. Agent précédent ou suivant par les flèches de l'en-tête ou
+// les touches [ et ] ; Échap ferme ; le focus revient sur l'élément d'origine.
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { AgentDetail } from "../../api/types";
-import { Square } from "../../components/icons";
+import { ChevronLeft, ChevronRight, Square } from "../../components/icons";
 import { Markdown } from "../../components/Markdown";
 import { StateBadge } from "../../components/StateBadge";
-import { fmtDate } from "../../lib/format";
+import { TabPanel, Tabs } from "../../components/Tabs";
+import { fmtDate, fmtTokens } from "../../lib/format";
 import type { AgentState } from "../../state/runState";
 import { BudgetControl, RestartPanel } from "./Pilot";
 
@@ -15,33 +17,44 @@ interface Props {
   agentId: string;
   focusRef?: string;
   agent: AgentState | undefined;
+  /** Ordre des agents, pour passer au précédent ou au suivant. */
+  order: string[];
   canDetails: boolean;
   canStop: boolean;
   /** Ajuster le budget (Superviseur, Administrateur) d'un agent en cours. */
   canBudget: boolean;
   onStop: (agentId: string) => void;
   onRestarted: (taskId: string) => void;
+  onNavigate: (agentId: string) => void;
   onClose: () => void;
 }
 
 const n = (v: number) => v.toLocaleString("fr-FR");
+const typing = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
 export function AgentDrawer({
   runId,
   agentId,
   focusRef,
   agent,
+  order,
   canDetails,
   canStop,
   canBudget,
   onStop,
   onRestarted,
+  onNavigate,
   onClose,
 }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState(focusRef ? "calls" : "summary");
   const closeRef = useRef<HTMLButtonElement>(null);
   const origin = useRef<Element | null>(document.activeElement);
+  const index = order.indexOf(agentId);
+  const prev = index > 0 ? order[index - 1] : undefined;
+  const next = index >= 0 && index < order.length - 1 ? order[index + 1] : undefined;
 
   useEffect(() => {
     if (!canDetails) return;
@@ -57,19 +70,49 @@ export function AgentDrawer({
   useEffect(() => {
     const previous = origin.current;
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("keydown", onKey);
       (previous as HTMLElement | null)?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
-    if (detail && focusRef) document.getElementById(`call-${focusRef}`)?.scrollIntoView({ block: "center" });
-  }, [detail, focusRef]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (!typing(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === "[" && prev) onNavigate(prev);
+        if (e.key === "]" && next) onNavigate(next);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, onNavigate, prev, next]);
 
+  useEffect(() => {
+    if (detail && focusRef && tab === "calls")
+      document.getElementById(`call-${focusRef}`)?.scrollIntoView({ block: "center" });
+  }, [detail, focusRef, tab]);
+
+  const label = (id: string) => (id === "lead" ? "Agent principal" : id.split("-")[0]);
+  const tabs = [
+    { id: "summary", label: "Résumé" },
+    ...(canDetails
+      ? [
+          { id: "calls", label: "Appels d'outils", badge: detail?.calls.length ?? null },
+          { id: "exchanges", label: "Échanges", badge: detail?.responses.length ?? null },
+          { id: "prompt", label: "Prompt" },
+        ]
+      : []),
+  ];
   const prompt = detail?.prompt || detail?.system_prompt;
+  const loading = !canDetails ? null : error ? (
+    <p className="error">{error}</p>
+  ) : !detail ? (
+    <div aria-busy="true" className="stack">
+      <div className="skeleton" />
+      <div className="skeleton" />
+    </div>
+  ) : null;
+
   return (
     <aside className="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-title">
       <header className="drawer-head">
@@ -78,6 +121,28 @@ export function AgentDrawer({
           {agent && <StateBadge state={agent.status} />}
         </div>
         <div className="drawer-tools">
+          <span className="drawer-nav">
+            <button
+              type="button"
+              className="btn ghost icon"
+              disabled={!prev}
+              onClick={() => prev && onNavigate(prev)}
+              aria-label={prev ? `Agent précédent : ${label(prev)}` : "Pas d'agent précédent"}
+              title="Agent précédent ([)"
+            >
+              <ChevronLeft size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="btn ghost icon"
+              disabled={!next}
+              onClick={() => next && onNavigate(next)}
+              aria-label={next ? `Agent suivant : ${label(next)}` : "Pas d'agent suivant"}
+              title="Agent suivant (])"
+            >
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
+          </span>
           {canStop && agent?.status === "running" && (
             <button type="button" className="btn danger" onClick={() => onStop(agentId)}>
               <Square size={14} aria-hidden="true" />
@@ -95,55 +160,70 @@ export function AgentDrawer({
           </button>
         </div>
       </header>
+      <Tabs tabs={tabs} active={tab} onChange={setTab} label="Détail de l'agent" idPrefix="drawer" />
       <div className="drawer-body">
-        {agent && (
-          <p className="muted hint">
-            {agent.objective && <>{agent.objective} · </>}
-            {agent.llm && <>{agent.llm} · </>}
-            {n(agent.tokensIn)} tokens en entrée, {n(agent.tokensOut)} en sortie
-            {agent.tokensReasoning ? `, dont ${n(agent.tokensReasoning)} de raisonnement` : ""}
-            {agent.restartOf && <> · relance de {agent.restartOf}</>}
-          </p>
-        )}
-        {agent && <BudgetControl runId={runId} agent={agent} canAdjust={canBudget && canStop} />}
-        {agent && canStop && agentId !== "lead" && agent.status !== "running" && agent.status !== "stopping" && (
-          <RestartPanel
-            key={detail?.prompt ?? ""}
-            runId={runId}
-            agentId={agentId}
-            prompt={detail?.prompt}
-            onRestarted={onRestarted}
-          />
-        )}
-        {!canDetails ? (
-          <p className="muted">
-            Prompts, échanges avec le modèle et appels d'outils ne sont pas visibles pour ton rôle.
-          </p>
-        ) : error ? (
-          <p className="error">{error}</p>
-        ) : !detail ? (
-          <div aria-busy="true" className="stack">
-            <div className="skeleton" />
-            <div className="skeleton" />
-          </div>
-        ) : (
-          <>
-            {prompt && (
-              <section>
-                <h3>{detail.prompt ? "Prompt reçu" : "Prompt système"}</h3>
-                <Markdown text={prompt} />
-              </section>
-            )}
-            {detail.report !== null && detail.report !== undefined && (
-              <section>
-                <h3>Rapport</h3>
-                <pre>{JSON.stringify(detail.report, null, 2)}</pre>
-              </section>
-            )}
-            <section>
-              <h3>Appels d'outils ({detail.calls.length})</h3>
-              {detail.calls.length ? (
-                detail.calls.map((c) => (
+        <TabPanel idPrefix="drawer" id={tab}>
+          {tab === "summary" && (
+            <>
+              {agent && (
+                <dl className="agent-facts">
+                  {agent.objective && (
+                    <>
+                      <dt>Objectif</dt>
+                      <dd>{agent.objective}</dd>
+                    </>
+                  )}
+                  {agent.llm && (
+                    <>
+                      <dt>Modèle</dt>
+                      <dd className="mono">{agent.llm}</dd>
+                    </>
+                  )}
+                  <dt>Tokens</dt>
+                  <dd className="num">
+                    {fmtTokens(agent.tokens)} : {n(agent.tokensIn)} en entrée, {n(agent.tokensOut)} en sortie
+                    {agent.tokensReasoning ? `, dont ${n(agent.tokensReasoning)} de raisonnement` : ""}
+                  </dd>
+                  {agent.restartOf && (
+                    <>
+                      <dt>Relance de</dt>
+                      <dd>
+                        <button type="button" className="link mono" onClick={() => onNavigate(agent.restartOf!)}>
+                          {agent.restartOf}
+                        </button>
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
+              {agent && <BudgetControl runId={runId} agent={agent} canAdjust={canBudget && canStop} />}
+              {agent && canStop && agentId !== "lead" && agent.status !== "running" && agent.status !== "stopping" && (
+                <RestartPanel
+                  key={detail?.prompt ?? ""}
+                  runId={runId}
+                  agentId={agentId}
+                  prompt={detail?.prompt}
+                  onRestarted={onRestarted}
+                />
+              )}
+              {!canDetails && (
+                <p className="muted">
+                  Prompts, échanges avec le modèle et appels d'outils ne sont pas visibles pour ton rôle.
+                </p>
+              )}
+              {loading}
+              {detail?.report !== null && detail?.report !== undefined && (
+                <section>
+                  <h3>Rapport</h3>
+                  <pre>{JSON.stringify(detail.report, null, 2)}</pre>
+                </section>
+              )}
+            </>
+          )}
+          {tab === "calls" &&
+            (loading ??
+              (detail!.calls.length ? (
+                detail!.calls.map((c) => (
                   <details
                     key={c.ref}
                     id={`call-${c.ref}`}
@@ -165,22 +245,33 @@ export function AgentDrawer({
                 ))
               ) : (
                 <p className="muted">Aucun appel.</p>
-              )}
-            </section>
-            <section>
-              <h3>Réponses du modèle ({detail.responses.length})</h3>
-              {detail.responses.map((r, i) => (
-                <div key={i} className="call">
-                  <p className="faint hint">
-                    {fmtDate(r.ts)} · {r.stop_reason}
-                    {r.tool_calls.length ? ` · ${r.tool_calls.join(", ")}` : ""}
-                  </p>
-                  {r.text && <Markdown text={r.text} />}
-                </div>
-              ))}
-            </section>
-          </>
-        )}
+              )))}
+          {tab === "exchanges" &&
+            (loading ??
+              (detail!.responses.length ? (
+                detail!.responses.map((r, i) => (
+                  <div key={i} className="call">
+                    <p className="faint hint">
+                      {fmtDate(r.ts)} · {r.stop_reason}
+                      {r.tool_calls.length ? ` · ${r.tool_calls.join(", ")}` : ""}
+                    </p>
+                    {r.text && <Markdown text={r.text} />}
+                  </div>
+                ))
+              ) : (
+                <p className="muted">Aucun échange.</p>
+              )))}
+          {tab === "prompt" &&
+            (loading ??
+              (prompt ? (
+                <section>
+                  <h3>{detail!.prompt ? "Prompt reçu" : "Prompt système"}</h3>
+                  <Markdown text={prompt} />
+                </section>
+              ) : (
+                <p className="muted">Pas de prompt enregistré.</p>
+              )))}
+        </TabPanel>
       </div>
     </aside>
   );

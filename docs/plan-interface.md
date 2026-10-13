@@ -155,6 +155,11 @@ Pour l'utilisateur, l'aspect reste proche de l'actuel ; tout ce qui suit en dép
   passerelle produit un lien à usage unique valable 24 h où l'utilisateur choisit son mot de passe ;
   refus des mots de passe d'une liste de mots de passe compromis (fichier local, pas d'appel externe).
 - Écran de connexion refait (affichage du mot de passe, message de verrouillage avec la durée).
+- Réalisé dans la PR #44 : `POST /api/users` sans mot de passe rend le lien (`activation`), `POST
+  /api/users/{id}/activation-link`, `GET /api/activation/{jeton}` et `POST /api/activation` (sans session ;
+  ouvre la session) ; `src/diagagent/web/passwords.py` ; connexion verrouillée : 423 avec la durée (et
+  `?verrou=N` pour le formulaire). Le tiroir montre la jauge d'appels d'outils et les tokens consommés :
+  le POC n'a pas de plafond de tokens par agent.
 
 ### Lot 5 : piloter les agents en cours
 

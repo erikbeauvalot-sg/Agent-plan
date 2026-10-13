@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, post } from "../../api/client";
 import type { ConfigContent, ConfigList, ConfigVersion } from "../../api/types";
+import { CodeArea, errorLine } from "../../components/CodeArea";
 import { fmtDate } from "../../lib/format";
 
 interface Editing {
@@ -184,14 +185,12 @@ export function ConfigEditor() {
               />
             </div>
           )}
-          <textarea
-            className="code"
-            spellCheck={false}
-            rows={26}
-            aria-label="Contenu du fichier"
+          <CodeArea
+            label="Contenu du fichier"
             value={text}
             readOnly={!file.editable}
-            onChange={(e) => setText(e.target.value)}
+            onChange={setText}
+            errorAt={message?.error ? errorLine(message.text) : null}
           />
           {file.editable && (
             <div className="ask-row">
