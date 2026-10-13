@@ -41,6 +41,18 @@ def test_lead_agent_calls_tools_and_writes_traces(tmp_path, monkeypatch):
     assert "Date et heure de référence : 2026-10-07T06:00:00Z" in (d / "lead" / "system_prompt.md").read_text()
 
 
+def test_lead_answer_is_streamed_as_deltas(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_load", _load_with_runs(tmp_path))
+    text = "## Synthèse\nLe changement CHG0034567 explique la lenteur."
+    provider = ScriptedProvider([LLMResponse(text=text, tool_calls=[], stop_reason="end")], streams=True)
+    log, status, answer = asyncio.run(cli.ask("Pourquoi srv-pay-01 est lent ?", providers=only(provider)))
+    events = [json.loads(line) for line in (log.dir / "events.jsonl").read_text().splitlines()]
+    deltas = [e["data"]["text"] for e in events if e["type"] == "answer_delta"]
+    assert status == "completed" and "".join(deltas) == text == answer
+    started = next(e for e in events if e["type"] == "llm_call_started" and e["agent_id"] == "lead")
+    assert started["data"]["stream"] is True
+
+
 def test_budget_forces_a_partial_answer(tmp_path, monkeypatch):
     load = _load_with_runs(tmp_path, budget={"max_tool_calls": 1, "max_turns": 5})
     monkeypatch.setattr(cli, "_load", load)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Callable
 
 from .base import (
     Capabilities,
@@ -31,12 +31,14 @@ _STOP_REASONS = {
 
 class OpenAIChatProvider:
     def __init__(self, name: str, client: Any, model: str, supports_reasoning: bool = True,
-                 context_tokens: int = 128_000):
+                 context_tokens: int = 128_000, stream: bool = True):
         self.name = name
         self._client = client
         self._model = model
         self._supports_reasoning = supports_reasoning
         self._context_tokens = context_tokens
+        # Diffusion du texte (réponse affichée au fil de l'eau) ; coupée pour la suite si le serveur la refuse.
+        self.streams = stream
 
     def capabilities(self) -> Capabilities:
         return Capabilities(context_tokens=self._context_tokens)
@@ -59,10 +61,17 @@ class OpenAIChatProvider:
             params["reasoning_effort"] = request.reasoning
         return params
 
-    def complete(self, request: LLMRequest) -> LLMResponse:
+    def complete(self, request: LLMRequest, on_text: Callable[[str], None] | None = None) -> LLMResponse:
         import openai
 
         try:
+            if on_text is not None and self.streams:
+                try:
+                    return self._stream(request, on_text)
+                except openai.BadRequestError as e:
+                    if "stream" not in str(e).lower():
+                        raise
+                    self.streams = False  # serveur sans diffusion : réponse en bloc désormais
             raw = self._client.chat.completions.create(**self.native_request(request))
         except openai.BadRequestError as e:
             if "content_filter" in str(e) or "content management policy" in str(e):
@@ -96,6 +105,48 @@ class OpenAIChatProvider:
             model=raw.model or self._model,
             request_id=getattr(raw, "id", None),
             provider_raw=raw.model_dump(mode="json"),
+        )
+
+    def _stream(self, request: LLMRequest, on_text: Callable[[str], None]) -> LLMResponse:
+        """Même appel en diffusion : le texte part à on_text au fil de l'eau ; les appels d'outils arrivent
+        par morceaux (index, nom, arguments) et sont recollés à la fin."""
+        params = {**self.native_request(request), "stream": True, "stream_options": {"include_usage": True}}
+        text: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        finish, usage_raw, model, request_id = None, None, None, None
+        for chunk in self._client.chat.completions.create(**params):
+            request_id = request_id or getattr(chunk, "id", None)
+            model = getattr(chunk, "model", None) or model
+            if getattr(chunk, "usage", None):
+                usage_raw = chunk.usage
+            for ch in chunk.choices or []:
+                delta = ch.delta
+                if delta is not None and delta.content:
+                    text.append(delta.content)
+                    on_text(delta.content)
+                for tc in (delta.tool_calls if delta is not None else None) or []:
+                    slot = calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                    slot["id"] = tc.id or slot["id"]
+                    if tc.function is not None:
+                        slot["name"] += tc.function.name or ""
+                        slot["arguments"] += tc.function.arguments or ""
+                finish = ch.finish_reason or finish
+        tool_calls = [ToolCall(id=c["id"] or f"call_{i}", name=c["name"], arguments=_parse_args(c["arguments"]))
+                      for i, c in sorted(calls.items())]
+        usage = Usage(
+            input_tokens=getattr(usage_raw, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(usage_raw, "completion_tokens", 0) or 0,
+            reasoning_tokens=getattr(getattr(usage_raw, "completion_tokens_details", None),
+                                     "reasoning_tokens", 0) or 0,
+        )
+        stop = "tool_call" if tool_calls else _STOP_REASONS.get(finish or "", "end")
+        return LLMResponse(
+            text="".join(text), tool_calls=tool_calls, stop_reason=stop,  # type: ignore[arg-type]
+            usage=usage, model=model or self._model, request_id=request_id,
+            provider_raw={"streamed": True, "finish_reason": finish, "id": request_id, "model": model,
+                          "content": "".join(text),
+                          "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in tool_calls],
+                          "usage": {"prompt_tokens": usage.input_tokens, "completion_tokens": usage.output_tokens}},
         )
 
 
@@ -139,7 +190,7 @@ def make_azure_openai(cfg: dict[str, Any], deployment: str) -> OpenAIChatProvide
         key = os.environ[cfg.get("api_key_env", "AZURE_OPENAI_API_KEY")]
         client = AzureOpenAI(azure_endpoint=endpoint, api_version=api_version, api_key=key)
     return OpenAIChatProvider("azure_openai", client, deployment,
-                              context_tokens=cfg.get("context_tokens", 128_000))
+                              context_tokens=cfg.get("context_tokens", 128_000), stream=cfg.get("stream", True))
 
 
 def make_openai_compatible(cfg: dict[str, Any], model: str) -> OpenAIChatProvider:
@@ -149,4 +200,4 @@ def make_openai_compatible(cfg: dict[str, Any], model: str) -> OpenAIChatProvide
     client = OpenAI(base_url=os.path.expandvars(cfg["base_url"]), api_key=key)
     return OpenAIChatProvider("openai_compatible", client, model,
                               supports_reasoning=cfg.get("supports_reasoning", False),
-                              context_tokens=cfg.get("context_tokens", 32_000))
+                              context_tokens=cfg.get("context_tokens", 32_000), stream=cfg.get("stream", True))

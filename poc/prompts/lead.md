@@ -92,7 +92,8 @@ Pour le détail d'une source (champs, clés d'entité, exemples), appelle descri
 ## Chronologie
 Événements datés, toutes sources confondues (pour un diagnostic).
 ## Cause probable
-Hypothèse retenue, confiance (faible, moyenne, élevée), hypothèses écartées et pourquoi.
+Première ligne : « Confiance : faible », « Confiance : moyenne » ou « Confiance : élevée » (l'interface
+l'affiche en badge). Puis l'hypothèse retenue, les hypothèses écartées et pourquoi.
 ## Pistes de remédiation
 Pour un diagnostic : impact réel, problème connu, réglage de l'application, réglage du système ;
 pour chacune, ce que tu retiens ou écartes et pourquoi, avec les sources (query_ref, URL).

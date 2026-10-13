@@ -330,7 +330,7 @@ class Investigation:
                 user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
                 budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
                 local_tools=self.lead_local_tools, final_check=self._check_final_answer, inbox=self._drain_inbox,
-                progress_check=self._check_progress)
+                progress_check=self._check_progress, stream_answer=True)
         finally:
             self.lead_running = False
         await self._close_pending()

@@ -81,11 +81,20 @@ def main() -> None:
         out.flush()
 
     monitor = SignalMonitor(write, Thresholds(), clock=lambda: trace_t[0])
+    # Trace antérieure à la diffusion : la réponse finale est réécrite par morceaux juste avant la fin du
+    # dernier appel au modèle de l'agent principal, pour voir la réponse arriver au fil de l'eau.
+    streamed = any(e["type"] == "answer_delta" for e in events)
+    final_call = max((i for i, e in enumerate(events) if e["agent_id"] == "lead" and e["type"] == "llm_call_ended"
+                      and (e.get("data") or {}).get("stop_reason") == "end"), default=None)
     print(f"Rejeu de {args.run_id} sous {new_id} (×{args.speed:g}) : http://127.0.0.1:8080/#{new_id}", flush=True)
     status = final["status"] or "completed"
     try:
         t0 = datetime.fromisoformat(events[0]["ts"].replace("Z", "+00:00")) if events else now
-        for e in events:
+        for i, e in enumerate(events):
+            if i == final_call and answer and not streamed:
+                for k in range(0, len(answer), 48):
+                    write("lead", "answer_delta", {"text": answer[k:k + 48]}, None)
+                    time.sleep(0.05 / max(args.speed, 0.1))
             at = (datetime.fromisoformat(e["ts"].replace("Z", "+00:00")) - t0).total_seconds()
             gap = min(args.max_gap, max(0.0, (at - trace_t[0]) / args.speed))
             # Pendant l'attente, l'horloge de la trace avance : les signaux liés au temps se lèvent.

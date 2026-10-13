@@ -199,6 +199,38 @@ describe("signaux de l'orchestrateur et activité", () => {
   });
 });
 
+describe("réponse au fil de l'eau", () => {
+  it("garde la réponse, jette un préambule et marque une révision", () => {
+    let run = reduceAll([
+      ev("lead", "agent_started", "00"),
+      ev("lead", "llm_call_started", "01"),
+      ev("lead", "answer_delta", "02", { text: "Je regarde " }),
+      ev("lead", "llm_call_ended", "03", { stop_reason: "tool_call" }),
+    ]);
+    expect(run.draft).toBeNull(); // préambule suivi d'appels d'outils
+    run = reduceAll(
+      [
+        ev("lead", "llm_call_started", "04"),
+        ev("lead", "answer_delta", "05", { text: "## Synthèse\n" }),
+        ev("lead", "answer_delta", "06", { text: "CHG0034567" }),
+        ev("lead", "llm_call_ended", "07", { stop_reason: "end" }),
+        ev("lead", "final_answer_rechecked", "08", { reason: "vagues" }),
+      ],
+      run,
+    );
+    expect(run.draft).toMatchObject({ text: "## Synthèse\nCHG0034567", revising: true, done: false });
+    run = reduceAll(
+      [
+        ev("lead", "llm_call_started", "09"),
+        ev("lead", "answer_delta", "10", { text: "## Synthèse\nv2" }),
+        ev("lead", "agent_ended", "11", { status: "completed" }),
+      ],
+      run,
+    );
+    expect(run.draft).toMatchObject({ text: "## Synthèse\nv2", revising: false, done: true });
+  });
+});
+
 describe("pilotage", () => {
   it("relève le budget, rattache la relance et trace la consigne", () => {
     const run = reduceAll([

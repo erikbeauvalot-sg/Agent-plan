@@ -8,6 +8,7 @@ import "./styles/home.css";
 import "./styles/run.css";
 import "./styles/live.css";
 import "./styles/pilot.css";
+import "./styles/answer.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
