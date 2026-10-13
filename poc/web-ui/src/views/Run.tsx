@@ -4,7 +4,7 @@ import { api, post } from "../api/client";
 import type { Category, FullRun, Me } from "../api/types";
 import { ActionCard } from "../components/ActionCard";
 import { useConfirm } from "../components/Confirm";
-import { Markdown } from "../components/Markdown";
+import { evidenceAgent, Markdown } from "../components/Markdown";
 import { StateBadge } from "../components/StateBadge";
 import { setCurrentRun } from "../lib/currentRun";
 import { ENDED, fmtDate } from "../lib/format";
@@ -12,6 +12,7 @@ import { liveUsage } from "../state/runState";
 import { useRunStream } from "../state/useRunStream";
 import { AgentDrawer } from "./run/AgentDrawer";
 import { AgentGraph } from "./run/AgentGraph";
+import { Answer } from "./run/Answer";
 import { ActivityFeed, StatusLine } from "./run/LiveActivity";
 import { CategoryBar, FeedbackForm, PrecisionForm } from "./run/RunPanels";
 import { Timeline } from "./run/Timeline";
@@ -29,6 +30,8 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
   const [now, setNow] = useState(() => Date.now());
   const [openedAt] = useState(() => Date.now());
   const [hover, setHover] = useState<string | null>(null);
+  // La synthèse n'est révélée en cascade que si on a vu l'investigation tourner.
+  const [sawRunning, setSawRunning] = useState(false);
   const can = (p: string) => me.permissions.includes(p);
 
   const load = useCallback(
@@ -87,6 +90,7 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
     );
 
   const m = data.manifest;
+  if (m.status === "running" && !sawRunning) setSawRunning(true);
   const isOwner = m.user === me.login;
   const fromServer = m.signals === "orchestrator" || run.serverSignals;
   // Animations seulement pour ce qui arrive en direct ; un rattrapage s'affiche sans mouvement.
@@ -159,6 +163,30 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
       setActionError((e as Error).message);
     }
   };
+
+  const answerCard = (
+    <section className="card answer-card" aria-labelledby="answer-title">
+      <h2 id="answer-title">Réponse</h2>
+      <Answer
+        analysis={data.analysis}
+        draft={run.draft}
+        ended={ended}
+        reveal={sawRunning}
+        onEvidence={openEvidence}
+        onEvidenceHover={(ref) => setHover(ref ? evidenceAgent(ref) : null)}
+      />
+      <FeedbackForm manifest={m} canGive={isOwner || can("stop_all")} onSent={load} />
+      {m.status === "needs_clarification" && can("ask") && (
+        <PrecisionForm onRelaunch={(p) => start({ question: `${m.question}\nPrécision : ${p}` })} />
+      )}
+      {data.plan && (
+        <details>
+          <summary>Plan d'investigation</summary>
+          <Markdown text={data.plan} />
+        </details>
+      )}
+    </section>
+  );
 
   return (
     <>
@@ -243,6 +271,7 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
       )}
 
       <StatusLine run={run} ended={ended} />
+      {data.analysis && answerCard}
 
       <section className="card" aria-labelledby="graph-title">
         <h2 id="graph-title">Graphe d'investigation</h2>
@@ -290,30 +319,14 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
                 reviewable={ENDED.includes(m.status) && can("review")}
                 onDecided={load}
                 onEvidence={openEvidence}
+                onEvidenceHover={(ref) => setHover(ref ? evidenceAgent(ref) : null)}
               />
             ))}
           </div>
         </section>
       )}
 
-      <section className="card" aria-labelledby="answer-title">
-        <h2 id="answer-title">Réponse</h2>
-        {data.analysis ? (
-          <Markdown text={data.analysis} onEvidence={openEvidence} className="answer" />
-        ) : (
-          <p className="muted">La synthèse s'affichera ici à la fin de l'investigation.</p>
-        )}
-        <FeedbackForm manifest={m} canGive={isOwner || can("stop_all")} onSent={load} />
-        {m.status === "needs_clarification" && can("ask") && (
-          <PrecisionForm onRelaunch={(p) => start({ question: `${m.question}\nPrécision : ${p}` })} />
-        )}
-        {data.plan && (
-          <details>
-            <summary>Plan d'investigation</summary>
-            <Markdown text={data.plan} />
-          </details>
-        )}
-      </section>
+      {!data.analysis && answerCard}
 
       {drawer && (
         <AgentDrawer

@@ -287,8 +287,20 @@ barre du haut, et l'heure de référence de chaque investigation sous sa questio
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.
 
-- **Conversation** : on pose la question sur l'accueil ; la réponse s'affiche à la fin, chaque preuve
-  `[…/calls/NNNN.json]` est cliquable.
+- **Conversation** : on pose la question sur l'accueil ; la réponse de l'agent principal **s'affiche
+  pendant qu'il l'écrit** (événements `answer_delta`, adaptateurs OpenAI compatible et Azure ; `stream:
+  false` dans le fournisseur de `config/models.yaml` pour la couper, et repli automatique sur une réponse
+  en bloc si le serveur refuse la diffusion ; l'adaptateur Claude affiche encore la réponse en bloc). Un
+  texte suivi d'appels d'outils n'était qu'un préambule et disparaît ; si un contrôle de l'orchestrateur
+  relance l'agent, la réponse est marquée « en cours de révision ».
+- **Réponse** : à la fin, la synthèse en premier, en grand, avec le niveau de confiance de la cause
+  probable (« Confiance : élevée », demandé par le prompt), puis chronologie, cause, pistes et limites ;
+  une investigation terminée affiche sa réponse en haut de la page. Chaque preuve `[…/calls/NNNN.json]`
+  est une puce (« T02 · appel 6 ») qui ouvre l'appel exact et, au survol, éclaire l'agent dans le graphe
+  et la chronologie.
+- **Actions proposées** : risque, « jamais exécutée par l'agent » sur chaque carte, preuves, procédure et
+  retour arrière avec un bouton de copie, validation par un Superviseur. La catégorie se corrige dans un
+  popover (enregistrer, ou relancer avec la nouvelle catégorie).
 - **Ligne de statut** (en direct) : ce que fait l'agent actif le plus récent, en clair (« T03 interroge
   les métriques : cpu.usage de srv-pay-01 »), et le nombre d'agents actifs ; le titre de l'investigation
   et son état restent dans la barre du haut.

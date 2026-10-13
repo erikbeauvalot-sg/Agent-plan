@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { post } from "../../api/client";
 import type { Category, FullManifest } from "../../api/types";
+import { ChevronDown } from "../../components/icons";
+import { onMenuKeys, usePopover } from "../../components/Popover";
 import { ENDED } from "../../lib/format";
 
 const MODES: Record<string, string> = {
@@ -23,9 +25,10 @@ interface CategoryProps {
 
 export function CategoryBar({ manifest, categories, canCorrect, canAsk, onChanged, onRerun }: CategoryProps) {
   const c = manifest.category;
-  const [editing, setEditing] = useState(false);
+  const { open: editing, setOpen: setEditing, rootRef, triggerRef } = usePopover();
   const [value, setValue] = useState(c?.correction?.category ?? c?.id ?? "");
   const [error, setError] = useState<string | null>(null);
+  const current = c?.correction?.category ?? c?.id ?? "";
   if (!c) return null;
   const playbooks = Object.entries(c.playbooks ?? {})
     .map(([id, v]) => `${id} v${v}`)
@@ -59,37 +62,64 @@ export function CategoryBar({ manifest, categories, canCorrect, canAsk, onChange
 
   return (
     <div className="category">
-      <span>
-        Catégorie <span className="tag strong">{c.correction?.category ?? c.id}</span>
+      <span className="chip-wrap" ref={rootRef}>
+        <span>Catégorie</span>{" "}
+        {canCorrect ? (
+          <button
+            type="button"
+            ref={triggerRef}
+            className="chip"
+            aria-expanded={editing}
+            aria-haspopup="dialog"
+            title="Corriger la catégorie"
+            onClick={() => {
+              setValue(current);
+              setEditing(!editing);
+            }}
+          >
+            <strong>{current}</strong>
+            <ChevronDown size={13} aria-hidden="true" />
+          </button>
+        ) : (
+          <span className="tag strong">{current}</span>
+        )}
+        {editing && (
+          <div className="chip-menu cat-pop" role="dialog" aria-label="Corriger la catégorie">
+            <div role="radiogroup" aria-label="Catégorie" onKeyDown={onMenuKeys}>
+              {categories.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={value === x.id}
+                  data-item=""
+                  title={x.description}
+                  onClick={() => setValue(x.id)}
+                >
+                  <span className="tick" aria-hidden="true" />
+                  <span>{x.id}</span>
+                  <span className="faint">{x.description}</span>
+                </button>
+              ))}
+            </div>
+            <div className="cat-actions">
+              <button type="button" className="btn" onClick={save} disabled={value === current}>
+                Enregistrer
+              </button>
+              {canAsk && (
+                <button type="button" className="btn primary" onClick={rerun}>
+                  Relancer avec {value}
+                </button>
+              )}
+            </div>
+            <p className="faint hint">
+              Enregistrer corrige le classement (il sert à l'apprentissage) sans relancer ; relancer démarre une
+              nouvelle investigation avec ce playbook.
+            </p>
+          </div>
+        )}
       </span>
       <span className="muted hint">· {parts.filter(Boolean).join(" · ")}</span>
-      {canCorrect && !editing && (
-        <button type="button" className="link" onClick={() => setEditing(true)}>
-          Corriger
-        </button>
-      )}
-      {editing && (
-        <span className="cat-form">
-          <select aria-label="Catégorie" value={value} onChange={(e) => setValue(e.target.value)}>
-            {categories.map((x) => (
-              <option key={x.id} value={x.id} title={x.description}>
-                {x.id}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="btn" onClick={save}>
-            Enregistrer
-          </button>
-          {canAsk && (
-            <button type="button" className="btn" onClick={rerun}>
-              Relancer avec cette catégorie
-            </button>
-          )}
-          <button type="button" className="link" onClick={() => setEditing(false)}>
-            Annuler
-          </button>
-        </span>
-      )}
       {error && (
         <p className="error" role="alert">
           {error}

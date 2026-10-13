@@ -73,6 +73,18 @@ export interface RunState {
   feed: FeedItem[];
   /** La trace contient des signaux de l'orchestrateur : le navigateur ne les recalcule pas. */
   serverSignals: boolean;
+  /** Réponse de l'agent principal pendant qu'il l'écrit (answer_delta), avant la synthèse enregistrée. */
+  draft: Draft | null;
+  /** Appels au modèle de l'agent principal, pour rattacher le texte diffusé à son appel. */
+  leadCalls: number;
+}
+
+export interface Draft {
+  text: string;
+  call: number;
+  /** Un contrôle de la réponse finale a relancé l'agent : le texte affiché va être réécrit. */
+  revising: boolean;
+  done: boolean;
 }
 
 export const emptyRun = (): RunState => ({
@@ -85,6 +97,8 @@ export const emptyRun = (): RunState => ({
   summaryVersion: 0,
   feed: [],
   serverSignals: false,
+  draft: null,
+  leadCalls: 0,
 });
 
 const noUsage = (): Usage => ({
@@ -151,7 +165,8 @@ export function reduce(state: RunState, e: RunEvent): RunState {
   let a: AgentState = prev ? (isSignal ? { ...prev } : { ...prev, last: ts }) : newAgent(e, ts);
   const agents = { ...state.agents };
   const order = prev ? state.order : [...state.order, e.agent_id];
-  let { classifier, summaryVersion, serverSignals } = state;
+  let { classifier, summaryVersion, serverSignals, draft, leadCalls } = state;
+  const lead = e.agent_id === "lead";
   const said: Omit<FeedItem, "seq" | "ts" | "agent">[] = [];
   const who = agentName(e.agent_id);
 
@@ -170,6 +185,21 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       break;
     case "llm_call_started":
       a = { ...a, open: { ...a.open, llm: ts }, current: Object.keys(a.calls).length ? a.current : "réfléchit" };
+      if (lead) leadCalls += 1;
+      break;
+    case "answer_delta": {
+      // Le texte d'un nouvel appel remplace le brouillon précédent (préambule ou réponse en révision).
+      const text = str(d.text);
+      draft =
+        draft && draft.call === leadCalls
+          ? { ...draft, text: draft.text + text }
+          : { text, call: leadCalls, revising: false, done: false };
+      a = { ...a, current: "écrit la réponse" };
+      break;
+    }
+    case "final_answer_rechecked":
+      if (draft) draft = { ...draft, revising: true };
+      said.push({ kind: "run", text: "Réponse relancée pour révision par les contrôles de l'orchestrateur" });
       break;
     case "llm_call_ended": {
       const error = d.error ? str(d.error) : null;
@@ -185,6 +215,8 @@ export function reduce(state: RunState, e: RunEvent): RunState {
         modelError: error ?? a.modelError,
         ...addUsage(a, d.usage),
       };
+      // Un texte suivi d'appels d'outils n'était qu'un préambule, pas la réponse.
+      if (lead && draft && draft.call === leadCalls && d.stop_reason === "tool_call") draft = null;
       break;
     }
     case "tool_call_started": {
@@ -247,6 +279,7 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       break;
     case "agent_ended":
       a = { ...a, status: str(d.status), end: ts, current: null, calls: {} };
+      if (lead && draft) draft = { ...draft, done: true, revising: false };
       said.push({ kind: "agent", text: `${who} : ${statusText(str(d.status))}`, bad: d.status === "failed" });
       break;
     case "signal_raised": {
@@ -294,7 +327,7 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       break;
     }
     case "action_proposed":
-      said.push({ kind: "run", text: `Action proposée : ${str(d.title)}` });
+      // Déjà dans le fil par l'appel de propose_action : rien à ajouter.
       summaryVersion += 1;
       break;
     case "category_changed":
@@ -319,6 +352,8 @@ export function reduce(state: RunState, e: RunEvent): RunState {
     summaryVersion,
     feed,
     serverSignals,
+    draft,
+    leadCalls,
   };
 }
 

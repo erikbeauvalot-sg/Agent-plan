@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { post } from "../api/client";
 import type { Action } from "../api/types";
-import { Evidence, Markdown, type OnEvidence } from "./Markdown";
+import { Check, Copy } from "./icons";
+import { Evidence, Markdown, type OnEvidence, type OnEvidenceHover } from "./Markdown";
 
 const STATUS: Record<string, string> = {
   proposed: "à valider",
@@ -30,13 +31,34 @@ interface Props {
   reviewable: boolean;
   onDecided: () => void;
   onEvidence?: OnEvidence;
+  onEvidenceHover?: OnEvidenceHover;
   showRunLink?: boolean;
 }
 
-export function ActionCard({ action: a, runId, reviewable, onDecided, onEvidence, showRunLink }: Props) {
+export function ActionCard({
+  action: a,
+  runId,
+  reviewable,
+  onDecided,
+  onEvidence,
+  onEvidenceHover,
+  showRunLink,
+}: Props) {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  // Procédure et retour arrière copiés ensemble, pour un ticket de changement ou une main courante.
+  const copy = async () => {
+    const text = `${a.id} · ${a.title}\nCible : ${a.target}\nRisque : ${a.risk}\n\nProcédure\n${a.procedure}\n\nRetour arrière\n${a.rollback}\n`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Copie impossible : le navigateur refuse l'accès au presse-papiers.");
+    }
+  };
   const decide = async (accept: boolean) => {
     setBusy(true);
     setError(null);
@@ -55,8 +77,11 @@ export function ActionCard({ action: a, runId, reviewable, onDecided, onEvidence
         <strong>
           {a.id} · {a.title}
         </strong>
-        <span className="risk" data-risk={a.risk}>
-          risque {a.risk}
+        <span className="action-tags">
+          <span className="never-run">jamais exécutée par l'agent</span>
+          <span className="risk" data-risk={a.risk}>
+            risque {a.risk}
+          </span>
         </span>
       </header>
       {showRunLink && a.question && (
@@ -70,7 +95,7 @@ export function ActionCard({ action: a, runId, reviewable, onDecided, onEvidence
         {a.target}
         {a.requires_change ? " · passe par un changement" : ""}
       </p>
-      <Markdown text={a.rationale} onEvidence={onEvidence} />
+      <Markdown text={a.rationale} onEvidence={onEvidence} onEvidenceHover={onEvidenceHover} />
       {!!a.evidence?.length && (
         <p className="refs">
           {a.evidence
@@ -81,6 +106,7 @@ export function ActionCard({ action: a, runId, reviewable, onDecided, onEvidence
                   key={i}
                   refPath={r.match(/(?:lead|subagents\/[^/\s]+)\/calls\/\d{4}\.json/)?.[0] ?? r}
                   onEvidence={onEvidence}
+                  onHover={onEvidenceHover}
                 />
               ) : (
                 <code key={i}>{r}</code>
@@ -90,6 +116,10 @@ export function ActionCard({ action: a, runId, reviewable, onDecided, onEvidence
       )}
       <details>
         <summary>Procédure et retour arrière</summary>
+        <button type="button" className="btn ghost copy" onClick={copy}>
+          {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+          {copied ? "Copiée" : "Copier la procédure"}
+        </button>
         <Markdown text={a.procedure} />
         <h3>Retour arrière</h3>
         <Markdown text={a.rollback} />

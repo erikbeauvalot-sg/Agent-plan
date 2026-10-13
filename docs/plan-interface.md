@@ -139,6 +139,11 @@ Pour l'utilisateur, l'aspect reste proche de l'actuel ; tout ce qui suit en dép
 - Actions proposées : risque, retour arrière, preuves, copie de la procédure, validation Superviseur ;
   « jamais exécutées par l'agent » toujours visible.
 - Catégorie corrigeable en popover, avis, précision, plan, relance.
+- Réalisé dans la PR #42 : diffusion dans l'adaptateur Chat Completions (OpenAI compatible, Azure ;
+  repli sur la réponse en bloc si le serveur la refuse), événements `answer_delta` regroupés toutes les
+  150 ms ; confiance lue sur la ligne « Confiance : … » demandée par le prompt principal ;
+  `tools/demo_live.py` réécrit la réponse par morceaux pour les traces antérieures. Reste : la diffusion
+  dans l'adaptateur Claude (`anthropic_chat.py`, avec le repli serveur `fallbacks`).
 
 ### Lot 4 : tiroir, administration, connexion, comptes
 

@@ -22,6 +22,31 @@ TEXT_CALL_NUDGE = ("Tu as écrit un appel d'outil dans le texte de ta réponse a
                    "l'outil, ou rends ta réponse finale en Markdown.")
 EMPTY_NUDGE = ("Ta réponse est vide : ni texte, ni appel d'outil. Continue : appelle l'outil que tu avais "
                "prévu, ou rends ta réponse finale.")
+STREAM_FLUSH_S = 0.15  # texte diffusé regroupé : un événement answer_delta au plus toutes les 150 ms
+STREAM_FLUSH_CHARS = 400
+
+
+class _AnswerStream:
+    """Texte que le modèle écrit, diffusé par morceaux (événements answer_delta) pour l'afficher au fil de
+    l'eau. Appelé depuis le fil d'exécution du fournisseur ; RunLog.event est protégé par un verrou."""
+
+    def __init__(self, agent_id: str, log: RunLog):
+        self.agent_id, self.log = agent_id, log
+        self.buffer: list[str] = []
+        self.size = 0
+        self.last = time.monotonic()
+
+    def __call__(self, chunk: str) -> None:
+        self.buffer.append(chunk)
+        self.size += len(chunk)
+        if self.size >= STREAM_FLUSH_CHARS or time.monotonic() - self.last >= STREAM_FLUSH_S:
+            self.flush()
+
+    def flush(self) -> None:
+        if self.buffer:
+            self.log.event(self.agent_id, "answer_delta", {"text": "".join(self.buffer)})
+            self.buffer, self.size = [], 0
+        self.last = time.monotonic()
 
 
 @dataclass
@@ -83,6 +108,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
                     final_tools: tuple[str, ...] = (), parent_id: str | None = None,
                     final_check: Callable[[str], str | None] | None = None,
                     progress_check: Callable[[list[str]], str | None] | None = None,
+                    stream_answer: bool = False,
                     budget_message: str = "Budget d'appels d'outils atteint : rends maintenant ta réponse "
                                           "finale avec ce que tu as, en indiquant ce qui manque.") -> AgentResult:
     cancel = cancel or CancelToken()
@@ -110,7 +136,7 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
         offered = [t for t in all_tools if t.name in final_tools] if out_of_budget else all_tools
         request = LLMRequest(system=system, messages=list(messages), tools=offered,
                              max_tokens=max_tokens, reasoning=reasoning)  # type: ignore[arg-type]
-        response = await _complete(agent_id, provider, request, log)
+        response = await _complete(agent_id, provider, request, log, stream=stream_answer)
         if response is None:
             result.status = "failed"
             result.answer = "L'appel au modèle a échoué ; voir events.jsonl."
@@ -192,14 +218,24 @@ async def run_agent(*, agent_id: str, provider: LLMProvider, system: str, user_m
 
 
 async def _complete(agent_id: str, provider: LLMProvider, request: LLMRequest,
-                    log: RunLog) -> LLMResponse | None:
-    log.event(agent_id, "llm_call_started", {"messages": len(request.messages)})
+                    log: RunLog, stream: bool = False) -> LLMResponse | None:
+    """Un appel au modèle, avec deux nouvelles tentatives sur une erreur passagère. Avec `stream` et un
+    fournisseur qui sait diffuser (attribut `streams`), le texte arrive par morceaux (answer_delta)."""
+    streaming = stream and getattr(provider, "streams", False)
+    log.event(agent_id, "llm_call_started", {"messages": len(request.messages), "stream": bool(streaming)})
     log.transcript(agent_id, {"direction": "request", "provider": provider.name,
                               "request": to_jsonable(request)})
     for attempt in range(3):
         started = time.monotonic()
         try:
-            response = await asyncio.to_thread(provider.complete, request)
+            if streaming:
+                out = _AnswerStream(agent_id, log)
+                try:
+                    response = await asyncio.to_thread(provider.complete, request, on_text=out)  # type: ignore[call-arg]
+                finally:
+                    out.flush()
+            else:
+                response = await asyncio.to_thread(provider.complete, request)
         except LLMError as e:
             log.event(agent_id, "llm_call_ended", {"error": e.kind, "message": str(e)[:500]})
             if MALFORMED_TOOL_CALL in str(e):
