@@ -142,6 +142,12 @@ class NewUserBody(BaseModel):
     login: str = Field(min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
     display_name: str | None = Field(default=None, max_length=120)
     roles: list[str]
+    # Sans mot de passe (cas normal depuis l'interface) : compte en attente et lien d'activation de 24 h.
+    password: str | None = Field(default=None, max_length=200)
+
+
+class ActivationBody(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
     password: str = Field(max_length=200)
 
 
@@ -224,6 +230,8 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         source = request.client.host if request.client else None
         if user is None:
             audit(None, "login_failed", {"login": body.login}, source)
+            if (minutes := locked_minutes(body.login)) is not None:
+                raise HTTPException(423, f"Compte verrouillé après 5 échecs : réessaie dans {minutes} min")
             raise HTTPException(401, "Identifiant ou mot de passe incorrect (compte verrouillé après 5 échecs)")
         audit(user, "login", source=source)
         set_cookie(response, sessions.issue(user.id))
@@ -245,7 +253,9 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         source = request.client.host if request.client else None
         if user is None:
             audit(None, "login_failed", {"login": field("login")}, source)
-            return RedirectResponse(f"/?echec=1{anchor}", status_code=303)
+            minutes = locked_minutes(field("login"))
+            reason = f"verrou={minutes}" if minutes is not None else "echec=1"
+            return RedirectResponse(f"/?{reason}{anchor}", status_code=303)
         audit(user, "login", source=source)
         response = RedirectResponse(f"/{anchor}", status_code=303)
         set_cookie(response, sessions.issue(user.id))
@@ -778,20 +788,63 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
             raise HTTPException(501, "Les comptes sont gérés par l'annuaire d'entreprise")
         return users
 
+    def locked_minutes(login: str) -> int | None:
+        return users.locked_minutes(login) if isinstance(users, FileUserStore) else None
+
     @app.get("/api/users")
     def users_list(user: User = Depends(current_user)) -> list[dict[str, Any]]:
         require(user, "manage_users")
         return store().accounts()
 
+    def activation_link(request: Request, token: str) -> str:
+        return str(request.base_url).rstrip("/") + f"/#activation/{token}"
+
     @app.post("/api/users")
-    def users_create(body: NewUserBody, user: User = Depends(current_user)) -> dict[str, Any]:
+    def users_create(body: NewUserBody, request: Request, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Création d'un compte. Sans mot de passe, le compte attend son activation et la réponse porte le
+        lien à usage unique (24 h) à transmettre à l'utilisateur, qui y choisit son mot de passe."""
         require(user, "manage_users")
         try:
             created = store().add(body.login, body.password, body.roles, body.display_name)
+            link = None
+            if body.password is None:
+                token, expires = store().invite(created.id)
+                link = {"url": activation_link(request, token), "expires_at": expires}
         except AuthError as e:
             raise HTTPException(422, str(e)) from e
-        audit(user, "user_created", {"login": created.login, "roles": created.roles})
-        return next(u for u in store().accounts() if u["id"] == created.id)
+        audit(user, "user_created", {"login": created.login, "roles": created.roles, "activation_link": bool(link)})
+        return {**next(u for u in store().accounts() if u["id"] == created.id), "activation": link}
+
+    @app.post("/api/users/{user_id}/activation-link")
+    def users_link(user_id: str, request: Request, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Nouveau lien (compte jamais activé, lien perdu ou mot de passe oublié) ; annule le précédent."""
+        require(user, "manage_users")
+        try:
+            token, expires = store().invite(user_id)
+        except AuthError as e:
+            raise HTTPException(422, str(e)) from e
+        login = next(u["login"] for u in store().accounts() if u["id"] == user_id)
+        audit(user, "activation_link", {"login": login})
+        return {"url": activation_link(request, token), "expires_at": expires}
+
+    @app.get("/api/activation/{token}")
+    def activation_info(token: str) -> dict[str, Any]:
+        """Sans session : l'écran d'activation affiche l'identifiant visé et la fin de validité du lien."""
+        info = store().activation(token)
+        if info is None:
+            raise HTTPException(404, "Lien d'activation inconnu, déjà utilisé ou expiré : demande un nouveau lien")
+        return info
+
+    @app.post("/api/activation")
+    def activate(body: ActivationBody, request: Request, response: Response) -> dict[str, Any]:
+        """Choix du mot de passe par le lien ; ouvre directement la session."""
+        try:
+            activated = store().activate(body.token, body.password)
+        except AuthError as e:
+            raise HTTPException(422, str(e)) from e
+        audit(activated, "account_activated", source=request.client.host if request.client else None)
+        set_cookie(response, sessions.issue(activated.id))
+        return activated.public()
 
     @app.post("/api/users/{user_id}")
     def users_update(user_id: str, body: UserBody, user: User = Depends(current_user)) -> dict[str, Any]:

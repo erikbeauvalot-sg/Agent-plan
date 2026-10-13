@@ -327,6 +327,13 @@ export interface Account {
   status: string;
   locked_until: string | null;
   created_at: string;
+  /** Compte en attente ou lien de nouveau mot de passe : fin de validité du lien en cours. */
+  activation_expires_at?: string | null;
+}
+
+export interface ActivationLink {
+  url: string;
+  expires_at: string;
 }
 
 /** Investigation en cours vue de l'accueil : état de chaque agent et dernière activité. */

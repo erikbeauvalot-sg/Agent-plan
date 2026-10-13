@@ -1,15 +1,17 @@
 // Connexion : un vrai envoi de formulaire (POST /login puis redirection), pour que Entrée marche partout et
 // que les gestionnaires de mots de passe reconnaissent la connexion. La page visée (#…) est conservée.
 import { useEffect, useState } from "react";
-import { Activity, Eye, EyeOff } from "../components/icons";
+import { Activity, Eye, EyeOff, Lock } from "../components/icons";
 
 export function Login() {
-  const [failed] = useState(() => new URLSearchParams(location.search).has("echec"));
+  const [params] = useState(() => new URLSearchParams(location.search));
+  const failed = params.has("echec");
+  const locked = Number(params.get("verrou")) || null; // minutes restantes après 5 échecs
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
-    if (failed) history.replaceState(null, "", "/" + location.hash); // adresse nettoyée, page visée gardée
-  }, [failed]);
+    if (failed || locked) history.replaceState(null, "", "/" + location.hash); // adresse nettoyée, page visée gardée
+  }, [failed, locked]);
 
   return (
     <section className="login">
@@ -48,10 +50,17 @@ export function Login() {
         <button type="submit" className="btn primary">
           Se connecter
         </button>
-        {failed && (
+        {locked ? (
           <p className="error" role="alert">
-            Identifiant ou mot de passe incorrect (compte verrouillé 15 minutes après 5 échecs)
+            <Lock size={14} aria-hidden="true" /> Compte verrouillé après 5 échecs : réessaie dans {locked} min, ou
+            demande un lien de nouveau mot de passe à un administrateur.
           </p>
+        ) : (
+          failed && (
+            <p className="error" role="alert">
+              Identifiant ou mot de passe incorrect. Le compte est verrouillé 15 minutes après 5 échecs.
+            </p>
+          )
         )}
       </form>
     </section>

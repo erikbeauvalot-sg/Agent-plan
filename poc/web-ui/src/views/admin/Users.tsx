@@ -1,10 +1,13 @@
-// Comptes (Administrateur) : création, rôles, désactivation, nouveau mot de passe ; jamais d'empreinte.
+// Comptes (Administrateur) : création par lien d'activation (l'utilisateur choisit son mot de passe, lien à
+// usage unique valable 24 h), rôles, désactivation, nouveau lien en cas d'oubli ; jamais d'empreinte affichée.
 import { useCallback, useEffect, useState } from "react";
 import { api, post } from "../../api/client";
-import type { Account } from "../../api/types";
+import type { Account, ActivationLink } from "../../api/types";
+import { Check, Copy } from "../../components/icons";
 import { fmtDate } from "../../lib/format";
 
 const ROLES = ["lecteur", "operateur", "superviseur", "administrateur", "auditeur"];
+const STATUS: Record<string, string> = { active: "actif", disabled: "désactivé", pending: "en attente d'activation" };
 
 function RoleBoxes({ value, onChange, name }: { value: string[]; onChange: (v: string[]) => void; name: string }) {
   return (
@@ -23,14 +26,50 @@ function RoleBoxes({ value, onChange, name }: { value: string[]; onChange: (v: s
   );
 }
 
+/** Lien à transmettre à l'utilisateur (messagerie interne, en main propre) : jamais envoyé par la passerelle. */
+function LinkBox({ login, link }: { login: string; link: ActivationLink }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="activation-link" role="status">
+      <p>
+        Lien d'activation de <strong>{login}</strong>, à lui transmettre : valable jusqu'au{" "}
+        <span className="num">{fmtDate(link.expires_at)}</span>, une seule fois.
+      </p>
+      <span className="link-row">
+        <input
+          readOnly
+          value={link.url}
+          aria-label={`Lien d'activation de ${login}`}
+          onFocus={(e) => e.target.select()}
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={() =>
+            navigator.clipboard
+              .writeText(link.url)
+              .then(() => setCopied(true))
+              .catch(() => {})
+          }
+        >
+          {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+          {copied ? "Copié" : "Copier"}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function AccountRow({
   a,
   onDone,
   onError,
+  onLink,
 }: {
   a: Account;
   onDone: (msg: string) => void;
   onError: (msg: string) => void;
+  onLink: (login: string, link: ActivationLink) => void;
 }) {
   const [roles, setRoles] = useState(a.roles);
   const update = async (body: Record<string, unknown>, msg: string) => {
@@ -41,38 +80,51 @@ function AccountRow({
       onError((e as Error).message);
     }
   };
+  const newLink = async () => {
+    try {
+      onLink(a.login, await post<ActivationLink>(`/api/users/${a.id}/activation-link`));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
   return (
     <tr>
-      <td>{a.login}</td>
+      <td className="mono">{a.login}</td>
       <td>{a.display_name}</td>
       <td>
-        <RoleBoxes value={roles} onChange={setRoles} name={a.login} />{" "}
-        <button type="button" className="link" onClick={() => update({ roles }, "Rôles enregistrés.")}>
-          Enregistrer les rôles
-        </button>
+        <div className="role-cell">
+          <RoleBoxes value={roles} onChange={setRoles} name={a.login} />
+          {roles.join() !== a.roles.join() && (
+            <button type="button" className="btn" onClick={() => update({ roles }, "Rôles enregistrés.")}>
+              Enregistrer les rôles
+            </button>
+          )}
+        </div>
       </td>
       <td>
-        {a.status === "active" ? "actif" : "désactivé"}
-        {a.locked_until && <span className="faint"> (verrouillé jusqu'à {fmtDate(a.locked_until)})</span>}
+        <span className="tag" data-status={a.status}>
+          {STATUS[a.status] ?? a.status}
+        </span>
+        {a.status === "pending" && a.activation_expires_at && (
+          <span className="faint"> · lien valable jusqu'au {fmtDate(a.activation_expires_at)}</span>
+        )}
+        {a.locked_until && <span className="faint"> · verrouillé jusqu'à {fmtDate(a.locked_until)}</span>}
       </td>
-      <td>
-        <button
-          type="button"
-          className="link"
-          onClick={() => update({ status: a.status === "active" ? "disabled" : "active" }, "Compte mis à jour.")}
-        >
-          {a.status === "active" ? "Désactiver" : "Réactiver"}
-        </button>{" "}
-        <button
-          type="button"
-          className="link"
-          onClick={() => {
-            const password = window.prompt("Nouveau mot de passe (12 caractères minimum) :");
-            if (password) update({ password }, "Mot de passe changé.");
-          }}
-        >
-          Nouveau mot de passe…
-        </button>
+      <td className="row-actions">
+        {a.status !== "pending" && (
+          <button
+            type="button"
+            className="link"
+            onClick={() => update({ status: a.status === "active" ? "disabled" : "active" }, "Compte mis à jour.")}
+          >
+            {a.status === "active" ? "Désactiver" : "Réactiver"}
+          </button>
+        )}
+        {a.status !== "disabled" && (
+          <button type="button" className="link" onClick={newLink}>
+            {a.status === "pending" ? "Nouveau lien d'activation" : "Lien de nouveau mot de passe"}
+          </button>
+        )}
       </td>
     </tr>
   );
@@ -81,10 +133,10 @@ function AccountRow({
 export function Users() {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [link, setLink] = useState<{ login: string; link: ActivationLink } | null>(null);
   const [login, setLogin] = useState("");
   const [name, setName] = useState("");
   const [roles, setRoles] = useState(["operateur"]);
-  const [password, setPassword] = useState("");
 
   const load = useCallback(
     () =>
@@ -98,15 +150,24 @@ export function Users() {
   }, [load]);
   const done = (text: string) => (setMessage({ text, error: false }), load());
   const fail = (text: string) => setMessage({ text, error: true });
+  const showLink = (who: string, l: ActivationLink) => {
+    setLink({ login: who, link: l });
+    setMessage(null);
+    load();
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await post("/api/users", { login, display_name: name || null, roles, password });
+      const created = await post<Account & { activation: ActivationLink | null }>("/api/users", {
+        login,
+        display_name: name || null,
+        roles,
+      });
       setLogin("");
       setName("");
-      setPassword("");
-      done("Compte créé.");
+      if (created.activation) showLink(created.login, created.activation);
+      else done("Compte créé.");
     } catch (err) {
       fail((err as Error).message);
     }
@@ -130,13 +191,21 @@ export function Users() {
             </thead>
             <tbody>
               {accounts.map((a) => (
-                <AccountRow key={`${a.id}-${a.roles.join(",")}-${a.status}`} a={a} onDone={done} onError={fail} />
+                <AccountRow
+                  key={`${a.id}-${a.roles.join(",")}-${a.status}`}
+                  a={a}
+                  onDone={done}
+                  onError={fail}
+                  onLink={showLink}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <form className="ask-row" onSubmit={create}>
+      {link && <LinkBox login={link.login} link={link.link} />}
+      <form className="new-account" onSubmit={create}>
+        <h3>Nouveau compte</h3>
         <input
           placeholder="Identifiant"
           aria-label="Identifiant"
@@ -152,19 +221,13 @@ export function Users() {
           onChange={(e) => setName(e.target.value)}
         />
         <RoleBoxes value={roles} onChange={setRoles} name="nouveau compte" />
-        <input
-          type="password"
-          placeholder="Mot de passe (12 caractères min.)"
-          aria-label="Mot de passe"
-          required
-          minLength={12}
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button type="submit" className="btn">
-          Créer le compte
+        <button type="submit" className="btn primary">
+          Créer et obtenir le lien d'activation
         </button>
+        <p className="faint hint">
+          L'utilisateur choisit lui-même son mot de passe (12 caractères au moins, hors mots de passe compromis) avec le
+          lien, valable 24 h et une seule fois. Aucun mot de passe ne passe par l'administrateur.
+        </p>
       </form>
       {message && (
         <p className={message.error ? "error" : "muted"} role={message.error ? "alert" : "status"}>

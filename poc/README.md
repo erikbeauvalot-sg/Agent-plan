@@ -322,8 +322,10 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
   classifieur, sous-agents) et les tokens consommés, comptés en direct ; sur chaque nœud et dans le
   détail d'un agent, son modèle et ses tokens. Ils sont aussi dans `manifest.json` (`models`,
   `usage`, `usage_by_agent`).
-- **Détail d'un agent** (clic sur un nœud) : prompt reçu, rapport, chaque appel d'outil, réponses du modèle,
-  bouton d'arrêt.
+- **Détail d'un agent** (clic sur un nœud), en onglets : résumé (objectif, modèle, tokens, jauge de budget,
+  rapport, relance), appels d'outils (ouvert sur l'appel cité par une preuve), échanges avec le modèle,
+  prompt ; agent précédent ou suivant avec les flèches de l'en-tête ou les touches `[` et `]` ; bouton
+  d'arrêt.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
   « Arrêter l'investigation » demande à l'agent principal une synthèse partielle. **Arrêt immédiat**
   (permission `kill`, Superviseur et Administrateur) coupe tout sans synthèse, après confirmation.
@@ -354,11 +356,22 @@ Les cinq rôles du document d'architecture :
 | `auditeur` | Tout lire, prompts, configuration et journal d'accès compris, sans rien piloter |
 
 Une investigation partagée (bouton **Partager**) devient lisible par tout utilisateur connecté, mais
-seuls son auteur et les rôles qui voient tout en ont le détail. L'écran **Administration** regroupe,
-selon le rôle : les actions à valider, les indicateurs par catégorie, les propositions d'évolution, les
-coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'équipe, un Superviseur voit
-tout) et le journal d'accès. Comptes dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage
-15 min après 5 échecs) ; journal d'accès dans `audit/`.
+seuls son auteur et les rôles qui voient tout en ont le détail. L'écran **Administration** est en
+onglets, selon le rôle : À valider (actions proposées), Propositions d'évolution, Indicateurs par
+catégorie, Configuration (éditeur avec numéros de ligne ; la ligne citée par une erreur de validation est
+marquée), Comptes, Coûts (tokens par jour, utilisateur et modèle ; le POC n'a pas de notion d'équipe, un
+Superviseur voit tout) et Journal d'accès ; les tableaux se trient par colonne.
+
+**Comptes** dans `auth/users.yaml` (mots de passe en Argon2id, verrouillage 15 min après 5 échecs : l'écran
+de connexion donne la durée restante). Depuis l'interface, l'Administrateur crée un compte sans mot de
+passe : la passerelle rend un **lien d'activation** à usage unique, valable 24 h (`#activation/<jeton>`,
+seule son empreinte est gardée), qu'il transmet à l'utilisateur ; celui-ci y choisit son mot de passe et
+sa session s'ouvre. Le même lien sert au mot de passe oublié (« Lien de nouveau mot de passe »). Un mot de
+passe est refusé s'il a moins de 12 caractères, s'il contient l'identifiant ou le nom, ou s'il figure dans
+la liste des mots de passe compromis : une courte liste intégrée, complétée par
+`auth/compromised-passwords.txt` s'il existe (un mot de passe par ligne, par exemple une liste publique
+de fuites ; aucun appel externe). `diagagent user add` reste disponible pour le premier administrateur.
+Journal d'accès dans `audit/`.
 
 ### Développer l'interface
 

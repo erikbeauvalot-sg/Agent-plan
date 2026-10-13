@@ -8,6 +8,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ADMIN_PERMISSIONS, TopBar } from "./components/TopBar";
 import { useRoute } from "./lib/route";
 import { applyTheme, loadTheme, type ThemeChoice } from "./lib/theme";
+import { Activation } from "./views/Activation";
 import { Admin } from "./views/Admin";
 import { Home } from "./views/Home";
 import { Login } from "./views/Login";
@@ -26,12 +27,15 @@ export function App() {
   const route = useRoute();
   const pendingG = useRef(0);
 
-  useEffect(() => {
-    setUnauthorizedHandler(() => setSession({ state: "anonymous" }));
+  const loadSession = useCallback(() => {
     api<Me>("/api/me")
       .then((me) => setSession({ state: "signed-in", me }))
       .catch(() => setSession({ state: "anonymous" }));
   }, []);
+  useEffect(() => {
+    setUnauthorizedHandler(() => setSession({ state: "anonymous" }));
+    loadSession();
+  }, [loadSession]);
 
   // Changer de vue ramène en haut de page, comme un changement de page (pas un changement de filtre).
   const viewKey = route.view === "run" || route.view === "rerun" ? `${route.view}/${route.runId}` : route.view;
@@ -73,6 +77,17 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [signedIn]);
 
+  // Le lien d'activation s'ouvre sans session (ou avec celle d'un autre compte, sur un poste partagé).
+  if (route.view === "activation")
+    return (
+      <Activation
+        token={route.token}
+        onActivated={() => {
+          location.replace("#"); // remplace l'entrée d'historique : le jeton n'y reste pas
+          loadSession();
+        }}
+      />
+    );
   if (session.state === "loading") return <div className="login" aria-busy="true" />;
   if (session.state === "anonymous") return <Login />;
   const { me } = session;

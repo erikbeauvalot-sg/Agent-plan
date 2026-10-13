@@ -104,7 +104,39 @@ def test_lockout_after_five_failures(env):
     c = client(app)
     for _ in range(5):
         c.post("/api/login", json={"login": "bob", "password": "faux-mot-de-passe"})
-    assert c.post("/api/login", json={"login": "bob", "password": PWD}).status_code == 401
+    locked = c.post("/api/login", json={"login": "bob", "password": PWD})
+    assert locked.status_code == 423 and "15 min" in locked.json()["detail"]
+    form = c.post("/login", data={"login": "bob", "password": PWD}, follow_redirects=False)
+    assert form.headers["location"].startswith("/?verrou=15")
+
+
+def test_account_by_activation_link(env, tmp_path):
+    app, _ = env
+    admin, alice = client(app, "admin"), client(app, "alice")
+    assert alice.post("/api/users", json={"login": "zoe", "roles": ["operateur"]}, headers=H).status_code == 403
+    created = admin.post("/api/users", json={"login": "zoe", "display_name": "Zoé Martin", "roles": ["operateur"]},
+                         headers=H).json()
+    assert created["status"] == "pending" and created["activation"]["url"].startswith("http://testserver/#activation/")
+    token = created["activation"]["url"].split("/")[-1]
+    anon = client(app)
+    assert anon.post("/api/login", json={"login": "zoe", "password": PWD}).status_code == 401  # pas encore active
+    assert anon.get(f"/api/activation/{token}").json()["login"] == "zoe"
+    for weak, reason in (("courtcourt", "12 caractères"), ("motdepasse123", "compromis"), ("zoe-zoe-zoe-zoe-1", "identifiant"),
+                         ("Martin-2026-ok!", "nom")):
+        r = anon.post("/api/activation", json={"token": token, "password": weak})
+        assert r.status_code == 422 and reason in r.json()["detail"], weak
+    done = anon.post("/api/activation", json={"token": token, "password": "cheval-agrafe-batterie"})
+    assert done.status_code == 200 and anon.get("/api/me").json()["login"] == "zoe"  # session ouverte
+    assert anon.post("/api/activation", json={"token": token, "password": "cheval-agrafe-batterie"}).status_code == 422
+    assert anon.get(f"/api/activation/{token}").status_code == 404  # usage unique
+    # Mot de passe oublié : nouveau lien, l'ancien mot de passe marche jusqu'à son utilisation.
+    zoe_id = created["id"]
+    link = admin.post(f"/api/users/{zoe_id}/activation-link", headers=H).json()
+    assert client(app).post("/api/login", json={"login": "zoe", "password": "cheval-agrafe-batterie"}).status_code == 200
+    assert client(app).post("/api/activation", json={"token": link["url"].split("/")[-1],
+                                                     "password": "nouvelle-phrase-secrete"}).status_code == 200
+    log = "\n".join(p.read_text() for p in (tmp_path / "audit").glob("**/*") if p.is_file())
+    assert '"user_created"' in log and '"account_activated"' in log and '"activation_link"' in log
 
 
 def test_ask_stream_and_visibility(env):

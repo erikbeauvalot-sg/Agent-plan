@@ -4,13 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 export type Route =
-  { view: "home" } | { view: "rerun"; runId: string } | { view: "run"; runId: string } | { view: "admin" };
+  | { view: "home" }
+  | { view: "rerun"; runId: string }
+  | { view: "run"; runId: string }
+  | { view: "admin" }
+  | { view: "activation"; token: string }; // #activation/<jeton> : lien reçu de l'administrateur
 
 const RUN_ID = /^\d{8}T\d{6}Z-[0-9a-f]{4}$/;
+const TOKEN = /^[A-Za-z0-9_-]{20,200}$/;
 
 export function parseRoute(hash: string): Route {
   const target = decodeURIComponent(hash.replace(/^#/, ""));
   if (target === "admin") return { view: "admin" };
+  if (target.startsWith("activation/") && TOKEN.test(target.slice(11)))
+    return { view: "activation", token: target.slice(11) };
   if (target.startsWith("relance/") && RUN_ID.test(target.slice(8))) return { view: "rerun", runId: target.slice(8) };
   if (RUN_ID.test(target)) return { view: "run", runId: target };
   return { view: "home" };

@@ -342,6 +342,8 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
           canBudget={can("adjust_budget")}
           onStop={stop}
           onRestarted={(taskId) => setDrawer({ agentId: taskId })}
+          onNavigate={(id) => setDrawer({ agentId: id })}
+          order={run.order}
           onClose={closeDrawer}
         />
       )}

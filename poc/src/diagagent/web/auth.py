@@ -25,8 +25,11 @@ from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from diagagent import catalog
 
+from . import passwords
+
 ROLES = ("lecteur", "operateur", "superviseur", "administrateur", "auditeur")
-MIN_PASSWORD = 12
+MIN_PASSWORD = passwords.MIN_PASSWORD
+ACTIVATION_HOURS = 24  # validité d'un lien d'activation ou de réinitialisation
 MAX_FAILURES = 5
 LOCK_MINUTES = 15
 SESSION_IDLE_S = 15 * 60
@@ -58,6 +61,11 @@ PERMISSIONS = {
 }
 
 _hasher = PasswordHasher()
+
+
+def _digest(token: str) -> str:
+    """Empreinte d'un jeton d'activation : le jeton lui-même n'est jamais écrit sur disque."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 @dataclass
@@ -109,9 +117,17 @@ class FileUserStore:
     def _user(entry: dict[str, Any]) -> User:
         return User(entry["id"], entry["login"], entry.get("display_name", entry["login"]), entry["roles"])
 
-    def add(self, login: str, password: str, roles: list[str], display_name: str | None = None) -> User:
-        if len(password) < MIN_PASSWORD:
-            raise AuthError(f"Mot de passe trop court : {MIN_PASSWORD} caractères minimum")
+    @staticmethod
+    def check_password(password: str, login: str, display_name: str | None = None) -> None:
+        reasons = passwords.problems(password, login, display_name or "")
+        if reasons:
+            raise AuthError("Mot de passe refusé : " + " ; ".join(reasons))
+
+    def add(self, login: str, password: str | None, roles: list[str], display_name: str | None = None) -> User:
+        """Compte actif avec mot de passe (ligne de commande), ou en attente d'activation sans mot de
+        passe (interface : l'utilisateur le choisit par le lien d'activation, voir invite)."""
+        if password is not None:
+            self.check_password(password, login, display_name)
         unknown = [r for r in roles if r not in ROLES]
         if unknown or not roles:
             raise AuthError(f"Rôle inconnu : {unknown or roles} ; rôles : {', '.join(ROLES)}")
@@ -121,11 +137,67 @@ class FileUserStore:
                 raise AuthError(f"L'utilisateur {login} existe déjà")
             entry = {"id": f"u-{len(data['users']) + 1:04d}", "login": login,
                      "display_name": display_name or login, "roles": roles,
-                     "password_hash": _hasher.hash(password), "status": "active",
+                     "password_hash": _hasher.hash(password) if password is not None else None,
+                     "status": "active" if password is not None else "pending",
                      "failed_logins": 0, "locked_until": None, "created_at": date.today().isoformat()}
             data["users"].append(entry)
             self._write(data)
         return self._user(entry)
+
+    def invite(self, user_id: str) -> tuple[str, str]:
+        """Lien d'activation à usage unique, valable ACTIVATION_HOURS : nouveau compte, ou mot de passe
+        oublié. Seule l'empreinte du jeton est gardée ; un nouveau lien annule le précédent. Rend le jeton
+        et sa date d'expiration."""
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=ACTIVATION_HOURS)).isoformat()
+        with self._lock:
+            data = self._read()
+            entry = next((u for u in data["users"] if u["id"] == user_id), None)
+            if entry is None:
+                raise AuthError(f"Utilisateur inconnu : {user_id}")
+            if entry.get("status") == "disabled":
+                raise AuthError("Compte désactivé : réactive-le avant d'envoyer un lien")
+            entry["activation"] = {"token_sha256": _digest(token), "expires_at": expires}
+            self._write(data)
+        return token, expires
+
+    def activation(self, token: str) -> dict[str, Any] | None:
+        """Compte visé par un lien encore valable (pour afficher l'identifiant sur l'écran d'activation)."""
+        entry = self._by_token(self._read(), token)
+        return {"login": entry["login"], "display_name": entry.get("display_name"),
+                "expires_at": entry["activation"]["expires_at"]} if entry else None
+
+    def activate(self, token: str, password: str) -> User:
+        with self._lock:
+            data = self._read()
+            entry = self._by_token(data, token)
+            if entry is None:
+                raise AuthError("Lien d'activation inconnu, déjà utilisé ou expiré : demande un nouveau lien")
+            self.check_password(password, entry["login"], entry.get("display_name"))
+            entry.update(password_hash=_hasher.hash(password), status="active", failed_logins=0, locked_until=None)
+            entry.pop("activation", None)
+            self._write(data)
+        return self._user(entry)
+
+    @staticmethod
+    def _by_token(data: dict[str, Any], token: str) -> dict[str, Any] | None:
+        digest = _digest(token)
+        now = datetime.now(timezone.utc)
+        for u in data["users"]:
+            act = u.get("activation") or {}
+            if act.get("token_sha256") and hmac.compare_digest(act["token_sha256"], digest) \
+                    and datetime.fromisoformat(act["expires_at"]) > now and u.get("status") != "disabled":
+                return u
+        return None
+
+    def locked_minutes(self, login: str) -> int | None:
+        """Minutes de verrouillage restantes après trop d'échecs, ou None."""
+        entry = next((u for u in self._read()["users"] if u["login"] == login), None)
+        until = entry.get("locked_until") if entry else None
+        if not until:
+            return None
+        left = (datetime.fromisoformat(until) - datetime.now(timezone.utc)).total_seconds()
+        return max(1, round(left / 60)) if left > 0 else None
 
     def authenticate(self, login: str, password: str) -> User | None:
         with self._lock:
@@ -156,7 +228,9 @@ class FileUserStore:
     def accounts(self) -> list[dict[str, Any]]:
         """Comptes sans leur empreinte de mot de passe, qui ne quitte jamais la passerelle."""
         keep = ("id", "login", "display_name", "roles", "status", "locked_until", "created_at")
-        return [{k: u.get(k) for k in keep} for u in self._read()["users"]]
+        return [{**{k: u.get(k) for k in keep},
+                 "activation_expires_at": (u.get("activation") or {}).get("expires_at")}
+                for u in self._read()["users"]]
 
     def update(self, user_id: str, roles: list[str] | None = None, status: str | None = None,
                password: str | None = None, display_name: str | None = None) -> dict[str, Any]:
@@ -164,13 +238,15 @@ class FileUserStore:
             raise AuthError(f"Rôles invalides : {roles} ; rôles : {', '.join(ROLES)}")
         if status not in (None, "active", "disabled"):
             raise AuthError("status vaut active ou disabled")
-        if password is not None and len(password) < MIN_PASSWORD:
-            raise AuthError(f"Mot de passe trop court : {MIN_PASSWORD} caractères minimum")
         with self._lock:
             data = self._read()
             entry = next((u for u in data["users"] if u["id"] == user_id), None)
             if entry is None:
                 raise AuthError(f"Utilisateur inconnu : {user_id}")
+            if password is not None:
+                self.check_password(password, entry["login"], display_name or entry.get("display_name"))
+            if status == "active" and entry.get("status") == "pending" and password is None:
+                raise AuthError("Compte en attente d'activation : l'utilisateur choisit son mot de passe par le lien")
             after = {**entry, **({"roles": roles} if roles is not None else {}),
                      **({"status": status} if status is not None else {})}
             # Jamais sans administrateur actif : personne ne pourrait plus gérer les comptes.
