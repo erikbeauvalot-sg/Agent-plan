@@ -3,11 +3,13 @@
 import { useEffect } from "react";
 import { post } from "../api/client";
 import type { Me } from "../api/types";
+import { useCurrentRun } from "../lib/currentRun";
 import { fmtDate, fmtUtc } from "../lib/format";
 import { adminHref } from "../lib/route";
 import { effectiveTheme, nextTheme, type ThemeChoice } from "../lib/theme";
 import { Activity, Clock, LogOut, Monitor, Moon, Search, Settings, Sun } from "./icons";
 import { onMenuKeys, usePopover } from "./Popover";
+import { StateBadge } from "./StateBadge";
 
 export const ADMIN_PERMISSIONS = [
   "review",
@@ -45,6 +47,7 @@ export function TopBar({ me, theme, onTheme, onPalette }: Props) {
   const ThemeIcon = theme === "system" ? Monitor : effectiveTheme(theme) === "dark" ? Moon : Sun;
   const next = nextTheme(theme);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
+  const run = useCurrentRun();
   useEffect(() => {
     if (open) document.querySelector<HTMLElement>(".account-menu [data-item]")?.focus();
   }, [open]);
@@ -60,6 +63,12 @@ export function TopBar({ me, theme, onTheme, onPalette }: Props) {
         <Activity size={18} strokeWidth={2} aria-hidden="true" />
         <span className="brand-name">Agent de diagnostic</span>
       </a>
+      {run && (
+        <span className="topbar-run" title={run.question}>
+          <StateBadge state={run.status} hideLabel />
+          <span>{run.question}</span>
+        </span>
+      )}
       <span className="spacer" />
       {me.reference_time && (
         <span className="ref-time" title={`Heure de référence figée : ${me.reference_time} (UTC)`}>

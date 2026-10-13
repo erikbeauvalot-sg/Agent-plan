@@ -184,6 +184,14 @@ def _check_poc(text: str) -> None:
     orch = cfg.get("orchestration") or {}
     if not isinstance(orch, dict) or not all(isinstance(v, (int, float)) and v >= 0 for v in orch.values()):
         raise ConfigError("orchestration : des nombres positifs")
+    sig = cfg.get("signals") or {}
+    known = {"stuck_s", "loop_repeats", "error_streak", "budget_ratio", "slow_tool_s"}
+    if not isinstance(sig, dict) or set(sig) - known:
+        raise ConfigError(f"signals : seuils connus {', '.join(sorted(known))}")
+    if not all(isinstance(v, (int, float)) and v > 0 for v in sig.values()):
+        raise ConfigError("signals : des nombres strictement positifs")
+    if sig.get("budget_ratio", 0.8) > 1:
+        raise ConfigError("signals.budget_ratio : une part du budget, entre 0 et 1")
 
 
 def _check_agent(text: str, stem: str) -> None:

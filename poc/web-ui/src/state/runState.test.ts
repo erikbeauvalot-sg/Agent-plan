@@ -144,3 +144,57 @@ describe("signals", () => {
     expect(signals({ ...a, status: "completed" }, a.last + 121_000)).toEqual([]);
   });
 });
+
+describe("signaux de l'orchestrateur et activité", () => {
+  const events = [
+    ev("lead", "agent_started", "00", { max_tool_calls: 10 }),
+    ev("T01-metrics-srv-pay-01", "agent_spawned", "01", { role: "metrics", objective: "latence" }, "lead"),
+    ev("T01-metrics-srv-pay-01", "agent_started", "02", {}, "lead"),
+    ev(
+      "T01-metrics-srv-pay-01",
+      "tool_call_started",
+      "03",
+      {
+        tool: "query_metric",
+        ref: "subagents/T01-metrics-srv-pay-01/calls/0001.json",
+        arguments: { host: "srv-pay-01", metric: "cpu.usage" },
+      },
+      "lead",
+    ),
+    ev(
+      "T01-metrics-srv-pay-01",
+      "signal_raised",
+      "20",
+      {
+        kind: "slow:subagents/T01-metrics-srv-pay-01/calls/0001.json",
+        text: "source lente",
+        ref: "subagents/T01-metrics-srv-pay-01/calls/0001.json",
+      },
+      "lead",
+    ),
+    ev("T01-metrics-srv-pay-01", "signal_raised", "21", { kind: "loop", text: "boucle", level: "warn" }, "lead"),
+  ];
+  const run = reduceAll(events);
+  const t01 = run.agents["T01-metrics-srv-pay-01"]!;
+
+  it("décrit ce que fait l'agent en ce moment", () => {
+    expect(t01.current).toBe("interroge les métriques : cpu.usage de srv-pay-01");
+    expect(run.feed.map((f) => f.text)).toEqual([
+      "T01 lancé : latence",
+      "T01 interroge les métriques : cpu.usage de srv-pay-01",
+      "T01 — source lente",
+      "T01 — boucle",
+    ]);
+  });
+
+  it("affiche les signaux du serveur sans les recalculer", () => {
+    expect(run.serverSignals).toBe(true);
+    const now = Date.parse("2026-10-07T06:00:30Z");
+    expect(signals(t01, now, true).map((s) => s.text)).toEqual(["boucle", "source lente"]);
+    expect(t01.slowRefs).toEqual(["subagents/T01-metrics-srv-pay-01/calls/0001.json"]);
+    // Un signal ne compte pas comme activité de l'agent.
+    expect(t01.last).toBe(Date.parse("2026-10-07T06:00:03Z"));
+    const cleared = reduce(run, ev("T01-metrics-srv-pay-01", "signal_cleared", "22", { kind: "loop" }, "lead"));
+    expect(signals(cleared.agents["T01-metrics-srv-pay-01"]!, now, true).map((s) => s.key)).toEqual(["slow"]);
+  });
+});

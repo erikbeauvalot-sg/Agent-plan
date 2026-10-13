@@ -130,6 +130,8 @@ export interface Manifest {
   user: string;
   started_at: string;
   models_profile?: string | null;
+  /** « orchestrator » : les signaux sont dans la trace (signal_raised), pas à recalculer. */
+  signals?: string | null;
   sources?: string[] | null;
   category?: RunCategory | null;
 }

@@ -289,9 +289,23 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 
 - **Conversation** : on pose la question sur l'accueil ; la réponse s'affiche à la fin, chaque preuve
   `[…/calls/NNNN.json]` est cliquable.
-- **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec la jauge de
-  budget et les signaux (bloqué depuis 120 s, boucle, 3 erreurs d'outil, budget à 80 %, erreur modèle).
-- **Chronologie** : une ligne par agent, appels au modèle et aux outils.
+- **Ligne de statut** (en direct) : ce que fait l'agent actif le plus récent, en clair (« T03 interroge
+  les métriques : cpu.usage de srv-pay-01 »), et le nombre d'agents actifs ; le titre de l'investigation
+  et son état restent dans la barre du haut.
+- **Graphe d'investigation** : agent principal et sous-agents, colorés par état, avec l'action en cours,
+  la jauge de budget et les signaux. En direct, un agent qui naît apparaît en fondu et chaque appel
+  d'outil envoie une impulsion le long de son lien ; le graphe se recadre quand un agent arrive.
+- **Signaux** : calculés par l'orchestrateur (`src/diagagent/signals.py`) et écrits dans `events.jsonl`
+  (`signal_raised`, `signal_cleared`), donc visibles au rejeu : bloqué (aucun événement depuis 120 s ;
+  l'agent principal qui attend des sous-agents actifs ne l'est pas), boucle (même appel 3 fois),
+  3 erreurs d'outil de suite, budget au-delà de 80 %, modèle (refus, quota, bascule de secours), source
+  lente (appel d'outil au-delà de 10 s, marqué dans la chronologie). Seuils dans `config/poc.yaml`
+  (section `signals`). Les traces antérieures gardent les signaux recalculés par le navigateur.
+- **Chronologie** : une ligne par agent, appels au modèle et aux outils ; les appels encore ouverts
+  s'étirent en direct, l'attente des sous-agents est hachurée, une source lente soulignée. Le survol d'une
+  ligne éclaire le nœud du graphe, et inversement.
+- **Fil d'activité** : chaque appel d'outil, lancement, rapport, signal et décision, du plus récent au
+  plus ancien ; un clic sur l'agent ouvre son détail.
 - **Modèles et tokens** : sous la question, le fournisseur et le modèle de chaque rôle (principal,
   classifieur, sous-agents) et les tokens consommés, comptés en direct ; sur chaque nœud et dans le
   détail d'un agent, son modèle et ses tokens. Ils sont aussi dans `manifest.json` (`models`,
@@ -299,7 +313,11 @@ Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.
 - **Détail d'un agent** (clic sur un nœud) : prompt reçu, rapport, chaque appel d'outil, réponses du modèle,
   bouton d'arrêt.
 - **Arrêt** : un sous-agent arrêté rend un rapport partiel et l'agent principal continue ;
-  « Arrêter l'investigation » demande à l'agent principal une synthèse partielle.
+  « Arrêter l'investigation » demande à l'agent principal une synthèse partielle. **Arrêt immédiat**
+  (permission `kill`, Superviseur et Administrateur) coupe tout sans synthèse, après confirmation.
+- **Démonstration en direct sans modèle** : `uv run python tools/demo_live.py <run_id> --speed 2` rejoue
+  une investigation enregistrée sous un nouvel identifiant, au rythme d'origine, signaux recalculés ;
+  ouvrir l'adresse affichée (le serveur doit lire le même dossier `runs/`).
 
 Les cinq rôles du document d'architecture :
 

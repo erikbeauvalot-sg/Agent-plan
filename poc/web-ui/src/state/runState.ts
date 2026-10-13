@@ -2,6 +2,7 @@
 // Fonction pure : le même état se reconstruit à partir des seuls événements, en direct comme au rejeu
 // (document d'architecture, « Modèle d'événement »). Reprend la logique de l'interface actuelle (app.js).
 import type { RunEvent } from "../api/types";
+import { agentName, describeCall } from "../lib/activity";
 
 export type SegmentKind = "llm" | "tool" | "err";
 
@@ -39,7 +40,25 @@ export interface AgentState extends Usage {
   modelError: string | null;
   llm: string | null;
   report: string | null;
+  /** Appels d'outils en cours (ref → outil, paramètres, début) et ce que fait l'agent en ce moment. */
+  calls: Record<string, { tool: string; args: unknown; start: number }>;
+  current: string | null;
+  /** Signaux écrits par l'orchestrateur (signal_raised / signal_cleared), par type. */
+  serverSignals: Record<string, Signal>;
+  slowRefs: string[];
 }
+
+/** Une ligne du fil d'activité. */
+export interface FeedItem {
+  seq: number;
+  ts: number;
+  agent: string;
+  text: string;
+  kind: "tool" | "agent" | "signal" | "run";
+  bad?: boolean;
+}
+
+const FEED_MAX = 300;
 
 export interface RunState {
   agents: Record<string, AgentState>;
@@ -50,6 +69,10 @@ export interface RunState {
   classifier: Usage | null;
   /** Événements qui demandent de relire la synthèse (catégorie, action proposée…). */
   summaryVersion: number;
+  /** Fil d'activité, du plus ancien au plus récent (les FEED_MAX derniers). */
+  feed: FeedItem[];
+  /** La trace contient des signaux de l'orchestrateur : le navigateur ne les recalcule pas. */
+  serverSignals: boolean;
 }
 
 export const emptyRun = (): RunState => ({
@@ -60,6 +83,8 @@ export const emptyRun = (): RunState => ({
   lastSeq: 0,
   classifier: null,
   summaryVersion: 0,
+  feed: [],
+  serverSignals: false,
 });
 
 const noUsage = (): Usage => ({
@@ -105,6 +130,10 @@ function newAgent(e: RunEvent, ts: number): AgentState {
     modelError: null,
     llm: null,
     report: null,
+    calls: {},
+    current: null,
+    serverSignals: {},
+    slowRefs: [],
     ...noUsage(),
   };
 }
@@ -117,14 +146,19 @@ export function reduce(state: RunState, e: RunEvent): RunState {
   const ts = Date.parse(e.ts);
   const d = e.data ?? {};
   const prev = state.agents[e.agent_id];
-  let a: AgentState = prev ? { ...prev, last: ts } : newAgent(e, ts);
+  // Un signal n'est pas une activité de l'agent : il ne remet pas à zéro sa durée d'inactivité.
+  const isSignal = e.type.startsWith("signal_");
+  let a: AgentState = prev ? (isSignal ? { ...prev } : { ...prev, last: ts }) : newAgent(e, ts);
   const agents = { ...state.agents };
   const order = prev ? state.order : [...state.order, e.agent_id];
-  let { classifier, summaryVersion } = state;
+  let { classifier, summaryVersion, serverSignals } = state;
+  const said: Omit<FeedItem, "seq" | "ts" | "agent">[] = [];
+  const who = agentName(e.agent_id);
 
   switch (e.type) {
     case "agent_spawned":
       a = { ...a, objective: str(d.objective), parent: "lead" };
+      said.push({ kind: "agent", text: `${who} lancé : ${str(d.objective)}` });
       break;
     case "agent_started":
       a = {
@@ -135,7 +169,7 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       };
       break;
     case "llm_call_started":
-      a = { ...a, open: { ...a.open, llm: ts } };
+      a = { ...a, open: { ...a.open, llm: ts }, current: Object.keys(a.calls).length ? a.current : "réfléchit" };
       break;
     case "llm_call_ended": {
       const error = d.error ? str(d.error) : null;
@@ -156,12 +190,16 @@ export function reduce(state: RunState, e: RunEvent): RunState {
     case "tool_call_started": {
       const key = str(d.tool) + JSON.stringify(d.arguments ?? {});
       const count = (a.repeats[key] ?? 0) + 1;
+      const current = describeCall(str(d.tool), d.arguments);
       a = {
         ...a,
         open: { ...a.open, [str(d.ref)]: ts },
         repeats: { ...a.repeats, [key]: count },
         maxRepeat: Math.max(a.maxRepeat, count),
+        calls: { ...a.calls, [str(d.ref)]: { tool: str(d.tool), args: d.arguments, start: ts } },
+        current,
       };
+      said.push({ kind: "tool", text: `${who} ${current}` });
       break;
     }
     case "tool_call_ended": {
@@ -173,15 +211,29 @@ export function reduce(state: RunState, e: RunEvent): RunState {
         label: str(d.tool),
         ref,
       };
+      const { [ref]: done, ...calls } = a.calls;
+      const still = Object.values(calls).at(-1);
       a = {
         ...a,
         toolCalls: a.toolCalls + 1,
         errorStreak: d.is_error ? a.errorStreak + 1 : 0,
         segments: [...a.segments, seg],
+        calls,
+        current: still ? describeCall(still.tool, still.args) : a.current,
       };
+      if (d.is_error && done) said.push({ kind: "tool", text: `${who} : erreur de ${str(d.tool)}`, bad: true });
       break;
     }
     case "stop_requested":
+      said.push({
+        kind: "run",
+        text:
+          d.scope === "agent"
+            ? `Arrêt de ${who} demandé par ${str(d.by)}`
+            : d.scope === "kill"
+              ? `Arrêt immédiat demandé par ${str(d.by)}`
+              : `Arrêt de l'investigation demandé par ${str(d.by)}`,
+      });
       if (d.scope === "agent") a = { ...a, status: "stopping" };
       else {
         for (const [id, x] of Object.entries(agents))
@@ -191,10 +243,31 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       break;
     case "report_submitted":
       a = { ...a, report: str(d.status) };
+      said.push({ kind: "agent", text: `${who} a rendu son rapport (${statusText(str(d.status))})` });
       break;
     case "agent_ended":
-      a = { ...a, status: str(d.status), end: ts };
+      a = { ...a, status: str(d.status), end: ts, current: null, calls: {} };
+      said.push({ kind: "agent", text: `${who} : ${statusText(str(d.status))}`, bad: d.status === "failed" });
       break;
+    case "signal_raised": {
+      const kind = str(d.kind);
+      const signal: Signal = { key: kind, text: str(d.text) || kind, bad: d.level === "bad" };
+      serverSignals = true;
+      a = {
+        ...a,
+        serverSignals: { ...a.serverSignals, [kind]: signal },
+        slowRefs: kind.startsWith("slow:") ? [...a.slowRefs, str(d.ref)] : a.slowRefs,
+      };
+      said.push({ kind: "signal", text: `${who} — ${signal.text}`, bad: signal.bad });
+      break;
+    }
+    case "signal_cleared": {
+      const { [str(d.kind)]: _gone, ...rest } = a.serverSignals;
+      void _gone;
+      a = { ...a, serverSignals: rest };
+      break;
+    }
+
     case "classification_started":
       a = { ...a, open: { ...a.open, cls: ts } };
       break;
@@ -216,11 +289,16 @@ export function reduce(state: RunState, e: RunEvent): RunState {
         };
       if (d.usage) classifier = addUsage(noUsage(), d.usage);
       if (d.mode === "clarify") a = { ...a, status: "needs_clarification", end: ts };
+      said.push({ kind: "run", text: d.mode === "clarify" ? "Précision demandée" : `Demande classée : ${str(d.id)}` });
       summaryVersion += 1;
       break;
     }
     case "action_proposed":
+      said.push({ kind: "run", text: `Action proposée : ${str(d.title)}` });
+      summaryVersion += 1;
+      break;
     case "category_changed":
+      said.push({ kind: "run", text: `Catégorie changée : ${str(d.from)} → ${str(d.to)}` });
       summaryVersion += 1;
       break;
     case "run_failed":
@@ -228,14 +306,19 @@ export function reduce(state: RunState, e: RunEvent): RunState {
       break;
   }
   agents[e.agent_id] = a;
+  const feed = said.length
+    ? [...state.feed, ...said.map((x) => ({ ...x, seq: e.seq, ts, agent: e.agent_id }))].slice(-FEED_MAX)
+    : state.feed;
   return {
     agents,
     order,
     firstTs: state.firstTs ?? ts,
-    lastTs: ts,
+    lastTs: isSignal ? (state.lastTs ?? ts) : ts,
     lastSeq: Math.max(state.lastSeq, e.seq ?? 0),
     classifier,
     summaryVersion,
+    feed,
+    serverSignals,
   };
 }
 
@@ -250,13 +333,27 @@ export const SIGNALS = {
 };
 
 export interface Signal {
-  key: "stuck" | "loop" | "errors" | "budget" | "model";
+  key: string;
   text: string;
   bad?: boolean;
 }
 
-export function signals(a: AgentState, now: number): Signal[] {
+const statusText = (status: string): string =>
+  ({ completed: "terminé", partial: "partiel", failed: "en échec", stopped: "arrêté" })[status] ?? status;
+
+/** Signaux affichés sur un agent en cours. Une trace récente porte ceux de l'orchestrateur (fromServer) ;
+ * une trace plus ancienne les fait recalculer ici avec les mêmes règles. */
+export function signals(a: AgentState, now: number, fromServer = false): Signal[] {
   if (a.status !== "running" && a.status !== "stopping") return [];
+  if (fromServer) {
+    // La durée d'inactivité continue de compter après la levée du signal.
+    const out = Object.values(a.serverSignals)
+      .filter((x) => !x.key.startsWith("slow:"))
+      .map((x) => (x.key === "stuck" ? { ...x, text: `bloqué ${Math.round((now - a.last) / 1000)} s` } : x));
+    const slow = Object.keys(a.serverSignals).filter((k) => k.startsWith("slow:")).length;
+    if (slow) out.push({ key: "slow", text: slow > 1 ? `${slow} sources lentes` : "source lente" });
+    return out;
+  }
   const out: Signal[] = [];
   const idle = (now - a.last) / 1000;
   if (idle > SIGNALS.stuckSeconds) out.push({ key: "stuck", text: `bloqué ${Math.round(idle)} s` });

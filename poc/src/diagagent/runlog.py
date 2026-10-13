@@ -43,6 +43,7 @@ class RunLog:
         self._seq = 0
         self._calls: dict[str, int] = {}
         self._lock = threading.Lock()
+        self.monitor: Any = None  # SignalMonitor de l'investigation : lit chaque événement écrit
         self.manifest: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION, "run_id": self.run_id, "question": question, "user": user,
             "started_at": _ts(), "status": "running", **(extra or {}),
@@ -64,6 +65,8 @@ class RunLog:
             _append(self.dir / "events.jsonl", {"seq": self._seq, "ts": _ts(), "run_id": self.run_id,
                                                 "agent_id": agent_id, "parent_id": parent_id,
                                                 "type": type_, "data": data or {}})
+        if self.monitor is not None:
+            self.monitor.observe(agent_id, type_, data or {}, parent_id)
 
     def write_text(self, agent_id: str, name: str, text: str) -> None:
         path = self.agent_dir(agent_id) / name

@@ -6,6 +6,7 @@ import "./styles/components.css";
 import "./styles/views.css";
 import "./styles/home.css";
 import "./styles/run.css";
+import "./styles/live.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

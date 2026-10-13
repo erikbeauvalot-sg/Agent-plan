@@ -116,6 +116,7 @@ def test_ask_stream_and_visibility(env):
     data = wait_status(alice, run_id)
     assert data["manifest"]["status"] == "completed" and "CI0012345" in data["analysis"]
     assert data["manifest"]["user"] == "alice" and data["can_stop"] is False and data["actions"] == []
+    assert data["manifest"]["signals"] == "orchestrator"  # l'interface lit les signaux dans la trace
 
     body = alice.get(f"/api/runs/{run_id}/events").text
     events = [json.loads(l[6:]) for l in body.splitlines() if l.startswith("data: {\"seq")]

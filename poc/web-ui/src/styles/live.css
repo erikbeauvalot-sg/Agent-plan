@@ -1,0 +1,207 @@
+/* Investigation en direct : ligne de statut, naissance des agents, impulsions sur les liens, survol croisé
+   graphe ↔ chronologie, attentes et sources lentes, fil d'activité, titre dans la barre du haut. */
+
+@layer views {
+  .status-line {
+    position: sticky;
+    top: var(--topbar-h);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 40px;
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid color-mix(in oklch, var(--accent) 40%, var(--line));
+    border-radius: var(--radius-2);
+    background: color-mix(in oklch, var(--accent) 8%, var(--bg));
+    font-size: var(--fs-3);
+  }
+  .status-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status-line > .faint {
+    font-size: var(--fs-2);
+    white-space: nowrap;
+  }
+
+  /* Nœuds : naissance en direct, action en cours, survol depuis la chronologie */
+  .agent-node[data-born] {
+    animation: node-in var(--dur-3) var(--ease-out) both;
+  }
+  @keyframes node-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.96);
+    }
+  }
+  .agent-node[data-hover] {
+    background: var(--surface-2);
+    border-color: var(--accent);
+  }
+  .agent-now {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-size: var(--fs-1);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .agent-now .pulse {
+    width: 6px;
+    height: 6px;
+  }
+  .graph .edge-hover .react-flow__edge-path {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+  .edge-pulse {
+    fill: var(--accent);
+    filter: drop-shadow(0 0 3px var(--accent));
+  }
+
+  /* Chronologie : cascade, survol, attentes, sources lentes */
+  .tl-row[data-born] {
+    animation: row-in var(--dur-3) var(--ease-out) both;
+  }
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+  }
+  .tl-row[data-hover] .tl-label {
+    color: var(--accent);
+  }
+  .tl-row[data-hover] .tl-track {
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 50%, transparent);
+  }
+  .tl-seg.wait,
+  .tl-key.wait {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--tool) 0 3px,
+      color-mix(in oklch, var(--tool) 35%, transparent) 3px 6px
+    );
+  }
+  .tl-seg.slow,
+  .tl-key.slow {
+    box-shadow: inset 0 -3px 0 var(--warn);
+  }
+  .tl-key.slow {
+    background: var(--tool);
+  }
+  .tl-seg.pending {
+    animation: breathe-bar 1.6s var(--ease-in-out) infinite;
+  }
+  @keyframes breathe-bar {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .run-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+  @media (max-width: 1100px) {
+    .run-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Fil d'activité */
+  .feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    max-height: 420px;
+    overflow: auto;
+    font-size: var(--fs-2);
+  }
+  .feed li {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 3px 0;
+    border-top: 1px solid var(--line);
+  }
+  .feed li:first-child {
+    border-top: 0;
+  }
+  .feed li > svg {
+    color: var(--warn);
+    align-self: center;
+  }
+  .feed li:not(:has(> svg)) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .feed li[data-bad] {
+    color: var(--bad);
+  }
+  .feed li[data-kind="signal"] .feed-text {
+    color: var(--warn);
+  }
+  .feed li[data-kind="run"] .feed-text {
+    color: var(--text-2);
+    font-style: italic;
+  }
+  .feed .link {
+    font-family: var(--font-mono);
+    font-size: var(--fs-1);
+    min-height: 0;
+  }
+
+  .btn.danger-text {
+    color: var(--bad);
+  }
+
+  /* Titre de l'investigation dans la barre du haut */
+  .topbar-run {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 46ch;
+    color: var(--text-2);
+    font-size: var(--fs-2);
+  }
+  .topbar-run > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 1180px) {
+    .topbar-run {
+      max-width: 28ch;
+    }
+  }
+  @media (max-width: 760px) {
+    .topbar-run {
+      display: none;
+    }
+    .status-line > .faint {
+      display: none;
+    }
+  }
+
+  /* Transition de vue : la question devient le titre de l'investigation */
+  .ask-field,
+  .run-title h1 {
+    view-transition-name: question;
+  }
+  ::view-transition-old(question),
+  ::view-transition-new(question) {
+    animation-duration: var(--dur-3);
+    animation-timing-function: var(--ease-out);
+  }
+}
