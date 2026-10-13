@@ -198,3 +198,24 @@ describe("signaux de l'orchestrateur et activité", () => {
     expect(signals(cleared.agents["T01-metrics-srv-pay-01"]!, now, true).map((s) => s.key)).toEqual(["slow"]);
   });
 });
+
+describe("pilotage", () => {
+  it("relève le budget, rattache la relance et trace la consigne", () => {
+    const run = reduceAll([
+      ev("lead", "agent_started", "00", { max_tool_calls: 32 }),
+      ev("T01-logs-a", "agent_started", "01", { max_tool_calls: 15 }, "lead"),
+      ev("T01-logs-a", "budget_changed", "02", { max_tool_calls: 25, previous: 15, by: "sophie" }, "lead"),
+      ev("lead", "instruction_received", "03", { by: "alice", text: "Regarde db-pay-02" }),
+      ev("lead", "instruction_delivered", "04", { count: 1 }),
+      ev("T02-logs-a", "agent_spawned", "05", { role: "logs", restart_of: "T01-logs-a", by: "alice" }, "lead"),
+    ]);
+    expect(run.agents["T01-logs-a"]!.maxTools).toBe(25);
+    expect(run.agents["T02-logs-a"]!.restartOf).toBe("T01-logs-a");
+    expect(run.feed.map((f) => f.text)).toEqual([
+      "T01 : budget porté de 15 à 25 appels d'outils par sophie",
+      "Consigne de alice : Regarde db-pay-02",
+      "Agent principal a reçu le message de l'opérateur",
+      "T02 relancé à la place de T01 par alice",
+    ]);
+  });
+});

@@ -40,6 +40,8 @@ export interface AgentState extends Usage {
   modelError: string | null;
   llm: string | null;
   report: string | null;
+  /** Sous-agent relancé depuis l'interface : celui qu'il remplace. */
+  restartOf: string | null;
   /** Appels d'outils en cours (ref → outil, paramètres, début) et ce que fait l'agent en ce moment. */
   calls: Record<string, { tool: string; args: unknown; start: number }>;
   current: string | null;
@@ -130,6 +132,7 @@ function newAgent(e: RunEvent, ts: number): AgentState {
     modelError: null,
     llm: null,
     report: null,
+    restartOf: null,
     calls: {},
     current: null,
     serverSignals: {},
@@ -157,8 +160,29 @@ export function reduce(state: RunState, e: RunEvent): RunState {
 
   switch (e.type) {
     case "agent_spawned":
-      a = { ...a, objective: str(d.objective), parent: "lead" };
-      said.push({ kind: "agent", text: `${who} lancé : ${str(d.objective)}` });
+      a = { ...a, objective: str(d.objective), parent: "lead", restartOf: d.restart_of ? str(d.restart_of) : null };
+      said.push({
+        kind: "agent",
+        text: d.restart_of
+          ? `${who} relancé à la place de ${agentName(str(d.restart_of))} par ${str(d.by)}${d.prompt_changed ? ", prompt corrigé" : ""}`
+          : `${who} lancé : ${str(d.objective)}`,
+      });
+      break;
+    case "instruction_received":
+      said.push({ kind: "run", text: `Consigne de ${str(d.by)} : ${str(d.text)}` });
+      break;
+    case "instruction_delivered":
+      said.push({
+        kind: "agent",
+        text: `${who} a reçu ${Number(d.count) > 1 ? `${str(d.count)} messages` : "le message"} de l'opérateur`,
+      });
+      break;
+    case "budget_changed":
+      a = { ...a, maxTools: typeof d.max_tool_calls === "number" ? d.max_tool_calls : a.maxTools };
+      said.push({
+        kind: "agent",
+        text: `${who} : budget porté de ${str(d.previous)} à ${str(d.max_tool_calls)} appels d'outils par ${str(d.by)}`,
+      });
       break;
     case "agent_started":
       a = {

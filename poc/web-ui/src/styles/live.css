@@ -38,10 +38,6 @@
       transform: translateY(-8px) scale(0.96);
     }
   }
-  .agent-node[data-hover] {
-    background: var(--surface-2);
-    border-color: var(--accent);
-  }
   .agent-now {
     display: flex;
     align-items: center;
@@ -55,10 +51,6 @@
   .agent-now .pulse {
     width: 6px;
     height: 6px;
-  }
-  .graph .edge-hover .react-flow__edge-path {
-    stroke: var(--accent);
-    stroke-width: 2.5;
   }
   .edge-pulse {
     fill: var(--accent);

@@ -1,0 +1,54 @@
+/* Piloter les agents en cours : consigne, budget, relance d'un sous-agent. */
+
+@layer views {
+  .instruction {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .instruction input {
+    flex: 1;
+    min-width: min(100%, 280px);
+  }
+  .instruction p {
+    flex-basis: 100%;
+  }
+
+  .budget,
+  .restart {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-1);
+    background: var(--surface-2);
+  }
+  .budget h3,
+  .restart h3 {
+    font-size: var(--fs-2);
+    color: var(--text-2);
+  }
+  .budget .gauge.wide {
+    height: 6px;
+    background: var(--line-strong); /* le fond du bloc est celui de la jauge : piste visible */
+  }
+  .budget-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .budget-form input {
+    width: 96px;
+  }
+  .restart textarea {
+    font-size: var(--fs-2);
+    min-height: 140px;
+  }
+  .restart-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+}

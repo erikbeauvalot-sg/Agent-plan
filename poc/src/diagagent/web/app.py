@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from diagagent import catalog, config_files, dashboard, knowledge, learning, playbooks
 from diagagent.llm import model_profiles
+from diagagent.agent import LocalToolError
 from diagagent.orchestrator import Investigation, ProviderFactory
 from diagagent.runlog import RunLog, _append, _dump, _ts
 
@@ -99,6 +100,18 @@ class AskBody(BaseModel):
 
 class CategoryBody(BaseModel):
     category: str
+
+
+class InstructionBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class RestartBody(BaseModel):
+    prompt: str | None = Field(default=None, max_length=20_000)
+
+
+class BudgetBody(BaseModel):
+    max_tool_calls: int = Field(ge=1, le=200)
 
 
 class FeedbackBody(BaseModel):
@@ -569,6 +582,48 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
             raise HTTPException(409, "Agent déjà terminé ou inconnu")
         audit(user, "stop", {"run_id": run_id, "agent_id": agent_id, "kill": kill})
         return {"status": "stopping"}
+
+    def pilot(user: User, run_id: str) -> Investigation:
+        """Investigation en cours que cet utilisateur peut piloter (mêmes droits que l'arrêt)."""
+        _, manifest = load_run(user, run_id)
+        if not (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login)):
+            raise HTTPException(403, "Vous ne pouvez piloter que vos propres investigations")
+        live = manager.live.get(run_id)
+        if live is None or live.investigation is None or manifest.get("status") != "running":
+            raise HTTPException(409, "Investigation terminée")
+        return live.investigation
+
+    @app.post("/api/runs/{run_id}/instructions")
+    async def instruct(run_id: str, body: InstructionBody, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Consigne pour l'agent principal, remise avant son prochain appel au modèle."""
+        if not pilot(user, run_id).instruct(body.text, by=user.login):
+            raise HTTPException(409, "L'agent principal ne reçoit plus de consigne (classement ou synthèse finie)")
+        audit(user, "instruction", {"run_id": run_id, "chars": len(body.text)})
+        return {"status": "queued"}
+
+    @app.post("/api/runs/{run_id}/agents/{agent_id}/restart")
+    async def restart(run_id: str, agent_id: str, body: RestartBody,
+                      user: User = Depends(current_user)) -> dict[str, Any]:
+        """Relance d'un sous-agent terminé ou arrêté (prompt d'origine ou corrigé) ; asynchrone : la tâche
+        est créée dans la boucle de l'investigation."""
+        investigation = pilot(user, run_id)
+        try:
+            task_id = investigation.restart_subagent(agent_id, body.prompt, by=user.login)
+        except LocalToolError as e:
+            raise HTTPException(409, str(e)) from None
+        audit(user, "restart_agent", {"run_id": run_id, "agent_id": agent_id, "new": task_id,
+                                      "prompt_changed": bool(body.prompt)})
+        return {"task_id": task_id}
+
+    @app.post("/api/runs/{run_id}/agents/{agent_id}/budget")
+    async def budget(run_id: str, agent_id: str, body: BudgetBody,
+                     user: User = Depends(current_user)) -> dict[str, Any]:
+        if not user.can("adjust_budget"):
+            raise HTTPException(403, "Ajuster un budget est réservé au superviseur et à l'administrateur")
+        if not pilot(user, run_id).set_budget(agent_id, body.max_tool_calls, by=user.login):
+            raise HTTPException(409, "Agent terminé ou inconnu")
+        audit(user, "budget", {"run_id": run_id, "agent_id": agent_id, "max_tool_calls": body.max_tool_calls})
+        return {"max_tool_calls": body.max_tool_calls}
 
     @app.post("/api/runs/{run_id}/share")
     def share(run_id: str, body: ShareBody, user: User = Depends(current_user)) -> dict[str, Any]:
