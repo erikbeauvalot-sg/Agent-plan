@@ -75,6 +75,7 @@ export interface RunRow {
   tokens?: number | null;
   user: string;
   live?: LiveSummary;
+  follow_up_of?: string | null;
 }
 
 export type StatusCounts = Partial<Record<RunStatus, number>>;
@@ -149,6 +150,7 @@ export interface AskBody {
   sources: string | null;
   category: string | null;
   rerun_of: string | null;
+  follow_up_of?: string | null;
 }
 
 // Une ligne de events.jsonl, telle que le flux SSE la transmet.
@@ -181,6 +183,8 @@ export interface Feedback {
 export interface FullManifest extends Manifest {
   reference_time?: string | null;
   rerun_of?: string | null;
+  /** Question de suivi : investigation dont celle-ci reprend le contexte. */
+  follow_up_of?: string | null;
   shared?: boolean;
   feedback?: Feedback | null;
   models?: Record<string, { provider: string; model: string }>;
@@ -215,6 +219,22 @@ export interface FullRun {
   can_details: boolean;
   can_share: boolean;
   can_stop: boolean;
+  thread?: Thread;
+}
+
+/** Fil de conversation : questions précédentes (avec leur synthèse) et questions de suivi déjà posées. */
+export interface ThreadTurn {
+  run_id: string;
+  question: string;
+  status: string;
+  started_at: string;
+  user: string;
+  analysis?: string | null;
+}
+
+export interface Thread {
+  earlier: ThreadTurn[];
+  later: ThreadTurn[];
 }
 
 export interface ToolCallDetail {

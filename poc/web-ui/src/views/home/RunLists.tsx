@@ -21,6 +21,7 @@ function RunItem({ run, showUser, now }: { run: RunRow; showUser: boolean; now: 
           <span className="num">{fmtDate(run.started_at)}</span>
           {run.category && <span className="tag">{run.category}</span>}
           {run.label && run.label !== "?" && <span className="tag mono">{run.label}</span>}
+          {run.follow_up_of && <span className="tag">question de suivi</span>}
           {elapsed !== null && elapsed !== undefined && <span className="num">{fmtDuration(elapsed)}</span>}
           {!!run.tokens && <span className="num">{fmtTokens(run.tokens)} tokens</span>}
           {showUser && <span>{run.user}</span>}

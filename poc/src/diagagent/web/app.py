@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from diagagent import catalog, config_files, dashboard, knowledge, learning, playbooks
+from diagagent import catalog, config_files, dashboard, followup, knowledge, learning, playbooks
 from diagagent.llm import model_profiles
 from diagagent.agent import LocalToolError
 from diagagent.orchestrator import Investigation, ProviderFactory
@@ -54,7 +54,8 @@ class RunManager:
     live: dict[str, LiveRun] = field(default_factory=dict)
 
     async def start(self, question: str, user: User, category: str | None = None,
-                    models: str | None = None, sources: str | None = None, rerun_of: str | None = None) -> str:
+                    models: str | None = None, sources: str | None = None, rerun_of: str | None = None,
+                    follow_up_of: str | None = None) -> str:
         from diagagent.cli import ask
 
         started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -70,7 +71,7 @@ class RunManager:
         async def go() -> None:
             try:
                 await ask(question, providers=self.providers(models), user=user.login, on_started=on_started,
-                          category=category, sources=sources, rerun_of=rerun_of)
+                          category=category, sources=sources, rerun_of=rerun_of, follow_up_of=follow_up_of)
             except Exception as e:  # erreur de démarrage (modèle, serveurs MCP) : visible dans l'interface
                 if not started.done():
                     started.set_exception(e)
@@ -96,6 +97,7 @@ class AskBody(BaseModel):
     models: str | None = None  # profil de config/models.yaml ; défaut : celui du fichier
     sources: str | None = None  # demo, maison ou demo,maison ; défaut : DIAGAGENT_SOURCES, sinon les deux
     rerun_of: str | None = None  # investigation relancée, que l'utilisateur peut voir
+    follow_up_of: str | None = None  # question de suivi d'une investigation terminée, que l'utilisateur peut voir
 
 
 class CategoryBody(BaseModel):
@@ -286,13 +288,21 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
                 load_run(user, body.rerun_of)
             except HTTPException:
                 raise HTTPException(400, f"Investigation d'origine inconnue : {body.rerun_of}") from None
+        if body.follow_up_of:
+            try:
+                _, origin = load_run(user, body.follow_up_of)
+            except HTTPException:
+                raise HTTPException(400, f"Investigation d'origine inconnue : {body.follow_up_of}") from None
+            if origin.get("status") == "running":
+                raise HTTPException(409, "L'investigation d'origine tourne encore : envoie plutôt une consigne")
         try:
             run_id = await manager.start(body.question.strip(), user, body.category, body.models, body.sources,
-                                         body.rerun_of)
+                                         body.rerun_of, body.follow_up_of)
         except Exception as e:
             raise HTTPException(502, f"Impossible de démarrer l'investigation : {type(e).__name__}: {e}") from e
         audit(user, "ask", {"run_id": run_id, "category": body.category, "models": body.models,
-                            "sources": body.sources, **({"rerun_of": body.rerun_of} if body.rerun_of else {})})
+                            "sources": body.sources, **({"rerun_of": body.rerun_of} if body.rerun_of else {}),
+                            **({"follow_up_of": body.follow_up_of} if body.follow_up_of else {})})
         return {"run_id": run_id}
 
     def source_choices() -> dict[str, Any]:
@@ -497,7 +507,8 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         running = [{"run_id": rid, "question": r.log.manifest["question"], "user": r.user,
                     "started_at": r.log.manifest["started_at"], "status": "running",
                     "category": (r.log.manifest.get("category") or {}).get("id"),
-                    "models_profile": r.log.manifest.get("models_profile"), "sources": r.log.manifest.get("sources")}
+                    "models_profile": r.log.manifest.get("models_profile"), "sources": r.log.manifest.get("sources"),
+                    "follow_up_of": r.log.manifest.get("follow_up_of")}
                    for rid, r in manager.live.items() if rid not in finished]
         shared = set()
         if not user.can("view_all"):  # les investigations partagées se lisent dans leur manifest
@@ -513,7 +524,25 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
                 "can_details": can_details(user, manifest),
                 "can_share": user.can("share_all") or (user.can("share_own") and manifest.get("user") == user.login),
                 "can_stop": manifest.get("status") == "running" and run_id in manager.live
-                and (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login))}
+                and (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login)),
+                "thread": thread(user, run_id, manifest)}
+
+    def thread(user: User, run_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+        """Fil de conversation : questions précédentes avec leur synthèse (en remontant follow_up_of) et
+        questions de suivi déjà posées, limités à ce que cet utilisateur peut voir."""
+        earlier = []
+        if manifest.get("follow_up_of"):
+            for m in followup.chain(runs_dir(), manifest["follow_up_of"]):
+                if not can_view(user, m):
+                    earlier = []  # un maillon invisible coupe le fil : rien de ce qui précède n'est montré
+                    continue
+                earlier.append({"run_id": m["run_id"], "question": m["question"], "status": m.get("status"),
+                                "started_at": m.get("started_at"), "user": m.get("user"),
+                                "analysis": read_text(followup.run_dir(runs_dir(), m["run_id"]) / "analysis.md")})
+        later = [{"run_id": r["run_id"], "question": r["question"], "status": r["status"],
+                  "started_at": r["started_at"], "user": r["user"]}
+                 for r in visible_runs(user) if r.get("follow_up_of") == run_id]
+        return {"earlier": earlier, "later": sorted(later, key=lambda r: r["started_at"])}
 
     @app.get("/api/runs/{run_id}/events")
     async def events(run_id: str, request: Request, user: User = Depends(current_user)) -> StreamingResponse:

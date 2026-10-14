@@ -192,6 +192,9 @@ dans `events.jsonl` et dans le journal d'accès.
   unes sous les autres, chacune avec son graphe repliable.
 - Côté serveur : `follow_up_of` dans `POST /api/runs` et dans le manifest (comme `rerun_of`), contexte
   injecté dans le prompt de l'agent principal, plafonné en taille.
+- Réalisé dans la PR #45 : contexte dans le message de l'agent principal (pas dans son prompt système),
+  6 000 caractères pour la synthèse et autant pour les rapports, trois questions précédentes du fil au plus ;
+  le classifieur voit la question précédente, et une suite ne demande pas de précision.
 
 ### Lot 7 : finitions
 

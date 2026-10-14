@@ -11,7 +11,7 @@ import asyncio
 import json
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -183,9 +183,15 @@ def _slug(text: str) -> str:
 
 class Investigation:
     def __init__(self, question: str, hub: ToolHub, log: RunLog, providers: ProviderFactory,
-                 poc_cfg: dict[str, Any], category: str | None = None):
+                 poc_cfg: dict[str, Any], category: str | None = None,
+                 follow_up: dict[str, str] | None = None):
         self.question = question
         self.forced_category = category
+        # Question de suivi : contexte de l'investigation d'origine pour l'agent principal ; le classifieur
+        # reclasse la nouvelle question, en voyant la précédente pour comprendre une question elliptique.
+        self.follow_up = follow_up
+        self.classify_question = (f"{question}\n(Question de suivi de : « {follow_up['previous']} »)"
+                                  if follow_up else question)
         self.hub = hub
         self.log = log
         self.providers = providers
@@ -327,7 +333,9 @@ class Investigation:
         try:
             result = await run_agent(
                 agent_id="lead", provider=provider, system=self.lead_system_prompt(section),
-                user_message=self.question, tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
+                user_message=(f"{self.follow_up['lead']}\n\n# Nouvelle question\n{self.question}"
+                              if self.follow_up else self.question),
+                tools=self.hub.tools_for(None), hub=self.hub, log=self.log,
                 budget=self.lead_budget, reasoning=role_cfg.get("reasoning"), cancel=self.lead_cancel,
                 local_tools=self.lead_local_tools, final_check=self._check_final_answer, inbox=self._drain_inbox,
                 progress_check=self._check_progress, stream_answer=True)
@@ -514,7 +522,8 @@ class Investigation:
                 c = playbooks.Classification(playbooks.FALLBACK, "low", error=f"classifieur indisponible ({err})")
             else:
                 similar = knowledge.similar_requests(self.question, self.log.runs_dir)
-                c, raw = await asyncio.to_thread(playbooks.classify, provider, self.question, self.books, similar)
+                c, raw = await asyncio.to_thread(playbooks.classify, provider, self.classify_question, self.books,
+                                                 similar)
                 if raw is not None:
                     classifier_usage = {"model": raw.model, "usage": to_jsonable(raw.usage)}
                 if raw is not None:
@@ -536,6 +545,10 @@ class Investigation:
                 self.log.event("lead", "factual_question", {"from": c.category, "to": factual.category})
                 c = factual
             source = "classifier"
+        if self.follow_up and c.missing:
+            # « et sur db-pay-02 ? » : l'objet manquant est dans l'investigation d'origine, rien à préciser.
+            self.log.event("lead", "follow_up_context", {"missing": c.missing})
+            c = replace(c, missing=[])
         decision = playbooks.decide(c, self.books)
         self._set_category(c, decision, source)
         self.log.event("lead", "request_classified", {**self.category, "mode": decision.mode, **classifier_usage})
