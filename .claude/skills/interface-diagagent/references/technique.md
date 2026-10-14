@@ -109,13 +109,20 @@ investigation enregistrée, ou les jeux d'évaluation avec l'adaptateur `scripte
 
 ## Captures automatiques
 
-`poc/tools/ui_snapshots.py` (Playwright, hors des dépendances du POC) capture la connexion et l'accueil ;
-l'étendre aux nouvelles vues au fil des lots :
+`poc/tools/ui_snapshots.py` (Playwright, hors des dépendances du POC) capture la connexion, l'accueil, la
+palette, une investigation et son tiroir, chaque onglet de l'administration ; `--axe` y ajoute l'audit
+axe-core (devDependency de `web-ui`, injectée depuis `node_modules`, jamais dans le bundle) et sort en
+erreur s'il reste une violation grave ou critique. L'étendre aux nouvelles vues :
 
 ```bash
 uv run --with playwright playwright install chromium        # une fois (cache utilisateur, hors dépôt)
-uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8080 --login … --password …
+uv run --with playwright python tools/ui_snapshots.py --base http://127.0.0.1:8080 --login … --password … \
+    --run <run_id> --axe
 ```
+
+Pièges vus au lot 7 : auditer après la fin des animations d'ouverture (une opacité en cours fausse les
+contrastes) ; un mélange `color-mix(in oklch, …)` avec un blanc sans teinte tourne au rose, préférer
+`in srgb` ; dans `tokens.css`, chaque thème clair est écrit deux fois (forcé et selon le système).
 
 Pour ne pas toucher aux vrais comptes, lancer le serveur sur une copie de la configuration
 (`DIAGAGENT_HOME`) avec un compte de test. Objectif à tenir :

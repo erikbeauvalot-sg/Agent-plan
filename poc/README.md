@@ -428,7 +428,17 @@ nouveau mot de passe ; `auth/users.yaml` ne s'édite jamais en texte, et les emp
 ne sortent pas de la passerelle. Le dernier administrateur actif ne peut être ni retiré ni désactivé.
 Restent hors de l'interface : le code, `.env` et les secrets, `runs/`, `audit/` et `knowledge/`.
 
-![Investigation en cours](../docs/images/poc-interface-en-cours.png)
+![Accueil : la question, les options en puces, les suggestions, l'historique filtrable et l'état des sources](../docs/images/poc-interface-accueil.png)
+
+![Investigation en cours : ligne de statut, action en cours sur chaque agent, signal « 3 erreurs d'outil de suite »](../docs/images/poc-interface-en-cours.png)
+
+![Investigation terminée : la synthèse en premier, les preuves en puces reliées au graphe](../docs/images/poc-interface-terminee.png)
+
+![Palette de commandes (Ctrl+K)](../docs/images/poc-interface-palette.png)
+
+**Qualité de l'interface** (vérifiée au lot 7) : `tools/ui_snapshots.py --axe` capture chaque écran et lance
+l'audit d'accessibilité axe-core (0 violation grave ou critique, thèmes sombre et clair) ; une investigation
+de plus de 1 000 événements s'affiche en 0,1 s et le direct accéléré tient 120 images/s sans tâche longue.
 
 ## Actions proposées
 

@@ -67,9 +67,10 @@ de nuit). Chaque seconde de compréhension gagnée compte plus qu'une animation.
 
 Pour toute tâche d'interface :
 
-1. **Comprendre l'existant.** Lire les fichiers concernés de `poc/src/diagagent/web/` (`static/index.html`,
-   `static/app.css`, `static/app.js`, `app.py` pour l'API) et les sections utiles des références. Repérer
-   les fonctions et événements déjà gérés avant de réécrire quoi que ce soit.
+1. **Comprendre l'existant.** Lire les fichiers concernés de `poc/web-ui/src/` (vues, composants,
+   `state/runState.ts` pour les événements, `styles/`) et `poc/src/diagagent/web/app.py` pour l'API, puis les
+   sections utiles des références. Repérer les fonctions et événements déjà gérés avant de réécrire quoi
+   que ce soit.
 2. **Annoncer le plan en quelques lignes** : écran visé, ce qui change pour l'utilisateur, fichiers
    touchés, moments signature concernés. Pour une refonte, découper en lots livrables séparément (une PR
    par lot, comme le reste du POC).

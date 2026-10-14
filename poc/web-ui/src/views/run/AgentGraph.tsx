@@ -279,6 +279,9 @@ const Flow = memo(function Flow({ run, now, perRow, fromServer, liveSince, onOpe
       onNodeClick={(_, n) => onOpen(n.id)}
       minZoom={0.3}
       nodesConnectable={false}
+      // Le graphe est masqué aux lecteurs d'écran (liste équivalente dessous) : rien n'y prend le focus.
+      nodesFocusable={false}
+      edgesFocusable={false}
       nodesDraggable={false}
       elementsSelectable={false}
       zoomOnScroll={false}
