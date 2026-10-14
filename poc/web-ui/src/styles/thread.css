@@ -1,0 +1,92 @@
+/* Fil de conversation : questions précédentes au-dessus, questions de suivi sous la réponse. */
+
+@layer views {
+  .thread ol {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+    border-left: 2px solid var(--line-strong);
+  }
+  .turn {
+    display: grid;
+    gap: var(--space-2);
+    position: relative;
+  }
+  .turn::before {
+    content: "";
+    position: absolute;
+    left: calc(-1 * var(--space-4) - 5px);
+    top: 7px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--line-strong);
+  }
+  .turn-q {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+  }
+  .turn-q svg {
+    color: var(--text-3);
+  }
+  .turn-q .faint {
+    font-weight: 400;
+    font-size: var(--fs-1);
+  }
+  .turn-a {
+    color: var(--text-2);
+    max-width: 80ch;
+  }
+  .turn details summary {
+    cursor: pointer;
+    color: var(--text-3);
+    font-size: var(--fs-2);
+  }
+  .turn details[open] {
+    padding: var(--space-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-1);
+  }
+
+  .follow-up {
+    display: grid;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--line);
+  }
+  .follow-up h3 {
+    font-size: var(--fs-3);
+  }
+  .follow-up form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: end;
+  }
+  .follow-up form .hint,
+  .follow-up form .error {
+    grid-column: 1 / -1;
+  }
+  .follow-up .later {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+  }
+  .follow-up .later li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  @media (max-width: 760px) {
+    .follow-up form {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

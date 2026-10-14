@@ -10,6 +10,7 @@ import "./styles/live.css";
 import "./styles/pilot.css";
 import "./styles/answer.css";
 import "./styles/admin.css";
+import "./styles/thread.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

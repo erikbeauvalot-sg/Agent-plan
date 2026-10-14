@@ -283,6 +283,14 @@ barre du haut, et l'heure de référence de chaque investigation sous sa questio
   la lancer** : on change la question ou les options, puis « Lancer l'investigation ». La nouvelle
   investigation note `rerun_of` dans son manifest et affiche un lien vers l'originale ; les relances
   « Relancer avec cette catégorie » et « Préciser et relancer » le notent aussi.
+- **Question de suivi** (sous la réponse d'une investigation terminée, Opérateur) : « et sur db-pay-02 ? »
+  lance une nouvelle investigation liée (`follow_up_of` dans `POST /api/runs`, le manifest et l'index),
+  dont l'agent principal reçoit la question d'origine, sa synthèse et les rapports des sous-agents
+  (`src/diagagent/followup.py`, plafonnés à 6 000 caractères chacun) ; le classifieur reclasse la nouvelle
+  question en voyant la précédente, et une suite ne demande pas de précision (l'objet est dans le contexte).
+  Les traces d'origine ne sont pas modifiées. À l'écran, les investigations liées forment un **fil** :
+  questions précédentes et leur synthèse au-dessus, chacune avec son graphe repliable, et les suites déjà
+  posées sous la réponse (`thread` dans `GET /api/runs/{id}`, limité à ce que l'utilisateur peut voir).
 
 Pour l'ouvrir depuis une autre machine du réseau : `diagagent serve --host 0.0.0.0`, et définir
 `DIAGAGENT_SESSION_SECRET` pour que les sessions survivent à un redémarrage.

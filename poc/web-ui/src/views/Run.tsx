@@ -15,6 +15,7 @@ import { AgentGraph } from "./run/AgentGraph";
 import { Answer } from "./run/Answer";
 import { ActivityFeed, StatusLine } from "./run/LiveActivity";
 import { InstructionBox } from "./run/Pilot";
+import { FollowUp, ThreadEarlier } from "./run/Thread";
 import { CategoryBar, FeedbackForm, PrecisionForm } from "./run/RunPanels";
 import { Timeline } from "./run/Timeline";
 
@@ -177,6 +178,14 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
         onEvidenceHover={(ref) => setHover(ref ? evidenceAgent(ref) : null)}
       />
       <FeedbackForm manifest={m} canGive={isOwner || can("stop_all")} onSent={load} />
+      <FollowUp
+        runId={runId}
+        later={data.thread?.later ?? []}
+        canAsk={can("ask")}
+        ended={ENDED.includes(m.status) || m.status === "needs_clarification"}
+        models={m.models_profile ?? null}
+        sources={m.sources?.length ? m.sources.join(",") : null}
+      />
       {m.status === "needs_clarification" && can("ask") && (
         <PrecisionForm onRelaunch={(p) => start({ question: `${m.question}\nPrécision : ${p}` })} />
       )}
@@ -194,6 +203,7 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
       <a href="#" className="back">
         ← Accueil
       </a>
+      <ThreadEarlier turns={data.thread?.earlier ?? []} />
       <header className="run-head">
         <div className="run-title">
           <h1>{m.question}</h1>
@@ -210,6 +220,7 @@ export function Run({ me, runId }: { me: Me; runId: string }) {
                 </a>
               </>
             )}
+            {m.follow_up_of && <> · question de suivi (contexte de la question précédente)</>}
           </p>
           <p className="muted hint num">
             {roles.length ? `LLM : ${roles.join(" · ")} — ` : ""}

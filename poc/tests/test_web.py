@@ -110,6 +110,40 @@ def test_lockout_after_five_failures(env):
     assert form.headers["location"].startswith("/?verrou=15")
 
 
+def test_follow_up_question_gets_the_previous_context(env):
+    app, script = env
+    seen = {}
+
+    def follow_up(request):
+        seen["message"] = request.messages[0].content
+        return answer("## Synthèse\ndb-pay-02 va bien.")
+
+    script["lead"] = ScriptedProvider([
+        tools(("spawn_subagent", {"role": "metrics", "entity": "srv-pay-01", "objective": "CPU", "period": "24 h"})),
+        tools(("wait_subagents", {})),
+        answer("## Synthèse\nCHG0034567 a saturé le pool de srv-pay-01."), follow_up])
+    script["metrics"] = ScriptedProvider([tools(("list_metrics", {"host": "srv-pay-01"})), tools(("submit_report", {
+        "status": "completed", "summary": "cpu à 95 % sur srv-pay-01",
+        "findings": [{"fact": "pic à 21:50", "evidence": ["subagents/T01-metrics-srv-pay-01/calls/0001.json"],
+                      "confidence": "high"}]}))])
+    alice, bob = client(app, "alice"), client(app, "bob")
+    first = alice.post("/api/runs", json={"question": "Pourquoi srv-pay-01 est lent ?"}, headers=H).json()["run_id"]
+    wait_status(alice, first)
+    assert bob.post("/api/runs", json={"question": "Et db-pay-02 ?", "follow_up_of": first},
+                    headers=H).status_code == 400  # bob ne voit pas l'investigation d'alice
+    second = alice.post("/api/runs", json={"question": "Et sur db-pay-02 ?", "follow_up_of": first},
+                        headers=H).json()["run_id"]
+    data = wait_status(alice, second)
+    assert data["manifest"]["follow_up_of"] == first and data["manifest"]["status"] == "completed"
+    message = seen["message"]
+    assert "Pourquoi srv-pay-01 est lent ?" in message and "CHG0034567 a saturé" in message
+    assert "cpu à 95 %" in message and "pic à 21:50" in message, message
+    assert message.rstrip().endswith("# Nouvelle question\nEt sur db-pay-02 ?")
+    assert [t["run_id"] for t in data["thread"]["earlier"]] == [first]
+    assert "CHG0034567" in data["thread"]["earlier"][0]["analysis"]
+    assert [t["run_id"] for t in alice.get(f"/api/runs/{first}").json()["thread"]["later"]] == [second]
+
+
 def test_account_by_activation_link(env, tmp_path):
     app, _ = env
     admin, alice = client(app, "admin"), client(app, "alice")

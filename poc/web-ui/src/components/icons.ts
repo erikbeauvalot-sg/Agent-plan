@@ -24,6 +24,7 @@ export {
   LoaderCircle,
   Lock,
   LogOut,
+  MessageSquare,
   Monitor,
   Moon,
   Play,

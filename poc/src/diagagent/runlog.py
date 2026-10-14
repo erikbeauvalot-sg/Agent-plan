@@ -102,4 +102,5 @@ class RunLog:
             "model": ((self.manifest.get("models") or {}).get("lead") or {}).get("model"),
             "subagents": [{"role": s.get("role"), "status": s.get("status")}
                           for s in (self.manifest.get("subagents") or {}).values()],
+            **({"follow_up_of": self.manifest["follow_up_of"]} if self.manifest.get("follow_up_of") else {}),
         })

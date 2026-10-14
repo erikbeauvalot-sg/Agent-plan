@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import yaml
 
-from . import catalog, knowledge, learning, playbooks
+from . import catalog, followup, knowledge, learning, playbooks
 from .evaluation import find_run, replay_run, run_eval
 from .orchestrator import Investigation, ProviderFactory, tokens, usage_by_agent, usage_total
 from .llm import LLMRequest, Message, make_provider, select_profile
@@ -45,20 +45,23 @@ def default_providers(profile: str | None = None) -> ProviderFactory:
 async def ask(question: str, providers: ProviderFactory | None = None, user: str | None = None,
               on_started: Callable[[RunLog, Investigation], None] | None = None,
               category: str | None = None, sources: str | list[str] | None = None,
-              rerun_of: str | None = None) -> tuple[RunLog, str, str]:
+              rerun_of: str | None = None, follow_up_of: str | None = None) -> tuple[RunLog, str, str]:
     """Une investigation complète. on_started est appelé dès que l'investigation est pilotable
     (utilisé par la passerelle web pour l'arrêt). category impose la catégorie et saute le classifieur
     (correction de l'utilisateur, rejeu). sources choisit les jeux de sources (demo, maison) ; défaut :
     DIAGAGENT_SOURCES, sinon les deux. rerun_of : investigation d'origine d'une relance, notée dans le
-    manifest."""
+    manifest. follow_up_of : question de suivi d'une investigation, dont l'agent principal reçoit la
+    question, la synthèse et les rapports (followup.context)."""
     with catalog.using_sources(sources):
-        return await _ask(question, providers, user, on_started, category, rerun_of)
+        return await _ask(question, providers, user, on_started, category, rerun_of, follow_up_of)
 
 
 async def _ask(question: str, providers: ProviderFactory | None, user: str | None,
                on_started: Callable[[RunLog, Investigation], None] | None,
-               category: str | None, rerun_of: str | None = None) -> tuple[RunLog, str, str]:
+               category: str | None, rerun_of: str | None = None,
+               follow_up_of: str | None = None) -> tuple[RunLog, str, str]:
     poc = _load("poc.yaml")
+    follow_up = followup.context(catalog.runs_dir(poc), follow_up_of) if follow_up_of else None
     providers = providers or default_providers()
     lead, lead_cfg = providers("lead")
     log = RunLog(catalog.runs_dir(poc), question, user or getpass.getuser(),
@@ -67,9 +70,10 @@ async def _ask(question: str, providers: ProviderFactory | None, user: str | Non
                   "models_profile": getattr(providers, "profile", None),
                   "sources": sorted(catalog.active_sources()),
                   "reference_time": catalog.now().isoformat(),
-                  **({"rerun_of": rerun_of} if rerun_of else {})})
+                  **({"rerun_of": rerun_of} if rerun_of else {}),
+                  **({"follow_up_of": follow_up_of} if follow_up_of else {})})
     async with ToolHub(poc["mcp_servers"]) as hub:
-        investigation = Investigation(question, hub, log, providers, poc, category=category)
+        investigation = Investigation(question, hub, log, providers, poc, category=category, follow_up=follow_up)
         if on_started:
             on_started(log, investigation)
         result = await investigation.run()
