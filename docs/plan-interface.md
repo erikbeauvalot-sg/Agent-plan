@@ -204,6 +204,12 @@ dans `events.jsonl` et dans le journal d'accès.
 - Facultatif : bouton **Rejouer le jeu d'évaluation** après une modification de playbook ou de prompt
   dans l'éditeur de configuration (document d'architecture), avec le résultat à côté du précédent.
   Lancé seulement à la demande, en tâche de fond.
+- Réalisé dans la PR #46 : audit axe-core sur 28 écrans (sombre et clair), 37 violations graves corrigées
+  (contrastes du thème clair, nom accessible de l'avatar, nœuds du graphe masqué rendus non focalisables),
+  `ui_snapshots.py --axe` ; performances mesurées sur une investigation de 1 073 événements (affichage en
+  0,1 s, direct ×6 à 120 images/s, aucune tâche longue) ; messages d'erreur au tutoiement ; captures de
+  `docs/images/` refaites sur les seules données de démonstration. Non fait : le bouton « Rejouer le jeu
+  d'évaluation », qui lancerait des évaluations payantes (à faire seulement si on le demande).
 
 ## Mise à jour du document d'architecture
 

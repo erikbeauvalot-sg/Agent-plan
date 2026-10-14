@@ -100,7 +100,8 @@ export function TopBar({ me, theme, onTheme, onPalette }: Props) {
           className="avatar"
           aria-expanded={open}
           aria-haspopup="menu"
-          aria-label={`Compte de ${me.display_name}`}
+          // Le nom accessible commence par le texte visible (WCAG 2.5.3) : « ET, compte de Erik… ».
+          aria-label={`${initials(me.display_name || me.login)}, compte de ${me.display_name}`}
           onClick={() => setOpen(!open)}
         >
           {initials(me.display_name || me.login)}

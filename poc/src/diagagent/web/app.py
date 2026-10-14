@@ -210,7 +210,7 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
 
     def require(user: User, permission: str) -> None:
         if not user.can(permission):
-            raise HTTPException(403, "Fonction non autorisée pour votre rôle")
+            raise HTTPException(403, "Fonction non autorisée pour ton rôle")
 
     def can_view(user: User, manifest: dict[str, Any]) -> bool:
         return (user.can("view_all") or (user.can("view_own") and manifest.get("user") == user.login)
@@ -576,7 +576,7 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
     def agent_detail(run_id: str, agent_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         path, manifest = load_run(user, run_id)
         if not can_details(user, manifest):
-            raise HTTPException(403, "Prompts, transcripts et appels d'outils non visibles pour votre rôle")
+            raise HTTPException(403, "Prompts, transcripts et appels d'outils non visibles pour ton rôle")
         if not AGENT_ID.match(agent_id):
             raise HTTPException(404, "Agent inconnu")
         adir = path / "lead" if agent_id == "lead" else path / "subagents" / agent_id
@@ -606,7 +606,7 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         path, manifest = load_run(user, run_id)
         own = manifest.get("user") == user.login
         if not (user.can("stop_all") or (user.can("stop_own") and own)):
-            raise HTTPException(403, "Vous ne pouvez arrêter que vos propres investigations")
+            raise HTTPException(403, "Tu ne peux arrêter que tes propres investigations")
         if kill and not user.can("kill"):
             raise HTTPException(403, "Arrêt immédiat réservé au superviseur et à l'administrateur")
         live = manager.live.get(run_id)
@@ -626,7 +626,7 @@ def create_app(providers: Callable[[str | None], ProviderFactory] | None = None,
         """Investigation en cours que cet utilisateur peut piloter (mêmes droits que l'arrêt)."""
         _, manifest = load_run(user, run_id)
         if not (user.can("stop_all") or (user.can("stop_own") and manifest.get("user") == user.login)):
-            raise HTTPException(403, "Vous ne pouvez piloter que vos propres investigations")
+            raise HTTPException(403, "Tu ne peux piloter que tes propres investigations")
         live = manager.live.get(run_id)
         if live is None or live.investigation is None or manifest.get("status") != "running":
             raise HTTPException(409, "Investigation terminée")

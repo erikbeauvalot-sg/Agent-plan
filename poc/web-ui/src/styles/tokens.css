@@ -68,10 +68,10 @@
     --text: oklch(0.22 0.02 255);
     --text-2: oklch(0.42 0.02 255);
     --text-3: oklch(0.5 0.02 255);
-    --accent: oklch(0.52 0.13 215);
+    --accent: oklch(0.47 0.12 215); /* 4,5:1 au moins sur ses propres teintes (puces de preuve, liens) */
     --accent-ink: oklch(0.99 0 0);
-    --ok: oklch(0.52 0.14 155);
-    --warn: oklch(0.58 0.15 70);
+    --ok: oklch(0.47 0.13 155);
+    --warn: oklch(0.5 0.13 65);
     --bad: oklch(0.53 0.2 25);
     --stopped: oklch(0.52 0.02 255);
     --clarify: oklch(0.5 0.15 300);
@@ -93,10 +93,10 @@
       --text: oklch(0.22 0.02 255);
       --text-2: oklch(0.42 0.02 255);
       --text-3: oklch(0.5 0.02 255);
-      --accent: oklch(0.52 0.13 215);
+      --accent: oklch(0.47 0.12 215); /* 4,5:1 au moins sur ses propres teintes (puces de preuve, liens) */
       --accent-ink: oklch(0.99 0 0);
-      --ok: oklch(0.52 0.14 155);
-      --warn: oklch(0.58 0.15 70);
+      --ok: oklch(0.47 0.13 155);
+      --warn: oklch(0.5 0.13 65);
       --bad: oklch(0.53 0.2 25);
       --stopped: oklch(0.52 0.02 255);
       --clarify: oklch(0.5 0.15 300);
